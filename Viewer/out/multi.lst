@@ -1,0 +1,1241 @@
+mads 2.1.6 build 9 (30 Aug 22)
+Source: multi.asm
+     1 				 ; .loadsym "\out\.lab" PUT PATH OF .LAB FILE HERE, USE THIS WITH ALTIRRA EMULATOR
+     2 				 
+     3 				;-----------------------------------------------------------------------------
+     4 				; Memory Map
+     5 				;-----------------------------------------------------------------------------
+     6 				; Load Address = 
+     7 				; Run Address = 
+     8
+     9 				;-----------------------------------------------------------------------------
+    10 				;  HARDWARE EQUATES
+    11 				;-----------------------------------------------------------------------------
+    12 				    icl 'equates.asm'
+Source: equates.asm
+     1 				; OS Vectors
+     2 = 0000			LINZBS      equ $00         ; Word
+     3 = 0002			CASINI      equ $02         ; Word
+     4 = 0004			RAMLO       equ $04         ; Word
+     5 = 0006			TRAMSZ      equ $06
+     6 = 0007			TSTDAT      equ $07
+     7 = 0008			WARMST      equ $08
+     8 = 0009			BOOT        equ $09
+     9 = 000A			DOSVEC      equ $0A         ; Word
+    10 = 000C			DOSINI      equ $0C         ; Word
+    11 = 000E			APPMHI      equ $0E         ; Word
+    12 = 0010			POKMSK      equ $10
+    13 = 0011			BRKKEY      EQU $11
+    14 = 0012			RTCLOK      equ $12         ; $12, $13, $14 are used
+    15 = 0015			BUFADR      equ $15         ; Word
+    16 = 0017			ICCOMT      equ $17
+    17 = 0018			DSKFMS      equ $18         ; Word
+    18 = 001A			DSKUTL      equ $1A         ; Word
+    19 = 001C			PTIMOT      equ $1C
+    20 = 001D			PBPNT       equ $1D
+    21 = 001E			PBUFSZ      equ $1E
+    22 = 001F			PTEMP       equ $1F
+    23 = 0020			ICHIDZ      equ $20
+    24 = 0021			ICDNOZ      equ $21
+    25 = 0022			ICCOMZ      equ $22
+    26 = 0023			ICSTAZ      equ $23
+    27 = 0024			ICBALZ      equ $24
+    28 = 0025			ICBAHZ      equ $25
+    29 = 0026			ICPTLZ      equ $26
+    30 = 0027			ICPTHZ      equ $27
+    31 = 0028			ICBLLZ      equ $28
+    32 = 0029			ICBLHZ      equ $29
+    33 = 002A			ICAX1Z      equ $2A
+    34 = 002B			ICAX2Z      equ $2B
+    35 = 002C			ICAX3Z      equ $2C
+    36 = 002D			ICAX4Z      equ $2D
+    37 = 002E			ICAX5Z      equ $2E
+    38 = 002F			ICAX6Z      equ $2F
+    39 = 0030			STATUS      equ $30
+    40 = 0031			CHKSUM      equ $31
+    41 = 0032			BUFRLO      equ $32
+    42 = 0033			BUFRHI      equ $33
+    43 = 0034			BFENLO      equ $34
+    44 = 0035			BFENHI      equ $35
+    45 = 0036			CRETRY      equ $36
+    46 = 0037			DRETRY      equ $37
+    47 = 0038			BUFRFL      equ $38
+    48 = 0039			RECVDN      equ $39
+    49 = 003A			XMTDON      equ $3A
+    50 = 003B			CHKSNT      equ $3B
+    51 = 003C			NOCKSUM     equ $3C
+    52 = 003D			BPTR        equ $3D
+    53 = 003E			FTYPE       equ $3E
+    54 = 003F			FEOF        equ $3F
+    55 = 0040			FREQ        equ $40
+    56 = 0041			SOUNDR      equ $41         ; 0 = quiet SIO, 1 = loud SIO
+    57 = 0042			CRITIC      equ $42
+    58 = 0043			FMZSPG      equ $43         ; 7 bytes FMS registers
+    59 = 0043			ZBUFP       equ $43         ; Word
+    60 = 0045			ZDRVA       equ $45         ; Word
+    61 = 0047			ZSBA        equ $47         ; Word
+    62 = 0049			ERRNO       equ $49
+    63 = 004A			CKEY        equ $4A
+    64 = 004B			CASSBT      equ $4B
+    65 = 004C			DSTAT       equ $4C
+    66 = 004D			ATRACT      equ $4D
+    67 = 004E			DRKMSK      equ $4E
+    68 = 004F			COLRSH      equ $4F
+    69 = 0050			TEMP        equ $50
+    70 = 0051			HOLD1       equ $51
+    71 = 0052			LMARGIN     equ $52
+    72 = 0053			RMARGIN     equ $53
+    73 = 0054			ROWCRS      equ $54
+    74 = 0055			COLCRS      equ $55         ; $55-$56
+    75 = 0057			DINDEX      equ $57         ; Display Mode
+    76 = 0058			SAVMSC      equ $58         ; $58-$59
+    77 = 005A			OLDROW      equ $5A
+    78 = 005B			OLDCOL      equ $5B         ; Word
+    79 = 005D			OLDCHR      equ $5D
+    80 = 005E			OLDADR      equ $5E         ; Word
+    81 = 0060			NEWROW      equ $60
+    82 = 0061			NEWCOL      equ $61         ; Word
+    83 = 0063			LOGCOL      equ $63
+    84 = 0064			ADRESS      equ $64         ; Word
+    85 = 0066			MLTTMP      equ $66         ; Word
+    86 = 0068			SAVADR      equ $68         ; Word
+    87 = 006A			RAMTOP      equ $6A
+    88 = 006B			BUFCNT      equ $6B
+    89 = 006C			BUFSTR      equ $6C         ; Word
+    90 = 006E			BITMSK      equ $6E
+    91 = 006F			SHFAMT      equ $6F
+    92 = 0070			ROLAC       equ $70         ; Word
+    93 = 0072			COLAC       equ $72         ; Word
+    94 = 0074			ENDPT       equ $74         ; Word
+    95 = 0076			DELATR      equ $76
+    96 = 0077			DELTAC      equ $77         ; Word
+    97 = 0079			ROWINC      equ $79
+    98 = 007A			COLINC      equ $7A
+    99 = 007B			SWPFLG      equ $7B
+   100 = 007C			HOLDCH      equ $7C
+   101 = 007D			INSDAT      equ $7D
+   102 				;---------------------------------------
+   103 				; Mapping Atari Page 26 Starts Here
+   104 				;      RESUME ENTERING DATA HERE
+   105 				;---------------------------------------
+   106 = 007E			COUNTR      equ $7E         ; Word
+   107 				; $D4-$FF reserved for Floating Point routines
+   108 = 00D4			FR0         equ $D4         ; $D4-$D9 6-byte BCD Floating Point Register 0
+   109 				; $DA-$DF free?
+   110 = 00E0			FR1         equ $E0         ; $E0-$E5 6-byte BCD Floating Point Register 1
+   111 = 00E6			FR2         equ $E6         ; $E6-$EB 6-byte BCD Floating Point Register 2
+   112 = 00EC			FRX         equ $EC         ; Spare FP register
+   113 = 00ED			EEXP        equ $ED         ; Value of exponent
+   114 = 00EE			NSIGN       equ $EE         ; Sign of the Floating Point number
+   115 = 00EF			ESIGN       equ $EF         ; Sign of the exponent
+   116 = 00F0			FCHRFLG     equ $F0         ; First character flag
+   117 = 00F1			DIGRT       equ $F1         ; Number of digits to right of decimal
+   118 = 00F2			CIX         equ $F2         ; Character Input indeX - offset into INBUFF
+   119 = 00F3			INBUFF      equ $F3         ; $F3-$F4 Input ASCII pointer.  Result output buffer is $580-$5FF
+   120 = 00F3			INBUFF_LO   equ $F3         ; $F3-$F4 Input ASCII pointer.  Result output buffer is $580-$5FF
+   121 = 00F4			INBUFF_HI   equ $F4         ; $F3-$F4 Input ASCII pointer.  Result output buffer is $580-$5FF
+   122 = 00F5			ZTEMP1      equ $F5         ; $F5-$F6 Temp register
+   123 = 00F7			ZTEMP4      equ $F7         ; $F7-$F8 Temp register
+   124 = 00F9			ZTEMP3      equ $F9         ; $F9-$FA Temp register
+   125 = 00FB			RADFLG      equ $FB         ; When 0 use Radians (default OS value) else Degrees
+   126 = 00FC			FLPTR       equ $FC         ; $FC-$FD Pointer to user's Floating Point number 1
+   127 = 00FE			FPTR2       equ $FE         ; $FE-$FF Pointer to user's Floating Point number 2
+   128 				; $0100-$01FF Stack
+   129 = 0200			VDSLST      equ $0200       ; Vector to Display List Interrupt routine (Word)
+   130 = 0202			VPRCED      equ $0202       ; Word
+   131 = 0204			VINTER      equ $0204       ; Word
+   132 = 0206			VBREAK      equ $0206       ; Word
+   133 = 0208			VKEYBD      equ $0208       ; Word
+   134 = 020A			VSERIN      equ $020A       ; Word
+   135 = 020C			VSEROR      equ $020C       ; Word
+   136 = 020E			VSEROC      equ $020E       ; Word
+   137 = 0210			VTIMR1      equ $0210       ; Word
+   138 = 0212			VTIMR2      equ $0212       ; Word
+   139 = 0214			VTIMR4      equ $0214       ; Word
+   140 = 0216			VIMIRQ      equ $0216       ; Word
+   141 = 0218			CDTMV1      equ $0218       ; Word
+   142 = 021A			CDTMV2      equ $021A       ; Word
+   143 = 021C			CDTMV3      equ $021C       ; Word
+   144 = 021E			CDTMV4      equ $021E       ; Word
+   145 = 0220			CDTMV5      equ $0220       ; Word
+   146 = 0222			VVBLKI      equ $0222       ; Word
+   147 = 0224			VVBLKD      equ $0224       ; Word
+   148 = 0226			CDTMA1      equ $0226       ; Word
+   149 = 0228			CDTMA2      equ $0228       ; Word
+   150 = 022A			CDTMF3      equ $022A
+   151 = 022B			SRTIMR      equ $022B
+   152 = 022C			CDTMF4      equ $022C
+   153 = 022D			INTEMP      equ $022D
+   154 = 022E			CDTMF5      equ $022E
+   155 = 022F			SDMCTL      equ $022F
+   156 = 0230			SDLSTL      equ $0230       ; Word
+   157 = 0231			SDLSTH      equ $0231
+   158 				;---------------------------------------
+   159 				; Mapping Atari Page 48 Starts Here
+   160 				;      RESUME ENTERING DATA HERE
+   161 				;---------------------------------------
+   162 = 026F			GPRIOR      equ $026F
+   163 = 0284			STRIG0      equ $0284       ; 0 = Pressed, 1 = Released
+   164 = 0285			STRIG1      equ $0285       ; 0 = Pressed, 1 = Released
+   165 = 0286			STRIG2      equ $0286       ; 0 = Pressed, 1 = Released
+   166 = 0287			STRIG3      equ $0287       ; 0 = Pressed, 1 = Released
+   167 = 0290			TXTROW      equ $0290
+   168 = 0291			TXTCOL      equ $0291       ; Word
+   169 = 02C0			PCOLR0      equ $02C0       ; Shadows for $2C0 -> $D012 - $2C8 -> $D01A
+   170 = 02C1			PCOLR1      equ $02C1
+   171 = 02C2			PCOLR2      equ $02C2
+   172 = 02C3			PCOLR3      equ $02C3
+   173 = 02C4			COLOR0      equ $02C4
+   174 = 02C5			COLOR1      equ $02C5       ; Text      in GR.0
+   175 = 02C6			COLOR2      equ $02C6       ; Playfield in GR.0
+   176 = 02C7			COLOR3      equ $02C7
+   177 = 02C8			COLOR4      equ $02C8       ; Border    in GR.0
+   178 = 02D9			KRPDEL      equ $02D9       ; Auto Repeat Delay
+   179 = 02DA			KEYREP      equ $02DA       ; Auto Repeat Rate
+   180 = 02DB			NOCLIK      equ $02DB       ; Key Click Disable Flag
+   181 = 02DC			HELPFLG     equ $02DC       ; Help Key Flag
+   182 = 02E4			RAMSIZ      equ $02E4       ; RAM Size (Hi Byte)
+   183 = 02E5			MEMTOP      equ $02E5       ; Word Top of user RAM
+   184 = 02E7			MEMLO       equ $02E7       ; Word Bottom of user RAM
+   185 = 02EA			DVSTAT      equ $02EA       ; 4-byte Device Status for IOCB
+   186 = 02F0			CRSINH      equ $02F0       ; Cursor Inhibit (0 = On)
+   187 = 02F3			CHACT       equ $02F3       ; Shadow for CHACTL
+   188 = 02F4			CHBASE      equ $02F4
+   189 = 02FE			DSPFLG      equ $02FE       ; Display control chars is non-zero
+   190 = 02FC			CH          equ $02FC       ; Last Key Pressed
+   191
+   192 				; DCB (Device Control Block) for SIO
+   193 = 0300			DDEVIC      equ $0300
+   194 = 0301			DUNIT       equ $0301
+   195 = 0302			DCOMND      equ $0302
+   196 = 0303			DSTATS      equ $0303
+   197 = 0304			DBUFLO      equ $0304
+   198 = 0305			DBUFHI      equ $0305
+   199 = 0306			DTIMLO      equ $0306
+   200 = 0307			DUNUSE      equ $0307
+   201 = 0308			DBYTLO      equ $0308
+   202 = 0309			DBYTHI      equ $0309
+   203 = 030A			DAUX1       equ $030A
+   204 = 030B			DAUX2       equ $030B
+   205 = 030C			TIMER1      equ $030C       ; Word
+   206 = 031A			HATABS      equ $031A
+   207
+   208 				/*
+   209 				$0340-$034F: IOCB For Channel 0
+   210 				$0350-$035F: IOCB For Channel 1
+   211 				$0360-$036F: IOCB For Channel 2
+   212 				$0370-$037F: IOCB For Channel 3
+   213 				$0380-$038F: IOCB For Channel 4
+   214 				$0390-$039F: IOCB For Channel 5
+   215 				$03A0-$03AF: IOCB For Channel 6
+   216 				$03B0-$03BF: IOCB For Channel 7
+   217 				*/
+   217
+   218
+   219 = 0340			ICHID       equ $0340       ; Index into device name
+   220 = 0341			ICDNO       equ $0341       ; Device #
+   221 = 0342			ICCOM       equ $0342       ; Command
+   222 = 0342			ICCMD       equ $0342       ; Command
+   223 = 0343			ICSTA       equ $0343       ; Most recent device status
+   224 = 0344			ICBAL       equ $0344       ; Buffer for data transfer or address of filename for OPEN
+   225 = 0345			ICBAH       equ $0345       ; Buffer for data transfer or address of filename for OPEN
+   226 = 0346			ICPTL       equ $0346       ; Address of PUT-one-byte routine minus one
+   227 = 0347			ICPTH       equ $0347       ; Address of PUT-one-byte routine minus one
+   228 = 0348			ICBLL       equ $0348       ; Buffer length, max # bytes to PUT or GET
+   229 = 0349			ICBLH       equ $0349       ; Buffer length, max # bytes to PUT or GET
+   230 = 034A			ICAX1       equ $034A       ; Auxiliary Byte 1
+   231 = 034B			ICAX2       equ $034B       ; Auxiliary Byte 2
+   232 = 034C			ICAX3       equ $034C       ; Auxiliary Byte 3
+   233 = 034D			ICAX4       equ $034D       ; Auxiliary Byte 4
+   234 = 034E			ICAX5       equ $034E       ; Auxiliary Byte 5
+   235 = 034F			ICAX6       equ $034F       ; Auxiliary Byte 6
+   236
+   237 = 03F8			BASICF      equ $03F8       ; Shadow for BASIC Status: 0 = ROM Enabled
+   238
+   239 = 0580			LINBUFF     equ $0580       ; FP ASCII output buffer, $580-$5FF
+   240
+   241 				;-----------------------------------------------------------------------------
+   242 				;  HARDWARE EQUATES
+   243 				;-----------------------------------------------------------------------------
+   244 				; GTIA (D000-D0FF)
+   245 = D000			HPOSP0      equ $D000
+   246 = D001			HPOSP1      equ $D001
+   247 = D002			HPOSP2      equ $D002
+   248 = D003			HPOSP3      equ $D003
+   249 = D004			HPOSM0      equ $D004
+   250 = D005			HPOSM1      equ $D005
+   251 = D006			HPOSM2      equ $D006
+   252 = D007			HPOSM3      equ $D007
+   253 = D008			SIZEP0      equ $D008
+   254 = D009			SIZEP1      equ $D009
+   255 = D00A			SIZEP2      equ $D00A
+   256 = D00B			SIZEP3      equ $D00B
+   257 = D00C			SIZEM       equ $D00C
+   258 = D00D			GRAFP0      equ $D00D       ; W
+   259 = D00D			P1PL        equ $D00D       ; R
+   260 = D00E			GRAFP1      equ $D00E       ; W
+   261 = D00E			P2PL        equ $D00E       ; R
+   262 = D00F			GRAFP2      equ $D00F       ; W
+   263 = D00F			P3PL        equ $D00F       ; R
+   264 = D010			GRAFP3      equ $D010       ; W
+   265 = D010			TRIG0       equ $D010       ; R
+   266 = D011			GRAFM       equ $D011       ; W
+   267 = D011			TRIG1       equ $D011       ; R
+   268 = D012			COLPM0      equ $D012       ; Shadowed to $D012 -> $2C0 - $D01A -> $2C8
+   269 = D013			COLPM1      equ $D013
+   270 = D014			COLPM2      equ $D014
+   271 = D015			COLPM3      equ $D015
+   272 = D016			COLPF0      equ $D016
+   273 = D017			COLPF1      equ $D017
+   274 = D018			COLPF2      equ $D018
+   275 = D019			COLPF3      equ $D019
+   276 = D01A			COLBAK      equ $D01A
+   277 = D01B			PRIOR       equ $D01B
+   278 = D01D			GRACTL      equ $D01D
+   279 = D01F			CONSOL      equ $D01F
+   280
+   281 				; POKEY (D200-D2FF)
+   282 = D200			AUDF1       equ $D200   ; W
+   283 = D200			POT0        equ $D200   ; R
+   284 = D201			AUDC1       equ $D201
+   285 = D209			STIMER      equ $D209   ; W
+   286 = D209			KBCODE      equ $D209   ; R
+   287 = D20F			SKSTAT      equ $D20F
+   288 = D20A			RANDOM      equ $D20A
+   289 = D20E			IRQEN       equ $D20E
+   290
+   291 				; PIA (D300-D3FF)
+   292 = D300			PORTA       equ $D300
+   293 = D301			PORTB       equ $D301
+   294 = D302			PACTL       equ $D302
+   295 = D303			PBCTL       equ $D303
+   296 				; $D304-$D3FF continually repeat $D300-$D304
+   297
+   298 				; ANTIC (D400-D5FF)
+   299 = D400			DMACTL      equ $D400
+   300 = D401			CHACTL      equ $D401
+   301 = D402			DLISTL      equ $D402
+   302 = D403			DLISTH      equ $D403
+   303 = D404			HSCROL      equ $D404
+   304 = D405			VSCROL      equ $D405
+   305 = D407			PMBASE      equ $D407
+   306 = D40A			WSYNC       equ $D40A
+   307 = D40B			VCOUNT      equ $D40B
+   308 = D40E			NMIEN       equ $D40E
+   309 = D40F			NMIST       equ $D40F
+   310
+   311 				; FP ROM ($D800-$DFFF)
+   312 = D800			AFP         equ $D800       ; ASCII to FP
+   313 = D8E6			FASC        equ $D8E6       ; FP to ASCII
+   314 = D9AA			IFP         equ $D9AA       ; integer to FP
+   315 = D9D2			FPI         equ $D9D2       ; FP to integer
+   316 = DA44			ZFR0        equ $DA44       ; clear FR0
+   317 = DA46			ZF1         equ $DA46       ; clear zero page FP buffer
+   318 = DA60			FSUB        equ $DA60       ; FR0 - FR1
+   319 = DA66			FADD        equ $DA66       ; FR0 + FR1
+   320 = DADB			FMUL        equ $DADB       ; FR0 * FR1
+   321 = DB28			FDIV        equ $DB28       ; FR0 / FR1
+   322 = DD40			PLYEVL      equ $DD40       ; polynomial evaluation
+   323 = DD89			FLD0R       equ $DD89       ; load FR0 by X,Y register pointer
+   324 = DD8D			FLD0P       equ $DD8D       ; load FR0 by FLPTR pointer
+   325 = DD98			FLD1R       equ $DD98       ; load FR1 by X,Y register pointer
+   326 = DD9C			FLD1P       equ $DD9C       ; load FR1 by FLPTR pointer
+   327 = DDA7			FST0R       equ $DDA7       ; store FR0 at buffer by X,Y register pointer
+   328 = DDAB			FST1P       equ $DDAB       ; store FR0 at buffer by FLPTR pointer
+   329 = DDB6			FMOVE       equ $DDB6       ; move FR0 to FR1
+   330 = DDC0			EXP         equ $DDC0       ; e exponentiation
+   331 = DDCC			EXP10       equ $DDCC       ; base 10 exponentiation
+   332 = DECD			LOG         equ $DECD       ; natural log of FR0
+   333 = DED1			LOG10       equ $DED1       ; base 10 log of FR0
+   334
+   335 				; ROM Vectors
+   336 = E456			CIOV        equ $E456
+   337 = E459			SIOV        equ $E459
+   338 = E45C			SETVBV      equ $E45C       ; Set system timers and interrupt vectors
+   339 = E45F			SYSVBV      equ $E45F       ; Stage one VBLANK calculations entry point
+   340 = E462			XITVBV      equ $E462       ; Exit VBLANK routine entry point
+   341 = E471			BLKBDV      equ $E471       ; Memo Pad Vector
+   342 = E474			WARMSV      equ $E474       ; Warm Reset Vector
+   343 = E477			COLDSV      equ $E477       ; Cold Reset Vector
+    13
+    14 				;-----------------------------------------------------------------------------
+    15 				; Structure Declarations
+    16 				;-----------------------------------------------------------------------------
+    17
+    18 				;-----------------------------------------------------------------------------
+    19 				; Variables go here
+    20 				;-----------------------------------------------------------------------------
+    21 				; Page 0 user data ($80 to $FF with some reserved for OS)
+    22 				.zpvar Reg1				.byte			; Multi-Use Variables
+    23 				.zpvar Reg2				.byte			; Multi-Use Variables
+    24 				.zpvar Reg3				.byte			; Multi-Use Variables
+    25 				.zpvar Reg4				.byte			; Multi-Use Variables
+    26 				.zpvar Reg5				.byte			; Multi-Use Variables
+    27 				.zpvar Reg6				.byte			; Multi-Use Variables
+    28 				.zpvar Reg7				.byte			; Multi-Use Variables
+    29 				.zpvar Reg8				.byte			; Multi-Use Variables
+    30 				.zpvar Ptr_Lo			.byte			; Lo byte of pointer
+    31 				.zpvar Ptr_Hi			.byte			; Hi byte of pointer
+    32
+    33 				; Non Page-0 Variables
+    34 				;	$480 to $4FF free
+    35 				;	$600 to $6FF free
+    36 				; When using PMG the 1st $300 bytes are always free
+    37 				.var SDMCTL_OLD			.byte = $480	; Save DMA
+    38 				.var CRSINH_OLD			.byte = $481	; Save CRSINH (Mouse Pointer)
+    39 				.var LMARGIN_OLD		.byte = $482	; Save LMARGIN
+    40 				.var COLOR2_OLD			.byte = $483	; Save COLOR2
+    41 				.var SP_REG_OLD			.byte = $484	; Save the Stack Pointer
+    42 				.var SDLSTL_OLD			.byte = $485	; Save the Display List Pointer
+    43 				.var SDLSTH_OLD			.byte = $486	; Save the Display List Pointer
+    44 				.var DOSINIL_OLD		.byte = $487	; Save the DOSINI Pointer
+    45 				.var DOSINIH_OLD		.byte = $488	; Save the DOSINI Pointer
+    46
+    47 				;-----------------------------------------------------------------------------
+    48 				; Defines go here
+    49 				;-----------------------------------------------------------------------------
+    50 = FFFF0001		.def	__VBXE_AUTO__
+    51 = 2000			.def	VBXE_WINDOW						= $2000
+    52 = 1000			.def	VBXE_WINDOW_SIZE_4k				= $1000
+    53 = 2000			.def	VBXE_WINDOW_SIZE_8k				= $2000
+    54 = 4000			.def	LOAD_ADDRESS					= VBXE_WINDOW + VBXE_WINDOW_SIZE_8k
+    55
+    56 				; BCB field byte offsets
+    57 = 0000			.def	Src_Adr0						= $00
+    58 = 0001			.def	Src_Adr1						= $01
+    59 = 0002			.def	Src_Adr2						= $02
+    60 = 0006			.def	Dest_Adr0						= $06
+    61 = 0007			.def	Dest_Adr1						= $07
+    62 = 0008			.def	Dest_Adr2						= $08
+    63 = 0014			.def	Blt_Ctrl						= $14
+    64
+    65 				; Temp debug stuff
+    66 = 0010			.def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
+    67 = 0016			.def	V_1								= $16	; 6 (Screen code used for Version in loading screen)
+    68 = 0011			.def	V_2								= $11	; 1 (Screen code used for Version in loading screen)
+    69 = 0000			.def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
+    70
+    71 				;-----------------------------------------------------------------------------
+    72 				; VBXE Helpers
+    73 				;-----------------------------------------------------------------------------
+    74 = 0080			REG1
+    74 = 0081			REG2
+    74 = 0082			REG3
+    74 = 0083			REG4
+    74 = 0084			REG5
+    74 = 0085			REG6
+    74 = 0086			REG7
+    74 = 0087			REG8
+    74 = 0088			PTR_LO
+    74 = 0089			PTR_HI
+    74 = 0480			SDMCTL_OLD
+    74 = 0481			CRSINH_OLD
+    74 = 0482			LMARGIN_OLD
+    74 = 0483			COLOR2_OLD
+    74 = 0484			SP_REG_OLD
+    74 = 0485			SDLSTL_OLD
+    74 = 0486			SDLSTH_OLD
+    74 = 0487			DOSINIL_OLD
+    74 = 0488			DOSINIH_OLD
+    74 					org LOAD_ADDRESS
+    75 				.pages 2								; DO NOT go past $3200
+    76 					icl	'fileio.lib'
+Source: fileio.lib
+     1 				;basic CIO commands (ICCOM)
+     2 = 0003			CIO_open		equ 3	;OPEN command for IOCB channell
+     3 = 0005			CIO_gettext		equ 5	;READ of text line
+     4 = 0007			CIO_getdata		equ 7	;READ of binary data
+     5 = 0009			CIO_puttext		equ 9	;WRITE of text line
+     6 = 000B			CIO_putdata		equ 11	;WRITE of binary data
+     7 = 000C			CIO_close    	equ 12	;CLOSE of IOCB channel
+     8 = 000D			CIO_getstatus	equ 13	;READ of device status
+     9
+    10 				;some dos specific XIO commands (ICCOM)
+    11 = 0029			XIO_changedir	equ 41	;Change working directory (MyDOS)
+    12
+    13 				;mode of operation (ICAX1) for OPEN
+    14 = 0004			CIO_read     	equ 4  ;open to read
+    15 = 0008			CIO_write     	equ 8  ;open to write
+    16 = 0006			CIO_dir       	equ 6  ;get directory
+    17
+    18 				;--------------------------------------------------------
+    19 				;		Zero page variables for FileIO;
+    20 				;--------------------------------------------------------
+    21 				.zpvar	BankIndex	.word
+    22 				.zpvar	AR_Temp		.byte
+    23 				.zpvar	XR_Temp		.byte
+    24 				.zpvar	YR_Temp		.byte
+    25 				;--------------------------------------------------------
+    26 				;		Other variables for FileIO;
+    27 				;--------------------------------------------------------
+    28 				.var	FileNamePtr	.word
+    29 				.var	FileNameLng .byte
+    30 				.var	TextPtr		.word
+    31 				.var	LoadStatus	.byte	; $0 = failure, $1 = Success
+    32 FFFF> 4000-4203> FF	Console_IOCB		.byte 0xFF
+    33 4001 20 3A 9B 00		Temporary_Handler	.byte ' :',0x9B,0x00
+    34 4005 53 32 3A 9B 00	VBXE_Handler		.byte 'S2:',0x9B,0x00
+    35
+    36 				;--------------------------------------------------------
+    37 				;		Common calls for FileIO
+    38 				;--------------------------------------------------------
+    39
+    40 				;--------------------------------------------------------
+    41 				; Get_HATABS_Entry - retrives handler ID from HATABS table
+    42 				; takes:
+    43 				; A - HATABS offset from ICHID
+    44 				; returns:
+    45 				; A - letter identificator of the handler
+    46 400A			Get_HATABS_Entry
+    47 400A 86 8D			stx	XR_Temp
+    48 400C AA				tax
+    49 400D BD 1A 03			lda	HATABS,x
+    50 4010 A6 8D			ldx	XR_Temp
+    51 4012 60				rts
+    52 					
+    53 				;--------------------------------------------------------
+    54 				;Find_Matching_IOCB - search for first matching IOCB
+    55 				; takes:
+    56 				; A - letter identificator of the handler to look for
+    57 				; returns:
+    58 				; X - relative offset to first free IOCB (IOCB number *16)
+    59 				; Y - error code (126 - nonexistent device) if it fails
+    60
+    61 4013			Find_Matching_IOCB
+    62 4013 85 8C			sta	AR_Temp
+    63 4015 A2 00			ldx	#0x00
+    64 4017 A0 01			ldy	#0x01
+    65 4019			Find_Matching_IOCB_l1
+    66 4019 BD 40 03			lda	ICHID,x
+    67 401C 20 0A 40			jsr	Get_HATABS_Entry
+    68 401F C5 8C			cmp	AR_Temp		; compare device ID with the one searched
+    69 4021 F0 09			beq	Find_Matching_IOCB_Found
+    70 4023 8A				txa
+    71 4024 18 69 10			add	#0x10		; add IOCB structure length to x pointer, and try next channel
+    72 4027 AA				tax
+    73 4028 10 EF			bpl	Find_Matching_IOCB_l1
+    74 402A A0 82			ldy	#-126		; if fails, change error code to "NONEXISTENT DEVICE"	
+    75 402C			Find_Matching_IOCB_Found
+    76 402C 60				rts
+    77
+    78 				;--------------------------------------------------------
+    79 				;Find_First_IOCB - search for first free IOCB
+    80 				; returns:
+    81 				; X - relative offset to first free IOCB (IOCB number *16)
+    82 				; Y - error code (95 - too many channels open) if it fails
+    83 				; 
+    84 				; This piece of code comes from Polish Atariki page
+    85 				; there are no references for its orgins
+    86
+    87 402D			Find_First_IOCB
+    88 402D A2 00			ldx	#0x00		; start with channel #0
+    89 402F A0 01			ldy	#0x01		; set the error code to #1 - success
+    90 4031			Find_First_IOCB_l1
+    91 4031 BD 40 03			lda	ICHID,x		; get the device ID
+    92 4034 C9 FF			cmp	#0xff		; if equals to 0xff - channel is not opened
+    93 4036 F0 09			beq	Find_First_IOCB_found
+    94 4038 8A				txa
+    95 4039 18 69 10			add	#0x10		; add IOCB structure length to x pointer, and try next channel
+    96 403C AA				tax
+    97 403D 10 F2			bpl	Find_First_IOCB_l1
+    98 403F A0 A1			ldy	#-95       	;if fails, change error code to "TOO MANY CHANNELS OPEN"	
+    99 4041			Find_First_IOCB_found
+   100 4041 60				rts
+   101
+   102 				;--------------------------------------------------------
+   103 				; PutLine - puts line of text pointed by TextPtr
+   104 				; line should end with ENTER (0x9b)
+   105 4042			PutLine
+   106 				;	brk
+   107 4042 AE 00 40			ldx	Console_IOCB
+   108 4045 E0 FF			cpx	#255
+   109 4047 D0 10			bne	PutLine_IOCB_Open
+   110 4049 A9 45			lda	#'E'
+   111 404B 20 13 40			jsr	Find_Matching_IOCB
+   112 404E C0 01			cpy	#1
+   113 4050 F0 07			beq	PutLine_IOCB_Found
+   114 4052 A9 45			lda	#'E'		; open through console handler
+   115 4054 A0 00			ldy	#0		; Mode 0 - standard text console
+   116 4056 20 73 40			jsr	SetGraphicsMode
+   117 4059			PutLine_IOCB_Open
+   118 4059			PutLine_IOCB_Found
+   119 4059 A9 09			lda	#CIO_puttext
+   120 405B 9D 42 03			sta	iccmd,x
+   121 405E A9 FF			lda	#255
+   122 4060 9D 48 03			sta	ICBLL,x
+   123 4063 AD 36 41			lda	TextPtr
+   124 4066 9D 44 03			sta	ICBAL,x
+   125 4069 AD 37 41			lda	TextPtr+1
+   126 406C 9D 45 03			sta	ICBAL+1,x
+   127 406F 20 56 E4			jsr	ciov
+   128 4072			PutLine_Error
+   129 4072 60				rts
+   130 					
+   131 				;--------------------------------------------------------
+   132 				; Set_Graphics_Mode - sets graphics mode
+   133 				; takes:
+   134 				; A - device handler (E, S, or V (S2))
+   135 				; X - IOCB offset (IOCB channel number multiplied by 16)
+   136 				; Y - mode to set
+   137 				; returns:
+   138 				; Y - error code (95 - too many channels open) if it fails
+   139
+   140 4073			SetGraphicsMode
+   141 4073 20 2D 40			jsr	Find_First_IOCB		; find first free IOCB
+   142 4076 C0 01			cpy	#1
+   143 4078 D0 22			bne	SetGraphicsMode_Error	; no more free IOCB
+   144 407A C9 56			cmp	#'V'
+   145 407C F0 1F			beq	SetGraphicsMode_VBXE	; VBXE device handler is S2:, so we need special case for it :(
+   146 407E 8D 01 40			sta	Temporary_Handler
+   147 4081 A9 01			lda	#<Temporary_Handler
+   148 4083 9D 44 03			sta	ICBAL,x
+   149 4086 A9 40			lda	#>Temporary_Handler
+   150 4088 9D 45 03			sta	ICBAL+1,x
+   151 408B			SetGraphicsMode_Common
+   152 408B 98				tya
+   153 408C 9D 4B 03			sta	ICAX2,x		; mode to obtain
+   154 408F A9 03			lda	#CIO_open	
+   155 4091 9D 42 03			sta	iccmd,x
+   156 4094 A9 0C			lda	#CIO_read|CIO_write	; for both READ and WRITE operations
+   157 4096 9D 4A 03			sta	ICAX1,x
+   158 4099 20 56 E4			jsr	ciov
+   159 409C			SetGraphicsMode_Error
+   160 409C 60				rts
+   161 409D			SetGraphicsMode_VBXE
+   162 409D A9 05			lda	#<VBXE_Handler
+   163 409F 9D 44 03			sta	ICBAL,x
+   164 40A2 A9 40			lda	#>VBXE_Handler
+   165 40A4 9D 45 03			sta	ICBAL+1,x
+   166 40A7 4C 8B 40			jmp	SetGraphicsMode_Common
+   167 					
+   168 				;--------------------------------------------------------
+   169 				; LoadData - Loads file into banked memory
+   170 				; bankindex - first bank number to load to
+   171 				; This is slighty modified code provided by Mono (AtariArea)
+   172 				; visit http://atariarea.krap.pl/forum/viewtopic.php?id=6781
+   173 				; to see the original version
+   174 40AA			LoadData
+   175 40AA A9 01			lda #1
+   176 40AC 8D 38 41			sta LoadStatus	; Indicate Failure
+   177 40AF 20 2D 40			jsr	Find_First_IOCB
+   178 40B2 C0 01			cpy	#1
+   179 40B4 D0 77			bne	LoadData_Error
+   180 40B6 A9 04			lda	#CIO_read
+   181 40B8 9D 4A 03			sta	ICAX1,x
+   182 40BB A9 03			lda	#CIO_open
+   183 40BD 9D 42 03			sta	iccmd,x
+   184 40C0 AD 33 41			lda	FileNamePtr
+   185 40C3 9D 44 03			sta	ICBAL,x
+   186 40C6 AD 34 41			lda	FileNamePtr+1
+   187 40C9 9D 45 03			sta	ICBAL+1,x
+   188 40CC AD 35 41			lda	FileNameLng
+   189 40CF 9D 48 03			sta	ICBLL,x
+   190 40D2 A9 00			lda	#0
+   191 40D4 9D 49 03			sta	ICBLL+1,x
+   192 40D7 20 56 E4			jsr	ciov
+   193 40DA 30 51			bmi	LoadData_Error
+   194 40DC A4 8A			ldy	BankIndex
+   195 40DE			LoadData_l1
+   196 40DE 98				tya
+   197 40DF 09 80			ora	#0x80
+   198 40E1				vbsta	VBXE_MA_BSEL
+Macro: VBSTA [Source: vbxe_min.asm]
+     2 40E1 48				pha
+     3 40E2 A5 90			lda	VBXEBase+1
+     4 40E4 8D EA 40			sta	vbsta_adr
+     5 40E7 68				pla
+     6 40E8 8D 5F D6			sta.w	VBXE_MA_BSEL
+     7 = 40EA			vbsta_adr	equ *-1
+Source: fileio.lib
+   199 					;loading block of data to banked memory
+   200 40EB A9 04			lda	#CIO_read
+   201 40ED 9D 4A 03			sta	ICAX1,x
+   202 40F0 A9 07			lda	#CIO_getdata		;getbyte
+   203 40F2 9D 42 03			sta	iccmd,x
+   204 40F5 A9 00			lda	<VBXE_WINDOW
+   205 40F7 9D 44 03			sta ICBAL,x
+   206 40FA A9 20			lda	>VBXE_WINDOW
+   207 40FC 9D 45 03			sta	ICBAL+1,x
+   208 40FF A9 00			lda	<0x1000
+   209 4101 9D 48 03			sta	ICBLL,x
+   210 4104 A9 10			lda	>0x1000
+   211 4106 9D 49 03			sta	ICBLL+1,x
+   212 4109 20 56 E4			jsr	ciov
+   213 410C 30 08			bmi	LoadData_Close
+   214 410E E6 8A			inc	BankIndex
+   215 4110 A4 8A			ldy	BankIndex
+   216 4112 C0 7F			cpy	#127
+   217 4114 90 C8			bcc	LoadData_l1
+   218 4116			LoadData_Close
+   219 4116 08				php
+   220 					;at the end disable vbxe memory window
+   221 4117 A9 00			lda	#0
+   222 4119				vbsta	VBXE_MA_BSEL
+Macro: VBSTA [Source: vbxe_min.asm]
+     2 4119 48				pha
+     3 411A A5 90			lda	VBXEBase+1
+     4 411C 8D 22 41			sta	vbsta_adr
+     5 411F 68				pla
+     6 4120 8D 5F D6			sta.w	VBXE_MA_BSEL
+     7 = 4122			vbsta_adr	equ *-1
+Source: fileio.lib
+   223 4123 A9 0C			lda	#CIO_close
+   224 4125 9D 42 03			sta	iccmd,x
+   225 4128 20 56 E4			jsr	ciov
+   226 412B 28				plp
+   227 412C 60				rts
+   228 412D			LoadData_Error
+   229 412D A9 00			lda #0
+   230 412F 8D 38 41			sta LoadStatus	; Indicate Failure
+   231 4132 60				rts
+   231 = 008A			BANKINDEX
+   231 = 008C			AR_TEMP
+   231 = 008D			XR_TEMP
+   231 = 008E			YR_TEMP
+   231 = 4133 00 00		FILENAMEPTR
+   231 = 4135 00		FILENAMELNG
+   231 = 4136 00 00		TEXTPTR
+   231 = 4138 00		LOADSTATUS
+    77 4139				icl	'vbxe_min.asm'					; Use my VBXE_SetPalette2 to load linear palete
+Source: vbxe_min.asm
+     1
+     2 				.if .not .def __VBXE_AUTO__ .and .not .def __VBXE_D700__	; default case - vbxe at $d640
+     3 = D600			VBXE_BASE		equ	$D600
+     4 				.elseif .not .def __VBXE_AUTO__ .and def __VBXE_D700__		; vbxe is assumed to be under $d740
+     5 				VBXE_BASE		equ	$D700
+     6 				.else								; vbxe should be autodetected
+     7 				VBXE_BASE		equ	$0000
+     8 				.endif
+     9
+    10 = D640			VBXE_VIDEO_CONTROL		equ	VBXE_BASE+$40	; Write
+    11 = D640			VBXE_CORE_VERSION		equ	VBXE_BASE+$40	; Read
+    12 = D641			VBXE_XDL_ADR0			equ	VBXE_BASE+$41	; Write
+    13 = D641			VBXE_MINOR				equ	VBXE_BASE+$41	; Read
+    14 = D642			VBXE_XDL_ADR1			equ	VBXE_BASE+$42
+    15 = D643			VBXE_XDL_ADR2			equ	VBXE_BASE+$43
+    16 = D644			VBXE_CSEL				equ	VBXE_BASE+$44
+    17 = D645			VBXE_PSEL				equ	VBXE_BASE+$45
+    18 = D646			VBXE_CR					equ	VBXE_BASE+$46
+    19 = D647			VBXE_CG					equ	VBXE_BASE+$47
+    20 = D648			VBXE_CB					equ	VBXE_BASE+$48
+    21 = D649			VBXE_COLMASK			equ	VBXE_BASE+$49
+    22 = D64A			VBXE_COLCLR				equ	VBXE_BASE+$4A
+    23 = D650			VBXE_BL_ADR0			equ	VBXE_BASE+$50	; Write
+    24 = D650			VBXE_BLT_COLLISION_CODE	equ	VBXE_BASE+$50	; Read
+    25 = D651			VBXE_BL_ADR1			equ	VBXE_BASE+$51
+    26 = D652			VBXE_BL_ADR2			equ	VBXE_BASE+$52
+    27 = D653			VBXE_BLITTER_START		equ	VBXE_BASE+$53	; Write
+    28 = D653			VBXE_BLITTER_BUSY		equ	VBXE_BASE+$53	; Read
+    29 = D654			VBXE_IRQ_CONTROL		equ	VBXE_BASE+$54	; Write
+    30 = D654			VBXE_IRQ_STATUS			equ	VBXE_BASE+$54	; Read
+    31 = D655			VBXE_P0					equ	VBXE_BASE+$55
+    32 = D655			VBXE_P1					equ	VBXE_BASE+$55
+    33 = D655			VBXE_P2					equ	VBXE_BASE+$55
+    34 = D655			VBXE_P3					equ	VBXE_BASE+$55
+    35 = D65D			VBXE_MB_CTL				equ	VBXE_BASE+$5D
+    36 = D65E			VBXE_MA_CTL				equ	VBXE_BASE+$5E
+    37 = D65F			VBXE_MA_BSEL			equ	VBXE_BASE+$5F
+    38
+    39 				/* Renamed to match fx1.26-en
+    40 				VBXE_VIDEO_CONTROL		equ	VBXE_BASE+$40	; Write
+    41 				VBXE_CORE_VERSION		equ	VBXE_BASE+$40	; Read
+    42 				VBXE_XDL_ADR0			equ	VBXE_BASE+$41	; Write
+    43 				VBXE_MINOR_REVISION		equ	VBXE_BASE+$41	; Read
+    44 				VBXE_XDL_ADR1			equ	VBXE_BASE+$42
+    45 				VBXE_XDL_ADR2			equ	VBXE_BASE+$43
+    46 				VBXE_CSEL				equ	VBXE_BASE+$44
+    47 				VBXE_PSEL				equ	VBXE_BASE+$45
+    48 				VBXE_CR					equ	VBXE_BASE+$46
+    49 				VBXE_CG					equ	VBXE_BASE+$47
+    50 				VBXE_CB					equ	VBXE_BASE+$48
+    51 				VBXE_COLMASK			equ	VBXE_BASE+$49
+    52 				VBXE_COLCLR				equ	VBXE_BASE+$4A	; Write
+    53 				VBXE_COLDETECT			equ	VBXE_BASE+$4A	; Read
+    54 				VBXE_BL_ADR0			equ	VBXE_BASE+$50	; Write
+    55 				VBXE_BLT_COLLISION_CODE	equ	VBXE_BASE+$50	; Read
+    56 				VBXE_BL_ADR1			equ	VBXE_BASE+$51
+    57 				VBXE_BL_ADR2			equ	VBXE_BASE+$52
+    58 				VBXE_BLITTER_START		equ	VBXE_BASE+$53	; Write
+    59 				VBXE_BLITTER_BUSY		equ	VBXE_BASE+$53	; Read
+    60 				VBXE_IRQ_CONTROL		equ	VBXE_BASE+$54	; Write
+    61 				VBXE_IRQ_STATUS			equ	VBXE_BASE+$54	; Read
+    62 				VBXE_P0					equ	VBXE_BASE+$55
+    63 				VBXE_P1					equ	VBXE_BASE+$55
+    64 				VBXE_P2					equ	VBXE_BASE+$55
+    65 				VBXE_P3					equ	VBXE_BASE+$55
+    66 				VBXE_MEMAC_B_CONTROL	equ	VBXE_BASE+$5D
+    67 				VBXE_MEMAC_CONTROL		equ	VBXE_BASE+$5E	; Write
+    68 				VBXE_MEMAC_CONTROL		equ	VBXE_BASE+$5E	; Read
+    69 				VBXE_MEMAC_BANK_SEL		equ	VBXE_BASE+$5F	; Write
+    70 				VBXE_MEMAC_BANK_SEL		equ	VBXE_BASE+$5F	; Read
+    71 				*/
+    71
+    72
+    73 = 0000			MEMAC_GLOBAL_DISABLE	equ	$00
+    74 = 0080			MEMAC_GLOBAL_ENABLE		equ	$80
+    75
+    76 				;--------------------------------------------------------
+    77 				;		Structures for VBXE
+    78 				;--------------------------------------------------------
+    79 				.struct BLTBLK	
+    80 = 0000				orgin_ptr	.long
+    81 = 0003				ostep_y		.word
+    82 = 0005				ostep_x		.byte
+    83 = 0006				dest_ptr	.long
+    84 = 0009				dstep_y		.word
+    85 = 000B				dstep_x		.byte
+    86 = 000C				width		.word
+    87 = 000E				height		.byte
+    88 = 000F				and_mask	.byte
+    89 = 0010				xor_mask	.byte
+    90 = 0011				col_mask	.byte
+    91 = 0012				zoom		.byte
+    92 = 0013				pattern		.byte
+    93 = 0014				control		.byte
+    94 				.ends
+    95
+    96 				;--------------------------------------------------------
+    97 				;		Zero page variables for VBXE
+    98 				;--------------------------------------------------------
+    99 4139			.zpvar	VBXEBase	.word
+   100 4139			.zpvar	Y_Register	.byte
+   101
+   102 				;--------------------------------------------------------
+   103 				;		Other variables for VBXE
+   104 				;--------------------------------------------------------
+   105 4139			.var	Pal_ptr		.word
+   106
+   107 				;--------------------------------------------------------
+   108 				;		Macro definitions for VBXE
+   109 				;--------------------------------------------------------
+   110
+   111 				;--------------------------------------------------------
+   112 				;vblda	- loads accumulator with VBXE register value
+   113 				;	  use:	vblda	VBXE_REGISTER
+   114
+   115 				vblda	.macro
+   116 				.ifdef	__VBXE_AUTO__
+   117 					lda	VBXEBase+1
+   118 					sta	vblda_adr
+   119 					lda.w	:1
+   120 				vblda_adr	equ *-1
+   121 				.else
+   122 					lda	:1
+   123 				.endif
+   124 				.endm
+   125
+   126 				;--------------------------------------------------------
+   127 				;vbsta	- stores accumulator in VBXE register
+   128 				;	  use:	vbsta	VBXE_REGISTER
+   129
+   130 				vbsta	.macro
+   131 				.ifdef	__VBXE_AUTO__
+   132 					pha
+   133 					lda	VBXEBase+1
+   134 					sta	vbsta_adr
+   135 					pla
+   136 					sta.w	:1
+   137 				vbsta_adr	equ *-1
+   138 				.else
+   139 					sta.w	:1
+   140 				.endif
+   141 				.endm
+   142
+   143 				;--------------------------------------------------------
+   144 				;		Common calls for VBXE
+   145 				;--------------------------------------------------------
+   146
+   147 				;--------------------------------------------------------
+   148 				;VBXE_Detect - detects VBXE FX core version 1.07 and above,
+   149 				; and stores VBXE Base address in VBXEBase
+   150 4139			VBXE_Detect
+   151 4139 A9 00			lda	#0
+   152 413B A2 D6			ldx	#$d6
+   153 413D 8D 40 D6			sta	$d640			; make sure it isn't coincidence
+   154 4140 AD 40 D6			lda	$d640
+   155 4143 C9 10			cmp	#$10			; do we have major version here?
+   156 4145 F0 15			beq	VBXE_Detected	; if so, then VBXE is detected
+   157 4147 A9 00			lda	#0
+   158 4149 E8				inx
+   159 414A 8D 40 D7			sta	$d740			; no such luck, try other location
+   160 414D AD 40 D7			lda	$d740
+   161 4150 C9 10			cmp	#$10
+   162 4152 F0 08			beq	VBXE_Detected
+   163 4154 A2 00			ldx 	#0  		; not here, so not present or FX core version too low
+   164 4156 86 90			stx	VBXEBase+1
+   165 4158 86 8F			stx	VBXEBase
+   166 415A 38				sec
+   167 415B 60				rts
+   168 415C			VBXE_Detected:
+   169 415C 86 90			stx	VBXEBase+1
+   170 415E A9 00			lda	#0
+   171 4160 85 8F			sta	VBXEBase
+   172 4162				vblda	VBXE_MINOR	; get core minor version
+Macro: VBLDA [Source: vbxe_min.asm]
+     2 4162 A5 90			lda	VBXEBase+1
+     3 4164 8D 69 41			sta	vblda_adr
+     4 4167 AD 41 D6			lda.w	VBXE_MINOR
+     5 = 4169			vblda_adr	equ *-1
+Source: vbxe_min.asm
+   173 416A 18				clc	 				; x - page of vbxe
+   174 416B 60				rts
+   175
+   176 				;--------------------------------------------------------
+   177 				; VBXE_SetPalette2 - sets palette
+   178 				;	A			- palette number
+   179 				;	Y_Register	- palette pointer - Data MUST be page aligned
+   180 				; NOTE: This code can run from ROM
+   181 				;       The palette is stored as 256 RGB triplets
+   182 416C			VBXE_SetPalette2
+   183 416C				vbsta VBXE_PSEL				; Set Palette 1
+Macro: VBSTA [Source: vbxe_min.asm]
+     2 416C 48				pha
+     3 416D A5 90			lda	VBXEBase+1
+     4 416F 8D 75 41			sta	vbsta_adr
+     5 4172 68				pla
+     6 4173 8D 45 D6			sta.w	VBXE_PSEL
+     7 = 4175			vbsta_adr	equ *-1
+Source: vbxe_min.asm
+   184 4176 A9 00			lda #0
+   185 4178				vbsta VBXE_CSEL				; Start at colour 0
+Macro: VBSTA [Source: vbxe_min.asm]
+     2 4178 48				pha
+     3 4179 A5 90			lda	VBXEBase+1
+     4 417B 8D 81 41			sta	vbsta_adr
+     5 417E 68				pla
+     6 417F 8D 44 D6			sta.w	VBXE_CSEL
+     7 = 4181			vbsta_adr	equ *-1
+Source: vbxe_min.asm
+   186
+   187 4182 A8				tay
+   188 4183 B1 91		LoadPal1_1 lda (Y_Register),y
+   189 4185 8D 46 D6			sta	VBXE_CR					; set the red component
+   190 4188 C8				iny
+   191 4189 F0 3B			beq OverFlow1				; since 256 / 3 is not even, we must skip to next section and resume at CG
+   192 418B B1 91			lda (Y_Register),y
+   193 418D 8D 47 D6			sta	VBXE_CG					; set the green component
+   194 4190 C8				iny
+   195 4191 B1 91			lda (Y_Register),y
+   196 4193 8D 48 D6			sta	VBXE_CB					; set the blue component and increment CSEL
+   197 4196 C8				iny
+   198 4197 D0 EA			bne	LoadPal1_1				; copy a page
+   199 4199 B1 91		LoadPal1_2 lda (Y_Register),y
+   200 419B 8D 46 D6			sta	VBXE_CR					; set the red component
+   201 419E C8				iny
+   202 419F F0 10			beq LoadPal1_3
+   203 41A1			LP1_2_G
+   204 41A1 B1 91			lda (Y_Register),y
+   205 41A3 8D 47 D6			sta	VBXE_CG					; set the green component
+   206 41A6 C8				iny
+   207 41A7 F0 22			beq OverFlow2				; since 256 / 3 is not even, we must skip to next section and resume at CB
+   208 41A9 B1 91			lda (Y_Register),y
+   209 41AB 8D 48 D6			sta	VBXE_CB					; set the blue component and increment CSEL
+   210 41AE C8				iny
+   211 41AF D0 E8			bne	LoadPal1_2				; copy a page
+   212 41B1 B1 91		LoadPal1_3 lda (Y_Register),y
+   213 41B3 8D 46 D6			sta	VBXE_CR					; set the red component
+   214 41B6 C8				iny
+   215 41B7 B1 91			lda (Y_Register),y
+   216 41B9 8D 47 D6			sta	VBXE_CG					; set the green component
+   217 41BC C8				iny
+   218 41BD			LP1_3_B
+   219 41BD B1 91			lda (Y_Register),y
+   220 41BF 8D 48 D6			sta	VBXE_CB					; set the blue component and increment CSEL
+   221 41C2 C8				iny
+   222 41C3 D0 EC			bne	LoadPal1_3				; copy a page
+   223 41C5 60				rts
+   224
+   225 41C6			OverFlow1
+   226 41C6 E6 92			inc Y_Register + 1
+   227 41C8 4C A1 41			jmp LP1_2_G
+   228 41CB			OverFlow2
+   229 41CB E6 92			inc Y_Register + 1
+   230 41CD 4C BD 41			jmp LP1_3_B
+   230 = 008F			VBXEBASE
+   230 = 0091			Y_REGISTER
+   230 = 41D0 00 00		PAL_PTR
+    78
+    79 				;-----------------------------------------------------------------------------
+    80 				; Clean up and exit based on LoadStatus
+    81 				;-----------------------------------------------------------------------------
+    82 41D2			Cleanup_Exit
+    83 41D2 A9 00			lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
+    84 41D4 8D 5F D6			sta VBXE_MA_BSEL
+    85 41D7 8D 40 D6			sta VBXE_VIDEO_CONTROL				; Disable XDL
+    86
+    87 41DA AD 80 04			lda SDMCTL_OLD
+    88 41DD 8D 2F 02			sta SDMCTL							; Restore SDMCTL
+    89
+    90 41E0 AD 82 04			lda LMARGIN_OLD
+    91 41E3 85 52			sta LMARGIN							; Restore LMARGIN
+    92
+    93 41E5 AD 87 04			lda DOSINIL_OLD
+    94 41E8 85 0C			sta DOSINI
+    95 41EA AD 88 04			lda DOSINIH_OLD
+    96 41ED 85 0D			sta DOSINI + 1						; Restore DOSINI
+    97
+    98 41EF A9 FF			lda #$FF
+    99 41F1 8D FC 02			sta CH								; Clear last key pressed
+   100
+   101 41F4 6C 0A 00			jmp	(DOSVEC)						; Return to DOS
+   102
+   103 41F7			Wait_For_Key_Exit
+   104 41F7 A9 FF			lda #$FF
+   105 41F9 8D FC 02			sta CH								; Clear last key pressed
+   106 41FC			Wait_For_Key_Exit_L1
+   107 41FC AD FC 02			lda CH
+   108 41FF C9 FF			cmp #$FF
+   109 4201 F0 F9			beq Wait_For_Key_Exit_L1			; Wait for Key Press
+   110 4203 60				rts									; Exit on  Key Press
+   111 4204			.endpg
+   112
+   113 				; Multi-stage loader & program initialization code begins here
+   114 4204				icl 'init.asm'
+Source: init.asm
+     1 				;-----------------------------------------------------------------------------
+     2 				; Initialization
+     3 				;-----------------------------------------------------------------------------
+     4 				; Step $01 - Clear screen and print initial loading screen
+     5 					org LOAD_ADDRESS + $200				; Libraries live above
+     6 4200			.proc Step_1
+     7 				; Save any values that will be changed so they can be restored on exit
+     8 4200-43BE> A5 0C			lda DOSINI
+     9 4202 8D 87 04			sta DOSINIL_OLD
+    10 4205 A5 0D			lda DOSINI + 1
+    11 4207 8D 88 04			sta DOSINIH_OLD						; Save DOSINI so we can restore it later
+    12
+    13 420A AD 2F 02			lda SDMCTL
+    14 420D 8D 80 04			sta SDMCTL_OLD						; Save SDMCTL so we can restore it later
+    15
+    16 4210 AD F0 02			lda CRSINH
+    17 4213 8D 81 04			sta CRSINH_OLD						; Save CRSINH so we can restore it later
+    18
+    19 4216 A5 52			lda LMARGIN
+    20 4218 8D 82 04			sta LMARGIN_OLD						; Save LMARGIN so we can restore it later
+    21
+    22 421B AD C6 02			lda COLOR2
+    23 421E 8D 83 04			sta COLOR2_OLD						; Save COLOR2 so we can restore it later
+    24
+    25 4221 BA				tsx									; X now holds the SP
+    26 4222 8E 84 04			stx SP_REG_OLD						; Save SP so we can restore it later
+    27
+    28 4225 AD 30 02			lda SDLSTL
+    29 4228 8D 85 04			sta SDLSTL_OLD
+    30
+    31 422B AD 31 02			lda SDLSTL+1
+    32 422E 8D 86 04			sta SDLSTH_OLD
+    33
+    34 				; Check for SDX
+    35 4231			Check_SDX
+    36 4231 AD 00 07			lda $0700
+    37 4234 C9 53			cmp #$53							; ASCII S
+    38 4236 D0 25			bne SDX_No
+    39 4238 AD 01 07			lda $0701
+    40 423B C9 44			cmp #$44							; ASCII D
+    41 423D D0 1E			bne SDX_No
+    42
+    43 				; Use IOCB channel 2 to force a CON 40 call
+    44 423F			SDX_Yes
+    45 423F A2 20			ldx #$20							; Channel 2
+    46 4241 A9 50			lda #$50
+    47 4243 9D 42 03			sta ICCMD,x
+    48 4246 A9 BC			lda #<Device
+    49 4248 9D 44 03			sta ICBAL,x
+    50 424B A9 43			lda #>Device
+    51 424D 9D 45 03			sta ICBAH,x
+    52 4250 A9 0C			lda #$0C							; Read + Write
+    53 4252 9D 4A 03			sta ICAX1,x							; Aux1
+    54 4255 A9 40			lda #$40
+    55 4257 9D 4B 03			sta ICAX2,x							; Aux2
+    56 425A 20 56 E4			jsr CIOV
+    57
+    58 				; TODO: Close Channel #2 (and do this in the APOD viewer as well)
+    59 425D			SDX_No
+    60 425D A9 00			lda #$00
+    61 425F 85 52			sta LMARGIN
+    62
+    63 4261 A9 01			lda #$01
+    64 4263 8D F0 02			sta CRSINH
+    65
+    66 4266 A9 A2 8D 36 41 A9 + 	mwa #Clear_Screen TextPtr
+    67 4270 20 42 40			jsr PutLine							; Cheap way to get a channel open to the screen
+    68
+    69 4273 A9 B0			lda #$B0							; Dark Green
+    70 4275 8D C6 02			sta COLOR2							; Set playfield
+    71 4278 A9 BA			lda #$BA							; Light Green
+    72 427A 8D C5 02			sta COLOR1							; Set text
+    73
+    74 				; Grab the pointer to the top of screen ram
+    75 427D A5 58			lda SAVMSC
+    76 427F 85 88			sta Ptr_Lo
+    77 4281 A5 59			lda SAVMSC+1
+    78 4283 85 89			sta Ptr_Hi
+    79
+    80 				; Print the initial loading message
+    81 				; Each subsequent init stage will update it
+    82 4285 A0 00			ldy #$00
+    83 4287			Print_Loading_L1						; Copy the 1st $100 bytes
+    84 4287 B9 A4 42			lda Step1_Message,y
+    85 428A 91 88			sta (Ptr_Lo),y
+    86 428C 88				dey
+    87 428D D0 F8			bne Print_Loading_L1
+    88
+    89 428F A0 17			ldy #$17
+    90 4291 E6 89			inc Ptr_Hi
+    91 4293			Print_Loading_L2						; Copy the last $180 bytes
+    92 4293 B9 A4 43			lda Step1_Message+$100,y
+    93 4296 91 88			sta (Ptr_Lo),y
+    94 4298 88				dey
+    95 4299 10 F8			bpl Print_Loading_L2
+    96
+    97 429B C6 89			dec Ptr_Hi							; Restore to beginning of screen RAM
+    98 429D A9 CA			lda #$CA
+    99 429F 85 80			sta Reg1							; Pointer to screen RAM for progress dots
+   100
+   101 					; jsr Wait_For_Key_Exit
+   102 42A1 60				rts									; Return controll to loader
+   103
+   104 42A2			Clear_Screen
+   105 42A2 7D 9B			.byte $7D,$9B
+   106 42A4			Step1_Message							; Internal screen codes
+   107 42A4 51 52 52 52 52 52 + 	.byte $51,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$45
+   108 42CC 7C 00 00 00 00 2C + 	.byte $7C,$00,$00,$00,$00,$2C,$6F,$61,$64,$69,$6E,$67,$00,$36,$22,$38,$25,$00,$22,$6C,$69,$74,$74,$65,$72,$00,$24,$65,$6D,$6F,$00,V_0,$0E,V_1,V_2,V_3,$00,$00,$00,$7C
+   109 42F4 7C 00 00 00 00 00 + 	.byte $7C,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$7C
+   110 431C 7C 00 00 00 00 00 + 	.byte $7C,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$7C
+   111 4344 41 52 52 52 52 52 + 	.byte $41,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$44
+   112 436C 7C 00 00 00 00 00 + 	.byte $7C,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$7C
+   113 4394 5A 52 52 52 52 52 + 	.byte $5A,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$43
+   114 43BC			Device
+   115 43BC 45 3A 9B			dta c"E:",$9B
+   116 				.endp
+   117 02E2-02E3> 00 42			ini Step_1
+   118
+   119 				; Step $02 - Ensure RAMTOP is = $C0 and no BASIC cart/ROM is present
+   120 					org LOAD_ADDRESS + $200				; Libraries live above
+   121 4200			.proc Check_RAMTOP
+   122 				; Disable BASIC
+   123 4200-42A3> A9 C0			lda #$C0							; Check if RAMTOP is already OK
+   124 4202 C5 6A			cmp RAMTOP							; Prevent flickering if BASIC is already off
+   125 4204 F0 38			beq Ram_Ok
+   126
+   127 4206 A9 01			lda #$01							; Set BASICF for OS
+   128 4208 8D F8 03			sta BASICF							; so BASIC remains OFF after RESET
+   129
+   130 420B AD 01 D3			lda PORTB							; Disable BASIC bit in PORTB for MMU
+   131 420E 09 02			ora #$02							; by Setting bit 2
+   132 4210 8D 01 D3			sta PORTB
+   133
+   134 4213 AD 00 A0			lda $A000							; Check if BASIC ROM area is now RAM
+   135 4216 EE 00 A0			inc $A000							; This will also catch SDX not launching
+   136 4219 CD 00 A0			cmp $A000							; the app via X
+   137 421C F0 21			beq Ram_Not_Ok						; If not, perform print error and exit
+   138
+   139 421E A9 0C			lda #$0C							; 12 = CLOSE
+   140 4220 20 2E 42			jsr Do_CIOV							; Close editor
+   141
+   142 4223 A9 C0			lda #$C0
+   143 4225 85 6A			sta RAMTOP							; Set RAMTOP to end of BASIC
+   144 4227 8D E4 02			sta RAMSIZ							; Set RAMSIZ also
+   145
+   146 422A A2 00			ldx #$00							; Channel #0
+   147 422C A9 04			lda #$04							; 4 = OPEN_READ
+   148 422E			Do_CIOV
+   149 422E 8D 42 03			sta ICCOM							; Store the Command
+   150 4231 A9 68			lda #<Device_Name
+   151 4233 8D 44 03			sta ICBAL							; Use channel #0
+   152 4236 A9 42			lda #>Device_Name
+   153 4238 8D 45 03			sta ICBAH
+   154 423B 20 56 E4			jsr CIOV
+   155
+   156 423E			Ram_Ok
+   157 					; jsr Wait_For_Key_Exit
+   158 423E 60				rts
+   159
+   160 423F			Ram_Not_Ok; Add your error handling here, there still is a ROM....
+   161 423F A0 42			ldy #$42							; Dark Red
+   162 4241 8C C6 02			sty COLOR2							; Set playfield
+   163
+   164 				; Print RAM_Failure_Message - line 3 (y = $79)
+   165 4244 A0 79			ldy #$79
+   166 4246 A2 00			ldx #$00
+   167 4248			RAM_Failure_Message_L1
+   168 4248 BD 6B 42			lda RAM_Failure_Message_Line1,x
+   169 424B 91 88			sta (Ptr_Lo),y
+   170 424D E8				inx
+   171 424E C8				iny
+   172 424F E0 23			cpx #$23							; Copy $23 characters
+   173 4251 D0 F5			bne RAM_Failure_Message_L1
+   174
+   175 				; Print RAM_Failure_Message - line 5
+   176 4253 A0 D1			ldy #$D1
+   177 4255 A2 00			ldx #$00
+   178 4257			RAM_Failure_Message_L2
+   179 4257 BD 8E 42			lda RAM_Failure_Message_Line2,x
+   180 425A 91 88			sta (Ptr_Lo),y
+   181 425C E8				inx
+   182 425D C8				iny
+   183 425E E0 15			cpx #$15							; Copy $15 characters
+   184 4260 D0 F5			bne RAM_Failure_Message_L2
+   185
+   186 4262 20 F7 41			jsr Wait_For_Key_Exit
+   187
+   188 4265 4C 74 E4			jmp WARMSV							; Warm Start
+   189
+   190 4268			Device_Name
+   191 4268 45 3A 00			dta c'E:', $00
+   192 426B			RAM_Failure_Message_Line1
+   193 426B 34 68 69 73 00 70 + 	.byte $34,$68,$69,$73,$00,$70,$72,$6F,$67,$72,$61,$6D,$00,$72,$65,$71,$75,$69,$72,$65,$73,$00,$61,$74,$00,$6C,$65,$61,$73,$74,$00,$14,$18,$6B,$22
+   194 428E			RAM_Failure_Message_Line2
+   195 428E 30 72 65 73 73 00 + 	.byte $30,$72,$65,$73,$73,$00,$61,$6E,$79,$00,$6B,$65,$79,$00,$74,$6F,$00,$65,$78,$69,$74,$80
+   196 				.endp
+   197 02E2-02E3> 00 42			ini Check_RAMTOP
+   115
+   116 					org LOAD_ADDRESS + $200				; Libraries live above
+   117
+   118 				;-----------------------------------------------------------------------------
+   119 				; Main loop
+   120 				;-----------------------------------------------------------------------------
+   121 4200			main
+   122
+   123 				; All done - now loop forever
+   124 4200-4205> 20 0E 42		jsr Wait_For_Sync					; Wait for VSYNC, Q quits
+   125 4203 4C 00 42			jmp main
+   126
+   127 				; Set RUN Vector
+   128 02E0-02E1> 00 42			run main
+   129
+   130 				;-----------------------------------------------------------------------------
+   131 				; Clean up and exit
+   132 				;-----------------------------------------------------------------------------
+   133 4206			Exit
+   134 4206-421F> A9 FF			lda #$FF
+   135 4208 8D FC 02			sta CH								; Clear last key pressed
+   136 420B 6C 0A 00			jmp	(DOSVEC)
+   137
+   138 				;-----------------------------------------------------------------------------
+   139 				; END OF CODE
+   140 				;-----------------------------------------------------------------------------
+   141
+   142 				;-----------------------------------------------------------------------------
+   143 				; Subroutines BEGIN
+   144 				;-----------------------------------------------------------------------------
+   145 				;-----------------------------------------------------------------------------
+   146 				; Wait For VSync (locks to the refresh rate, PAL=50Hz, NTSC=60Hz)  Thanks tebe
+   147 				;-----------------------------------------------------------------------------
+   148 420E			Wait_For_Sync							; Hold until VCOUNT == 0
+   149 420E 2C 0B D4			bit	VCOUNT
+   150 4211 30 FB			bmi *-3
+   151 4213 2C 0B D4			bit	VCOUNT
+   152 4216 10 FB			bpl *-3
+   153 				; If present, the next 3 lines will allow a "jump to exit" on a specific key press
+   154 4218 AD FC 02			lda CH
+   155 421B C9 2F			cmp #$2F							; Press Q to quit
+   156 421D F0 E7			beq	Exit
+   157 421F 60				rts									; Else return to caller
+   158 				;-----------------------------------------------------------------------------
+   159 				; Subroutines END
+   160 				;-----------------------------------------------------------------------------
+   161
+   162 				;-----------------------------------------------------------------------------
+   163 				; Data Tables go here
+   164 				;-----------------------------------------------------------------------------
