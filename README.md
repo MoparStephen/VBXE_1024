@@ -80,6 +80,11 @@ Requires Python 3 with `numpy` and `Pillow` (`pip install numpy pillow`).
 | `--slots N`   | `256`   | Entries per palette.                                           |
 | `--reserve0`  | off     | Keep slot 0 unused (e.g. transparent); 255 usable per palette. |
 | `--colors N`  | auto    | Pre-quantize the source to N colours (auto = palettes × slots).|
+| `--resize WxH`| off     | Resample to WxH before packing, e.g. `320x240` or `160x240`.   |
+| `--filter F`  | lanczos | Resampling filter: `nearest box bilinear hamming bicubic lanczos`. |
+| `--fit MODE`  | stretch | Aspect handling: `stretch`, `cover`, or `fit` (see below).      |
+| `--display-aspect R` | 4:3 | True on-screen aspect for `cover`/`fit`, e.g. `4:3`.      |
+| `--pad RRGGBB`| 000000  | Pad colour (hex) used by `--fit fit`.                          |
 | `--seed N`    | `0`     | RNG seed for the k-means seeding in Phase B.                   |
 
 If the source has more than `palettes × slots` unique colours it is first
@@ -89,6 +94,52 @@ Example:
 
 ```
 python3 palettize4.py myart.png --out build --colors 960
+```
+
+---
+
+## Resizing and pixel aspect ratio
+
+The packer works pixel-for-pixel: without `--resize` the source must already be
+at the target resolution. With `--resize` it resamples first.
+
+**Choosing a filter.** Use `--filter nearest` for pixel art / indexed art — it
+blends nothing, adds no new colours, and keeps hard edges crisp. Use
+`--filter lanczos` (the default) for photographs and portraits; `box` is a good
+alternative for clean area-average downscales.
+
+**Pixel aspect.** 320×240 is 4:3, so its pixels display roughly **square**.
+160×240 is 2:3, so its pixels display about **twice as wide as tall** (2:1).
+The clean rule: start from a square-pixel **4:3 master** and resample to the
+exact target grid — the on-screen proportions then come out right in *both*
+modes, because the hardware's horizontal stretch cancels the lost horizontal
+samples in 160-wide mode.
+
+**When the source is not 4:3** (most portrait photos), `--fit` controls it:
+- `stretch` (default) — resample straight to WxH. Correct for a 4:3 master;
+  distorts other aspects.
+- `cover` — centre-crop the source to the on-screen aspect, then resample.
+  Fills the frame with no distortion (trims edges). Best for portraits.
+- `fit` — pad the source to the on-screen aspect (letterbox/pillarbox with
+  `--pad`), then resample. Shows the whole image, no distortion.
+
+`cover` and `fit` use `--display-aspect` (default `4:3`) as the true on-screen
+shape, so the 160-wide 2:1-pixel case is handled correctly without extra math.
+
+Examples:
+
+```
+# portrait photo -> 320x240, crop to fill, high-quality downscale
+python3 palettize4.py portrait.jpg --out build --resize 320x240 --filter lanczos --fit cover
+
+# same portrait into the 2:1-pixel 160-wide mode (still looks 4:3 on screen)
+python3 palettize4.py portrait.jpg --out build --resize 160x240 --filter lanczos --fit cover
+
+# pixel art already at native size, just pack it (no resize)
+python3 palettize4.py sprite.png --out build
+
+# pixel art that must be scaled, keep it crisp
+python3 palettize4.py sprite.png --out build --resize 320x240 --filter nearest
 ```
 
 ---

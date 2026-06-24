@@ -42,6 +42,64 @@ import argparse, os, sys
 import numpy as np
 from PIL import Image
 
+# resampling filters (robust across Pillow versions)
+_R = getattr(Image, "Resampling", Image)
+FILTERS = {
+    "nearest":  _R.NEAREST,   # pixel art / indexed art: no blending, no new colours
+    "box":      _R.BOX,       # pure area-average; good for clean downscales
+    "bilinear": _R.BILINEAR,
+    "hamming":  _R.HAMMING,
+    "bicubic":  _R.BICUBIC,
+    "lanczos":  _R.LANCZOS,   # best general photo downscale
+}
+
+def _parse_wh(s):
+    w, h = s.lower().split("x")
+    return int(w), int(h)
+
+def _parse_aspect(s):
+    if ":" in s:
+        a, b = s.split(":"); return float(a) / float(b)
+    return float(s)
+
+def _parse_rgb(s):
+    s = s.lstrip("#")
+    return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+
+def resize_image(img, target_wh, flt_name, fit, display_aspect, pad):
+    """Resample img to target W,H. `fit` controls aspect handling:
+       stretch -> straight resample to WxH (correct for a 4:3 square-pixel master)
+       cover   -> crop source to the on-screen aspect, then resample (fills frame)
+       fit     -> pad source to the on-screen aspect, then resample (letterbox)
+    cover/fit use `display_aspect` (the TRUE on-screen aspect, default 4:3) so that
+    non-square-pixel modes like 160-wide come out correctly proportioned."""
+    tw, th = target_wh
+    flt = FILTERS[flt_name]
+    if fit == "stretch":
+        return img.resize((tw, th), flt)
+
+    dar = _parse_aspect(display_aspect)
+    sw, sh = img.size
+    src_ar = sw / sh
+    if fit == "cover":
+        if src_ar > dar:                       # source too wide -> crop sides
+            nw = int(round(sh * dar)); x0 = (sw - nw) // 2
+            img = img.crop((x0, 0, x0 + nw, sh))
+        else:                                  # source too tall -> crop top/bottom
+            nh = int(round(sw / dar)); y0 = (sh - nh) // 2
+            img = img.crop((0, y0, sw, y0 + nh))
+        return img.resize((tw, th), flt)
+    else:  # fit (pad)
+        col = _parse_rgb(pad)
+        if src_ar > dar:
+            bw, bh = sw, int(round(sw / dar))
+        else:
+            bw, bh = int(round(sh * dar)), sh
+        canvas = Image.new("RGB", (bw, bh), col)
+        canvas.paste(img, ((bw - sw) // 2, (bh - sh) // 2))
+        return canvas.resize((tw, th), flt)
+
+
 
 # ----------------------------------------------------------------------------
 # colour space: sRGB -> OKLab (perceptual, for k-means + nearest-neighbour)
@@ -152,6 +210,16 @@ def main():
     ap.add_argument("--slots", type=int, default=256, help="entries per palette (default 256)")
     ap.add_argument("--reserve0", action="store_true", help="reserve slot 0 (e.g. transparent) -> 255 usable")
     ap.add_argument("--colors", type=int, default=0, help="pre-quantize source to this many colours (0 = auto = palettes*cap)")
+    ap.add_argument("--resize", default=None, metavar="WxH",
+                    help="resample to WxH before packing, e.g. 320x240 or 160x240")
+    ap.add_argument("--filter", default="lanczos", choices=list(FILTERS),
+                    help="resampling filter (default lanczos; use 'nearest' for pixel art)")
+    ap.add_argument("--fit", default="stretch", choices=["stretch", "cover", "fit"],
+                    help="aspect handling when source AR != display AR (default stretch)")
+    ap.add_argument("--display-aspect", default="4:3", metavar="R",
+                    help="true on-screen aspect for cover/fit (default 4:3; handles non-square pixels e.g. 160-wide modes)")
+    ap.add_argument("--pad", default="000000", metavar="RRGGBB",
+                    help="pad colour (hex) for --fit fit")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
@@ -161,8 +229,11 @@ def main():
     cell_w = args.cell
     os.makedirs(args.out, exist_ok=True)
 
-    # ---- load + extract master colours -------------------------------------
+    # ---- load (+ optional resample) + extract master colours --------------
     img = Image.open(args.input).convert("RGB")
+    if args.resize:
+        img = resize_image(img, _parse_wh(args.resize), args.filter,
+                           args.fit, args.display_aspect, args.pad)
     target = args.colors if args.colors > 0 else NP * cap
     # count uniques first
     arr = np.asarray(img)
@@ -332,6 +403,9 @@ def main():
     lines.append("=" * 48)
     lines.append(f"input            : {args.input}")
     lines.append(f"dimensions       : {W} x {H}  ({total_px} px)")
+    if args.resize:
+        lines.append(f"resampled        : -> {args.resize} via {args.filter} (fit={args.fit}"
+                     + (f", display-aspect={args.display_aspect}" if args.fit != "stretch" else "") + ")")
     lines.append(f"cell width       : {cell_w} px  ->  {cells_per_line} cells/line, {cells_per_line*H} cells")
     lines.append(f"palettes x slots : {NP} x {args.slots}  (usable {cap}/palette"
                  + (", slot 0 reserved" if args.reserve0 else "") + ")")
