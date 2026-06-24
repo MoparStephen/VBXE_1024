@@ -434,7 +434,7 @@ Load_BCB_Message
 .endp
 	ini Load_BCB
 
-	org VBXE_WINDOW + $50				; Load data directly into VBXE RAM
+	org VBXE_WINDOW + $100				; Load data directly into VBXE RAM
 BCB_START
 	icl 'bcbs.asm'
 BLT_Length	equ *-BCB_START

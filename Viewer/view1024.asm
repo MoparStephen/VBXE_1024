@@ -7,7 +7,7 @@
 ; Run Address = 
 ; VBXE:
 ;    XDL         = $00000 - $00014
-;    BCBs        = $00050 - $
+;    BCBs        = $00100 - $
 ;    VRAM        = $01000 - $13BFF (Video Ram)
 ;    CRAM_Buffer = $14000 - $1657F (Compressed palette bytes)
 ;    CRAM        = $17000 - $205FF (Colour Ram)
@@ -126,6 +126,7 @@ Wait_For_Key_Exit_L1
 ;-----------------------------------------------------------------------------
 start
 ; Initialization code can go here
+	jsr Setup_Cmap1
 
 main
 ; All done - now loop forever
@@ -163,6 +164,26 @@ Wait_For_Sync							; Hold until VCOUNT == 0
 	cmp #$2F							; Press Q to quit
 	beq	Exit
 	rts									; Else return to caller
+
+;-----------------------------------------------------------------------------
+; Setup_Cmap1 - Sets byte 4 for all cmap entries via blitter
+;-----------------------------------------------------------------------------
+Setup_Cmap1
+	lda	#BLT_SETUP_CMAP_1-BLT_CLEAR
+	sta	VBXE_BL_ADR0					; Setup the blitter for memory fill operation
+	lda	#0
+	sta	VBXE_BL_ADR2					; See the description of BCB at the end of this
+	lda	#$01							; Source
+	sta	VBXE_BL_ADR1
+	lda	#0
+Setup_Cmap1_L1
+	lda	VBXE_BLITTER_BUSY
+	cmp	#0
+	bne	Setup_Cmap1_L1					; Wait for blitter to finish
+	lda	#1
+	sta	VBXE_BLITTER_START				; Start the blit
+	rts
+
 ;-----------------------------------------------------------------------------
 ; Subroutines END
 ;-----------------------------------------------------------------------------

@@ -9,7 +9,7 @@ Source: view1024.asm
      7 				; Run Address = 
      8 				; VBXE:
      9 				;    XDL         = $00000 - $00014
-    10 				;    BCBs        = $00050 - $
+    10 				;    BCBs        = $00100 - $
     11 				;    VRAM        = $01000 - $13BFF (Video Ram)
     12 				;    CRAM_Buffer = $14000 - $1657F (Compressed palette bytes)
     13 				;    CRAM        = $17000 - $205FF (Colour Ram)
@@ -1485,46 +1485,46 @@ Source: init_vbxe.asm
    434 				.endp
    435 02E2-02E3> 00 33			ini Load_BCB
    436
-   437 					org VBXE_WINDOW + $50				; Load data directly into VBXE RAM
-   438 2050			BCB_START
-   439 2050				icl 'bcbs.asm'
+   437 					org VBXE_WINDOW + $100				; Load data directly into VBXE RAM
+   438 2100			BCB_START
+   439 2100				icl 'bcbs.asm'
 Source: bcbs.asm
      1 				; Clear 496kB (leave bottom 16kB for the SVBXE.SYS driver)
      2 				; 496x16 zoom 8x8 clear blit (this takes 2 frames)
-     3 2050			BLT_CLEAR
-     4 2050-2079> 00 00 00		dta $00,$00,$00						; Source address
-     5 2053 00 00			dta $00,$00							; Source step y
-     6 2055 00				dta $00								; Source step x
-     7 2056 FF BF 07			dta $FF,$BF,$07						; Destination address
-     8 2059 80 F0			dta a(-$0F80)						; Destination step y (backwards 3968 bytes) - NOTE: this equals 496 * zoom factor of 8
-     9 205B FF				dta -$01							; Destination step x (backwards	1 byte)
-    10 205C EF 01			dta $EF,$01							; Width-1  (495)	496 * 8 bytes wide
-    11 205E 0F				dta $0F								; Height-1 (15)		 16 * 8 bytes high
-    12 205F 00				dta $00								; And mask (And mask equal to 0 so clear)
-    13 2060 00				dta $00								; Xor mask (will be filled with xor mask)
-    14 2061 00				dta $00								; Collision and mask
-    15 2062 77				dta $77								; Zoom (BLT_ZOOMY = 7, BLT_ZOOMX = 7 so 8Y*8X)
-    16 2063 00				dta $00								; Pattern feature
-    17 2064 00				dta $00								; Control (Mode 0 with NEXT bit Cleared)
+     3 2100			BLT_CLEAR
+     4 2100-2129> 00 00 00		dta $00,$00,$00						; Source address
+     5 2103 00 00			dta $00,$00							; Source step y
+     6 2105 00				dta $00								; Source step x
+     7 2106 FF BF 07			dta $FF,$BF,$07						; Destination address
+     8 2109 80 F0			dta a(-$0F80)						; Destination step y (backwards 3968 bytes) - NOTE: this equals 496 * zoom factor of 8
+     9 210B FF				dta -$01							; Destination step x (backwards	1 byte)
+    10 210C EF 01			dta $EF,$01							; Width-1  (495)	496 * 8 bytes wide
+    11 210E 0F				dta $0F								; Height-1 (15)		 16 * 8 bytes high
+    12 210F 00				dta $00								; And mask (And mask equal to 0 so clear)
+    13 2110 00				dta $00								; Xor mask (will be filled with xor mask)
+    14 2111 00				dta $00								; Collision and mask
+    15 2112 77				dta $77								; Zoom (BLT_ZOOMY = 7, BLT_ZOOMX = 7 so 8Y*8X)
+    16 2113 00				dta $00								; Pattern feature
+    17 2114 00				dta $00								; Control (Mode 0 with NEXT bit Cleared)
     18
     19 				; Fill the ColourMap area ($17000-$) with the MAP OV palette every 4 bytes
     20 				; This sets up the Palette & Priority bytes for the entire Colour Map
     21 				; GTIA/ANTIC is not used at all so these bytes will always be $00
-    22 2065			BLT_SETUP_CMAP_1
-    23 2065 00 40 01			dta $00,$40,$01						; Source address ($14000)
-    24 2068 40 01			dta $40,$01							; Source step y
-    25 206A 01				dta $01								; Source step x
-    26 206B 03 70 01			dta $03,$70,$01						; Destination address ($17003)
-    27 206E 40 01			dta $40,$01							; Destination step y
-    28 2070 04				dta $04								; Destination step x
-    29 2071 3F 01			dta $3F,$01							; Width ($140)
-    30 2073 EF				dta $EF								; Height ($F0)
-    31 2074 30				dta %00110000						; And mask (Clear all but bits 5 and 4 i.e., only set MAP OV palette)
-    32 2075 00				dta $00								; Xor mask (Direct Copy)
-    33 2076 00				dta $00								; Collision and mask
-    34 2077 00				dta $00								; Zoom
-    35 2078 00				dta $00								; Pattern feature
-    36 2079 00				dta $00								; Control
+    22 2115			BLT_SETUP_CMAP_1
+    23 2115 00 40 01			dta $00,$40,$01						; Source address ($14000)
+    24 2118 40 01			dta $40,$01							; Source step y
+    25 211A 01				dta $01								; Source step x
+    26 211B 03 70 01			dta $03,$70,$01						; Destination address ($17003)
+    27 211E 40 01			dta $40,$01							; Destination step y
+    28 2120 04				dta $04								; Destination step x
+    29 2121 3F 01			dta $3F,$01							; Width ($140)
+    30 2123 EF				dta $EF								; Height ($F0)
+    31 2124 30				dta %00110000						; And mask (Clear all but bits 5 and 4 i.e., only set MAP OV palette)
+    32 2125 00				dta $00								; Xor mask (Direct Copy)
+    33 2126 00				dta $00								; Collision and mask
+    34 2127 00				dta $00								; Zoom
+    35 2128 00				dta $00								; Pattern feature
+    36 2129 00				dta $00								; Control
    440 = 002A			BLT_Length	equ *-BCB_START
    441
    442 				; Step $07 - Load VBXE Palette #1
@@ -1916,47 +1916,68 @@ Source: init_vbxe.asm
    126 				;-----------------------------------------------------------------------------
    127 3300			start
    128 				; Initialization code can go here
-   129
-   130 3300			main
-   131 				; All done - now loop forever
-   132 3300-3305> 20 0E 33		jsr Wait_For_Sync					; Wait for VSYNC, Q quits
-   133 3303 4C 00 33			jmp main
-   134
-   135 				; Set RUN Vector
-   136 02E0-02E1> 00 33			run start
-   137
-   138 				;-----------------------------------------------------------------------------
-   139 				; Clean up and exit
-   140 				;-----------------------------------------------------------------------------
-   141 3306			Exit
-   142 3306-331F> A9 FF			lda #$FF
-   143 3308 8D FC 02			sta CH								; Clear last key pressed
-   144 330B 6C 0A 00			jmp	(DOSVEC)
-   145
-   146 				;-----------------------------------------------------------------------------
-   147 				; END OF CODE
-   148 				;-----------------------------------------------------------------------------
-   149
-   150 				;-----------------------------------------------------------------------------
-   151 				; Subroutines BEGIN
-   152 				;-----------------------------------------------------------------------------
+   129 3300-3308> 20 23 33		jsr Setup_Cmap1
+   130
+   131 3303			main
+   132 				; All done - now loop forever
+   133 3303 20 11 33			jsr Wait_For_Sync					; Wait for VSYNC, Q quits
+   134 3306 4C 03 33			jmp main
+   135
+   136 				; Set RUN Vector
+   137 02E0-02E1> 00 33			run start
+   138
+   139 				;-----------------------------------------------------------------------------
+   140 				; Clean up and exit
+   141 				;-----------------------------------------------------------------------------
+   142 3309			Exit
+   143 3309-3340> A9 FF			lda #$FF
+   144 330B 8D FC 02			sta CH								; Clear last key pressed
+   145 330E 6C 0A 00			jmp	(DOSVEC)
+   146
+   147 				;-----------------------------------------------------------------------------
+   148 				; END OF CODE
+   149 				;-----------------------------------------------------------------------------
+   150
+   151 				;-----------------------------------------------------------------------------
+   152 				; Subroutines BEGIN
    153 				;-----------------------------------------------------------------------------
-   154 				; Wait For VSync (locks to the refresh rate, PAL=50Hz, NTSC=60Hz)  Thanks tebe
-   155 				;-----------------------------------------------------------------------------
-   156 330E			Wait_For_Sync							; Hold until VCOUNT == 0
-   157 330E 2C 0B D4			bit	VCOUNT
-   158 3311 30 FB			bmi *-3
-   159 3313 2C 0B D4			bit	VCOUNT
-   160 3316 10 FB			bpl *-3
-   161 				; If present, the next 3 lines will allow a "jump to exit" on a specific key press
-   162 3318 AD FC 02			lda CH
-   163 331B C9 2F			cmp #$2F							; Press Q to quit
-   164 331D F0 E7			beq	Exit
-   165 331F 60				rts									; Else return to caller
-   166 				;-----------------------------------------------------------------------------
-   167 				; Subroutines END
+   154 				;-----------------------------------------------------------------------------
+   155 				; Wait For VSync (locks to the refresh rate, PAL=50Hz, NTSC=60Hz)  Thanks tebe
+   156 				;-----------------------------------------------------------------------------
+   157 3311			Wait_For_Sync							; Hold until VCOUNT == 0
+   158 3311 2C 0B D4			bit	VCOUNT
+   159 3314 30 FB			bmi *-3
+   160 3316 2C 0B D4			bit	VCOUNT
+   161 3319 10 FB			bpl *-3
+   162 				; If present, the next 3 lines will allow a "jump to exit" on a specific key press
+   163 331B AD FC 02			lda CH
+   164 331E C9 2F			cmp #$2F							; Press Q to quit
+   165 3320 F0 E7			beq	Exit
+   166 3322 60				rts									; Else return to caller
+   167
    168 				;-----------------------------------------------------------------------------
-   169
+   169 				; Setup_Cmap1 - Sets byte 4 for all cmap entries via blitter
    170 				;-----------------------------------------------------------------------------
-   171 				; Data Tables go here
-   172 				;-----------------------------------------------------------------------------
+   171 3323			Setup_Cmap1
+   172 3323 A9 15			lda	#BLT_SETUP_CMAP_1-BLT_CLEAR
+   173 3325 8D 50 D6			sta	VBXE_BL_ADR0					; Setup the blitter for memory fill operation
+   174 3328 A9 00			lda	#0
+   175 332A 8D 52 D6			sta	VBXE_BL_ADR2					; See the description of BCB at the end of this
+   176 332D A9 01			lda	#$01							; Source
+   177 332F 8D 51 D6			sta	VBXE_BL_ADR1
+   178 3332 A9 00			lda	#0
+   179 3334			Setup_Cmap1_L1
+   180 3334 AD 53 D6			lda	VBXE_BLITTER_BUSY
+   181 3337 C9 00			cmp	#0
+   182 3339 D0 F9			bne	Setup_Cmap1_L1					; Wait for blitter to finish
+   183 333B A9 01			lda	#1
+   184 333D 8D 53 D6			sta	VBXE_BLITTER_START				; Start the blit
+   185 3340 60				rts
+   186
+   187 				;-----------------------------------------------------------------------------
+   188 				; Subroutines END
+   189 				;-----------------------------------------------------------------------------
+   190
+   191 				;-----------------------------------------------------------------------------
+   192 				; Data Tables go here
+   193 				;-----------------------------------------------------------------------------
