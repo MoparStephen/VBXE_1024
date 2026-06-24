@@ -98,6 +98,35 @@ python3 palettize4.py myart.png --out build --colors 960
 
 ---
 
+## Input formats
+
+The input does **not** have to be a PNG. The file is opened with Pillow and
+immediately converted to RGB, so any format Pillow can decode is accepted —
+on a normal install that includes **JPEG, PNG, BMP, GIF, TIFF, WebP, TGA,
+PCX, ICO, PPM/PNM** and more. Format is detected from the file contents, not
+the extension, so the filename's extension does not have to match.
+
+```
+python3 palettize4.py portrait.jpg --out build --resize 320x240 --filter lanczos --fit cover
+python3 palettize4.py sprite.bmp   --out build --resize 320x240 --filter nearest
+```
+
+Caveats:
+
+- **Transparency is flattened.** Converting to RGB drops the alpha channel; an
+  RGBA PNG or a GIF with a transparent index is composited to opaque (transparent
+  areas typically become black). If you need a key colour, handle it yourself and
+  consider `--reserve0` so the packer leaves slot 0 free.
+- **Prefer lossless originals for photos.** JPEG compression adds subtle colour
+  noise across smooth regions (skin tones, gradients), inflating the unique-colour
+  count and pushing portraits deeper into the lossy Phase B. If you have the image
+  as PNG/TIFF/BMP, feed that instead of a re-saved JPEG. JPEG still works — just
+  check the substitution percentage in `report.txt`.
+- **First frame only.** Animated GIFs and multi-page TIFFs are read as their
+  first frame. Video and vector formats are not supported.
+
+---
+
 ## Resizing and pixel aspect ratio
 
 The packer works pixel-for-pixel: without `--resize` the source must already be
