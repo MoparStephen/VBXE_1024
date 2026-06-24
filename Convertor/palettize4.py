@@ -32,7 +32,7 @@ Outputs (into --out dir)
   palette1.pal     ...
   palette2.pal
   palette3.pal
-  attrib.map     one byte per cell (palette id 0-3), sequential row-major
+  attrib.map     one byte per cell, palette id (0-3) * 16 -> 0,16,32,48; row-major
   preview.png    reconstruction as the hardware would show it
   palettes.png   swatch sheet of the palettes
   report.txt     statistics and any quality warnings
@@ -383,8 +383,8 @@ def main():
     # palette#.pal : 256 entries x (R,G,B) = 768 bytes each
     for b in range(NP):
         pal_rgb[b].astype(np.uint8).tofile(os.path.join(args.out, f"palette{b}.pal"))
-    # attrib.map : one byte per cell (palette 0-3), sequential row-major over cells
-    cell_pal.astype(np.uint8).tofile(os.path.join(args.out, "attrib.map"))
+    # attrib.map : one byte per cell, palette id (0-3) << 4  ->  0,16,32,48
+    (cell_pal * 16).astype(np.uint8).tofile(os.path.join(args.out, "attrib.map"))
     # human-facing previews
     Image.fromarray(out_rgb, "RGB").save(os.path.join(args.out, "preview.png"))
 

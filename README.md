@@ -184,7 +184,7 @@ Written into the `--out` directory:
 | `palette1.pal`  | 768 bytes            | same                                                         |
 | `palette2.pal`  | 768 bytes            | same                                                         |
 | `palette3.pal`  | 768 bytes            | same                                                         |
-| `attrib.map`    | cells × height bytes | One byte per cell (palette **0–3**), sequential row-major.   |
+| `attrib.map`    | cells × height bytes | One byte per cell: palette id (0–3) **× 16** → `0,16,32,48`. Sequential row-major. |
 | `preview.png`   | —                    | Reconstruction as the hardware would display it.            |
 | `palettes.png`  | —                    | Swatch sheet of all palettes (visual reference).            |
 | `report.txt`    | —                    | Stats: components, lossless/lossy, substitution error, etc. |
@@ -196,7 +196,9 @@ and are not part of the data the hardware consumes.
 - **`image.raw`** is laid out one full scanline at a time, left to right, top to
   bottom.
 - **`attrib.map`** matches that order: all of scanline 0's cells (left to
-  right), then scanline 1's, and so on. Cells-per-line is
+  right), then scanline 1's, and so on. Each byte holds the palette id (0–3)
+  shifted into the high nibble, i.e. multiplied by 16, giving `0,16,32,48`
+  (so the palette number sits in bits 4–7). Cells-per-line is
   `ceil(width / cell_width)`; if the width is not a multiple of the cell width,
   the last cell of each line simply covers the remaining pixels.
 - **`palette#.pal`** stores three straight 8-bit bytes per entry in R, G, B
@@ -208,7 +210,7 @@ For each pixel `(x, y)`:
 
 ```
 cell     = x / cell_width
-palette  = attrib.map[y * cells_per_line + cell]
+palette  = attrib.map[y * cells_per_line + cell] / 16    # high nibble -> 0..3
 index    = image.raw[y * width + x]
 colour   = palette#{palette}.pal[index * 3 .. index * 3 + 2]   # R, G, B
 ```
