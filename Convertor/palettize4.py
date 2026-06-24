@@ -418,6 +418,7 @@ def main():
 
     # ---- report -------------------------------------------------------------
     total_px = H * W
+    unique_out = len(np.unique(out_rgb.reshape(-1, 3), axis=0))
     lines = []
     lines.append("palettize4 report")
     lines.append("=" * 48)
@@ -434,6 +435,7 @@ def main():
     if prequant:
         lines.append(f"pre-quantized    : source exceeded {NP*cap} colours -> reduced to {N}")
     lines.append(f"master colours   : {N}")
+    lines.append(f"output colours   : {unique_out}  (distinct RGB on screen)")
     lines.append(f"components        : {ncomp}  (largest = {max_comp})")
     lines.append("")
     if lossless:
