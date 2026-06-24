@@ -21,10 +21,10 @@ BLT_CLEAR
 ; The 3 zero bytes before each data byte are left intact from BLT_SETUP_CMAP_1
 BLT_SETUP_CMAP_1
 	dta $00,$40,$01						; Source address ($14000)
-	dta $00,$00							; Source step y (0 - sequential)
+	dta $28,$00							; Source step y = 40 (advance to next row: 40 cells * 1 byte)
 	dta $01								; Source step x (1)
 	dta $03,$70,$01						; Destination address ($17003)
-	dta $00,$00							; Destination step y (0 - sequential at stride 4)
+	dta $A0,$00							; Destination step y = 160 (advance to next row: 40 cells * 4 bytes)
 	dta $04								; Destination step x (4)
 	dta $27,$00							; Width-1 = 39   (40 cells/row)
 	dta $EF								; Height-1 = 239 (240 rows; 40*240 = 9600)

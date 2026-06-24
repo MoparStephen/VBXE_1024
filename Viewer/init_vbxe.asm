@@ -717,9 +717,6 @@ Load_Attrib_2_Message
 Attrib2
 	ins 'Assets\attrib2.map'
 
-
-
-/*
 ; Do this last because setting Palette 0 will kill text output from VBXE
 ; Note, our code must reset Palette 0 to "stock" on program exit else a power cycle will be needed
 ; Step $## - Load VBXE Palette #0
@@ -767,5 +764,3 @@ Palette
 
 .endp
 	ini Load_Palette0
-*/
-

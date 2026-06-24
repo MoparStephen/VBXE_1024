@@ -128,6 +128,18 @@ start
 ; Initialization code can go here
 	jsr Setup_Cmap1
 
+	lda	#0								; Setup VBXE for displaying picture data
+	sta	VBXE_XDL_ADR0					; But don't show the overlay just yet!
+	sta	VBXE_XDL_ADR2
+	sta	VBXE_XDL_ADR1
+
+	lda	#$00
+	sta SDMCTL							; Turn ANTIC DMA off
+
+	lda	#%00000011						; XDL,XCOLOR Enabled and transparent color index 0
+	sta	VBXE_VIDEO_CONTROL
+	jsr Wait_For_Sync
+
 main
 ; All done - now loop forever
 	jsr Wait_For_Sync					; Wait for VSYNC, Q quits
