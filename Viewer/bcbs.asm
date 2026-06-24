@@ -16,19 +16,20 @@ BLT_CLEAR
 	dta $00								; Pattern feature
 	dta $00								; Control (Mode 0 with NEXT bit Cleared)
 
-; Fill the ColourMap area ($14000-$) with $50 every 4 bytes
+; Fill the ColourMap area ($17000-$) with the MAP OV palette every 4 bytes
 ; This sets up the Palette & Priority bytes for the entire Colour Map
+; GTIA/ANTIC is not used at all so these bytes will always be $00
 BLT_SETUP_CMAP_1
-	dta $00,$00,$00						; Source address
-	dta $00,$00							; Source step y
-	dta $00								; Source step x
-	dta $03,$40,$01						; Destination address ($14003)
+	dta $00,$40,$01						; Source address ($14000)
+	dta $40,$01							; Source step y
+	dta $01								; Source step x
+	dta $03,$70,$01						; Destination address ($17003)
 	dta $40,$01							; Destination step y
 	dta $04								; Destination step x
 	dta $3F,$01							; Width ($140)
 	dta $EF								; Height ($F0)
-	dta $00								; And mask
-	dta $50								; Xor mask
+	dta %00110000						; And mask (Clear all but bits 5 and 4 i.e., only set MAP OV palette)
+	dta $00								; Xor mask (Direct Copy)
 	dta $00								; Collision and mask
 	dta $00								; Zoom
 	dta $00								; Pattern feature

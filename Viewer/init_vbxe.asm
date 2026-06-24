@@ -576,31 +576,150 @@ Palette
 
 .endp
 	ini Load_Palette3
-/*
-; RENUMBER THIS
-; Step $0A - Load the image into VBXE RAM starting at bank $01
+
+; We're loading these large files in chunks so that we can bump the progress bar with each 4kB chunk
+
+; Step $0A - Load the ColourMap into VBXE RAM starting at bank $14
 	org LOAD_ADDRESS + $300
-.proc Load_Image_1
-	lda	#$40 | MEMAC_GLOBAL_ENABLE		; Bank $41 VBXE Window Enabled
+.proc Load_Attrib_0
+	lda #$14
+	sta Reg1							; Temp storage
+
+	lda	Reg1
+	eor #MEMAC_GLOBAL_ENABLE			; Bank $14 VBXE Window Enabled
 	vbsta VBXE_MA_BSEL
 
-	; jsr Wait_For_Key_Exit
+; Print Load_Palette_Message - line 3 (y = $79)
+	ldy #$79
+	ldx #$00
+Print_Load_Attrib_0_Message_L1
+	lda Load_Attrib_0_Message,x
+	sta (Ptr_Lo),y
+	inx
+	iny
+	cpx #$21							; Copy $21 characters
+	bne Print_Load_Attrib_0_Message_L1
 
+; Update Progress bar - line 5 (y = $CB + (4 * increment #))
+	ldy Reg1
+	lda #$54							; Screen RAM code for Ctrl+T
+	sta (Ptr_Lo),y
+	iny
+	sta (Ptr_Lo),y
+	iny
+	sta (Ptr_Lo),y
+	iny
+	sta (Ptr_Lo),y
+	iny
+	sty Reg1							; Save pointer for progress bar updates
+
+	; jsr Wait_For_Key_Exit
+	inc Reg1							; Increment bank1 for next chunk
 	rts									; Return controll to loader
 
-Load_Image_1_Message
-	.sb 'Loading image#.raw              '
-
-.endp
-	ini Load_Image_1
+Load_Attrib_0_Message
+	.sb 'Loading attrib0.map              '
 
 	org VBXE_WINDOW						; Load data directly into VBXE RAM
-Fujis1
-	ins 'Assets\Fuji1.raw'
+Attrib0
+	ins 'Assets\attrib0.map'
 
 .endp
-	ini Load_Image_1
-*/
+	ini Load_Attrib_0
+
+; Step $0B - Load the ColourMap into VBXE RAM starting at bank $15
+	org LOAD_ADDRESS + $300
+.proc Load_Attrib_1
+	lda	Reg1
+	eor #MEMAC_GLOBAL_ENABLE			; Bank $15 VBXE Window Enabled
+	vbsta VBXE_MA_BSEL
+
+; Print Load_Palette_Message - line 3 (y = $79)
+	ldy #$79
+	ldx #$00
+Print_Load_Attrib_1_Message_L1
+	lda Load_Attrib_1_Message,x
+	sta (Ptr_Lo),y
+	inx
+	iny
+	cpx #$21							; Copy $21 characters
+	bne Print_Load_Attrib_1_Message_L1
+
+; Update Progress bar - line 5 (y = $CB + (4 * increment #))
+	ldy Reg1
+	lda #$54							; Screen RAM code for Ctrl+T
+	sta (Ptr_Lo),y
+	iny
+	sta (Ptr_Lo),y
+	iny
+	sta (Ptr_Lo),y
+	iny
+	sta (Ptr_Lo),y
+	iny
+	sty Reg1							; Save pointer for progress bar updates
+
+
+	; jsr Wait_For_Key_Exit
+	inc Reg1							; Increment bank2 for next chunk
+	rts									; Return controll to loader
+
+Load_Attrib_1_Message
+	.sb 'Loading attrib1.map              '
+
+	org VBXE_WINDOW						; Load data directly into VBXE RAM
+Attrib1
+	ins 'Assets\attrib1.map'
+
+.endp
+	ini Load_Attrib_1
+
+; Step $0C - Load the ColourMap into VBXE RAM starting at bank $15
+	org LOAD_ADDRESS + $300
+.proc Load_Attrib_2
+	lda	Reg1
+	eor #MEMAC_GLOBAL_ENABLE			; Bank $15 VBXE Window Enabled
+	vbsta VBXE_MA_BSEL
+
+; Print Load_Palette_Message - line 3 (y = $79)
+	ldy #$79
+	ldx #$00
+Print_Load_Attrib_2_Message_L1
+	lda Load_Attrib_2_Message,x
+	sta (Ptr_Lo),y
+	inx
+	iny
+	cpx #$21							; Copy $21 characters
+	bne Print_Load_Attrib_2_Message_L1
+
+; Update Progress bar - line 5 (y = $CB + (4 * increment #))
+	ldy Reg1
+	lda #$54							; Screen RAM code for Ctrl+T
+	sta (Ptr_Lo),y
+	iny
+	sta (Ptr_Lo),y
+	iny
+	sta (Ptr_Lo),y
+	iny
+	sta (Ptr_Lo),y
+	iny
+	sty Reg1							; Save pointer for progress bar updates
+
+
+	; jsr Wait_For_Key_Exit
+	inc Reg1							; Increment bank3 for next chunk
+	rts									; Return controll to loader
+
+Load_Attrib_2_Message
+	.sb 'Loading attrib2.map              '
+
+	org VBXE_WINDOW						; Load data directly into VBXE RAM
+Attrib2
+	ins 'Assets\attrib2.map'
+
+.endp
+	ini Load_Attrib_2
+
+
 
 /*
 ; Do this last because setting Palette 0 will kill text output from VBXE
