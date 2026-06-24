@@ -66,17 +66,19 @@ def _parse_rgb(s):
     s = s.lstrip("#")
     return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
 
-def resize_image(img, target_wh, flt_name, fit, display_aspect, pad):
-    """Resample img to target W,H. `fit` controls aspect handling:
+def resize_image(img, target_wh, flt_name, fit, display_aspect):
+    """Resample img to target W,H. Returns (image, pad_mask) where pad_mask is a
+    HxW bool array (True = letterbox/pillarbox padding -> index 0/transparent),
+    or None when nothing is padded.
        stretch -> straight resample to WxH (correct for a 4:3 square-pixel master)
        cover   -> crop source to the on-screen aspect, then resample (fills frame)
-       fit     -> pad source to the on-screen aspect, then resample (letterbox)
+       fit     -> resample source into a centred box, pad the rest (letterbox)
     cover/fit use `display_aspect` (the TRUE on-screen aspect, default 4:3) so that
     non-square-pixel modes like 160-wide come out correctly proportioned."""
     tw, th = target_wh
     flt = FILTERS[flt_name]
     if fit == "stretch":
-        return img.resize((tw, th), flt)
+        return img.resize((tw, th), flt), None
 
     dar = _parse_aspect(display_aspect)
     sw, sh = img.size
@@ -88,16 +90,25 @@ def resize_image(img, target_wh, flt_name, fit, display_aspect, pad):
         else:                                  # source too tall -> crop top/bottom
             nh = int(round(sw / dar)); y0 = (sh - nh) // 2
             img = img.crop((0, y0, sw, y0 + nh))
-        return img.resize((tw, th), flt)
-    else:  # fit (pad)
-        col = _parse_rgb(pad)
-        if src_ar > dar:
-            bw, bh = sw, int(round(sw / dar))
-        else:
-            bw, bh = int(round(sh * dar)), sh
-        canvas = Image.new("RGB", (bw, bh), col)
-        canvas.paste(img, ((bw - sw) // 2, (bh - sh) // 2))
-        return canvas.resize((tw, th), flt)
+        return img.resize((tw, th), flt), None
+
+    # fit (letterbox / pillarbox), computed directly in target-grid space.
+    # PAR = on-screen pixel width/height; the source (square-pixel aspect src_ar)
+    # must occupy a target rectangle gw x gh with (gw*PAR)/gh == src_ar.
+    par = dar * th / tw
+    gw = tw
+    gh = int(round(gw * par / src_ar))
+    if gh > th:                                # too tall -> fit by height instead
+        gh = th
+        gw = int(round(gh * src_ar / par))
+    gw = max(1, min(tw, gw)); gh = max(1, min(th, gh))
+    inner = img.resize((gw, gh), flt)
+    canvas = Image.new("RGB", (tw, th), (0, 0, 0))
+    ox, oy = (tw - gw) // 2, (th - gh) // 2
+    canvas.paste(inner, (ox, oy))
+    mask = np.ones((th, tw), dtype=bool)       # True = padding
+    mask[oy:oy + gh, ox:ox + gw] = False
+    return canvas, mask
 
 
 
@@ -208,18 +219,17 @@ def main():
     ap.add_argument("--cell", type=int, default=8, help="pixels per palette-override cell (default 8)")
     ap.add_argument("--palettes", type=int, default=4, help="number of palettes (default 4)")
     ap.add_argument("--slots", type=int, default=256, help="entries per palette (default 256)")
-    ap.add_argument("--reserve0", action="store_true", help="reserve slot 0 (e.g. transparent) -> 255 usable")
+    ap.add_argument("--reserve0", action=argparse.BooleanOptionalAction, default=True,
+                    help="reserve slot 0 as transparent in every palette -> 255 usable (on by default; use --no-reserve0 to disable)")
     ap.add_argument("--colors", type=int, default=0, help="pre-quantize source to this many colours (0 = auto = palettes*cap)")
     ap.add_argument("--resize", default=None, metavar="WxH",
                     help="resample to WxH before packing, e.g. 320x240 or 160x240")
     ap.add_argument("--filter", default="lanczos", choices=list(FILTERS),
                     help="resampling filter (default lanczos; use 'nearest' for pixel art)")
     ap.add_argument("--fit", default="stretch", choices=["stretch", "cover", "fit"],
-                    help="aspect handling when source AR != display AR (default stretch)")
+                    help="aspect handling when source AR != display AR (default stretch); 'fit' letterboxes with transparent index 0")
     ap.add_argument("--display-aspect", default="4:3", metavar="R",
                     help="true on-screen aspect for cover/fit (default 4:3; handles non-square pixels e.g. 160-wide modes)")
-    ap.add_argument("--pad", default="000000", metavar="RRGGBB",
-                    help="pad colour (hex) for --fit fit")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
@@ -231,13 +241,17 @@ def main():
 
     # ---- load (+ optional resample) + extract master colours --------------
     img = Image.open(args.input).convert("RGB")
+    pad_mask = None
     if args.resize:
-        img = resize_image(img, _parse_wh(args.resize), args.filter,
-                           args.fit, args.display_aspect, args.pad)
+        img, pad_mask = resize_image(img, _parse_wh(args.resize), args.filter,
+                                     args.fit, args.display_aspect)
     target = args.colors if args.colors > 0 else NP * cap
     # count uniques first
     arr = np.asarray(img)
     H, W, _ = arr.shape
+    # transparent (letterbox/pillarbox) pixels -> always index 0
+    transparent = pad_mask if pad_mask is not None else np.zeros((H, W), dtype=bool)
+    tflat = transparent.reshape(-1)
     uniq, inv0, ucounts = np.unique(arr.reshape(-1, 3), axis=0,
                                     return_inverse=True, return_counts=True)
     inv0 = inv0.reshape(-1)
@@ -254,17 +268,20 @@ def main():
     pix = inv.reshape(H, W)              # colour id per pixel
     N = len(colors)
     colors_lab = rgb_to_oklab(colors)
-    color_count = np.bincount(inv, minlength=N)
+    color_count = np.bincount(inv[~tflat], minlength=N)   # ignore transparent
 
     cells_per_line = (W + cell_w - 1) // cell_w
 
     # ---- precompute per-cell unique colours + build co-occurrence ----------
+    # transparent pixels contribute no colour to a cell (they become index 0)
     dsu = DSU(N)
     cells = []   # (y, cx, unique_color_ids ndarray)
     for y in range(H):
         row = pix[y]
+        trow = transparent[y]
         for cx in range(cells_per_line):
-            seg = row[cx * cell_w: (cx + 1) * cell_w]
+            a, b = cx * cell_w, (cx + 1) * cell_w
+            seg = row[a:b][~trow[a:b]]
             u = np.unique(seg)
             cells.append((y, cx, u))
             if len(u) > 1:
@@ -337,9 +354,9 @@ def main():
         # palette membership per pixel (expand cells across width)
         pal_pp = np.repeat(cell_pal, cell_w, axis=1)[:, :W]
 
-        # resolve over-capacity palettes by substitution
+        # resolve over-capacity palettes by substitution (ignore transparent px)
         for b in range(NP):
-            mask = pal_pp == b
+            mask = (pal_pp == b) & (~transparent)
             cc = np.bincount(pix[mask].ravel(), minlength=N)
             used = np.nonzero(cc)[0]
             if len(used) <= cap:
@@ -369,13 +386,16 @@ def main():
 
     # ---- emit indices + reconstruction -------------------------------------
     pal_pp = np.repeat(cell_pal, cell_w, axis=1)[:, :W]
-    out_idx = np.zeros((H, W), dtype=np.uint8)
+    out_idx = np.zeros((H, W), dtype=np.uint8)   # transparent pixels stay 0
     out_rgb = np.zeros((H, W, 3), dtype=np.uint8)
     for b in range(NP):
-        mask = pal_pp == b
+        mask = (pal_pp == b) & (~transparent)
         cids = remaps[b][pix[mask]]
         out_idx[mask] = slot_of[b, cids]
         out_rgb[mask] = colors[cids]
+    # transparent (letterbox) pixels: index 0, shown as palette slot 0 (black)
+    out_idx[transparent] = 0
+    out_rgb[transparent] = pal_rgb[0, 0]
 
     # ---- write files --------------------------------------------------------
     # image.raw : one byte per pixel, row-major
@@ -408,7 +428,9 @@ def main():
                      + (f", display-aspect={args.display_aspect}" if args.fit != "stretch" else "") + ")")
     lines.append(f"cell width       : {cell_w} px  ->  {cells_per_line} cells/line, {cells_per_line*H} cells")
     lines.append(f"palettes x slots : {NP} x {args.slots}  (usable {cap}/palette"
-                 + (", slot 0 reserved" if args.reserve0 else "") + ")")
+                 + (", slot 0 = transparent" if args.reserve0 else "") + ")")
+    if int(transparent.sum()):
+        lines.append(f"transparent px   : {int(transparent.sum())} letterbox/pillarbox -> index 0")
     if prequant:
         lines.append(f"pre-quantized    : source exceeded {NP*cap} colours -> reduced to {N}")
     lines.append(f"master colours   : {N}")

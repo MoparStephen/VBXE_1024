@@ -78,13 +78,12 @@ Requires Python 3 with `numpy` and `Pillow` (`pip install numpy pillow`).
 | `--cell N`    | `8`     | Pixels per attribute cell.                                     |
 | `--palettes N`| `4`     | Number of palettes.                                            |
 | `--slots N`   | `256`   | Entries per palette.                                           |
-| `--reserve0`  | off     | Keep slot 0 unused (e.g. transparent); 255 usable per palette. |
+| `--reserve0` / `--no-reserve0` | on | Reserve slot 0 as transparent in every palette (255 usable). On by default. |
 | `--colors N`  | auto    | Pre-quantize the source to N colours (auto = palettes × slots).|
 | `--resize WxH`| off     | Resample to WxH before packing, e.g. `320x240` or `160x240`.   |
 | `--filter F`  | lanczos | Resampling filter: `nearest box bilinear hamming bicubic lanczos`. |
 | `--fit MODE`  | stretch | Aspect handling: `stretch`, `cover`, or `fit` (see below).      |
 | `--display-aspect R` | 4:3 | True on-screen aspect for `cover`/`fit`, e.g. `4:3`.      |
-| `--pad RRGGBB`| 000000  | Pad colour (hex) used by `--fit fit`.                          |
 | `--seed N`    | `0`     | RNG seed for the k-means seeding in Phase B.                   |
 
 If the source has more than `palettes × slots` unique colours it is first
@@ -113,10 +112,10 @@ python3 palettize4.py sprite.bmp   --out build --resize 320x240 --filter nearest
 
 Caveats:
 
-- **Transparency is flattened.** Converting to RGB drops the alpha channel; an
-  RGBA PNG or a GIF with a transparent index is composited to opaque (transparent
-  areas typically become black). If you need a key colour, handle it yourself and
-  consider `--reserve0` so the packer leaves slot 0 free.
+- **Source alpha is flattened.** Converting to RGB drops the input's alpha
+  channel; an RGBA PNG or a GIF with a transparent index is composited to opaque
+  (transparent areas typically become black) before packing. The output's own
+  transparency is index 0 (see below), independent of the source alpha.
 - **Prefer lossless originals for photos.** JPEG compression adds subtle colour
   noise across smooth regions (skin tones, gradients), inflating the unique-colour
   count and pushing portraits deeper into the lossy Phase B. If you have the image
@@ -149,8 +148,10 @@ samples in 160-wide mode.
   distorts other aspects.
 - `cover` — centre-crop the source to the on-screen aspect, then resample.
   Fills the frame with no distortion (trims edges). Best for portraits.
-- `fit` — pad the source to the on-screen aspect (letterbox/pillarbox with
-  `--pad`), then resample. Shows the whole image, no distortion.
+- `fit` — letterbox/pillarbox the source to the on-screen aspect, then resample.
+  Shows the whole image, no distortion. The padding bars are written as
+  **index 0 (transparent)** in every palette, so they read as the background
+  rather than consuming a real palette colour.
 
 `cover` and `fit` use `--display-aspect` (default `4:3`) as the true on-screen
 shape, so the 160-wide 2:1-pixel case is handled correctly without extra math.
@@ -205,6 +206,15 @@ and are not part of the data the hardware consumes.
   order. If your palette hardware expects a packed form (e.g. 12-bit `0RGB` or
   15-bit BGR) the writer needs a small change.
 
+### Transparency (slot 0)
+By default (`--reserve0`, on) **slot 0 is reserved as transparent in every
+palette** and never assigned to a real colour, leaving 255 usable entries per
+palette. Pixel index 0 therefore means "transparent / background" regardless of
+which palette a cell uses. The reconstruction stores `(0,0,0)` there so previews
+show it as black. Letterbox/pillarbox bars from `--fit fit` are written as index
+0 so they read as transparent. Pass `--no-reserve0` to disable this and reclaim
+the 256th slot (do this only if you do not need a transparent index).
+
 ### Reconstructing in code (reference)
 For each pixel `(x, y)`:
 
@@ -242,8 +252,9 @@ These are deliberately left as defaults until verified:
 2. **Palette entry format** — currently three full 8-bit RGB bytes (768 bytes
    per palette). Confirm whether the hardware wants packed/reduced-depth
    entries or a different channel order.
-3. **Reserved indices** — if index 0 (or any slot) is special (transparent /
-   border), run with `--reserve0` so the packer never assigns it.
+3. **Reserved indices** — slot 0 is reserved as transparent by default
+   (`--reserve0`). If a *different* slot is the special one, or none is, adjust
+   accordingly (`--no-reserve0` frees slot 0).
 
 Tell me the exact expectations for any of these and the relevant writer can be
 adjusted to emit them directly.
