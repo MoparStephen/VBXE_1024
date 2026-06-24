@@ -561,7 +561,7 @@ Print_Load_Palette3_Message_L1
 	iny
 	sty Reg1							; Save pointer for progress bar updates
 
-	; jsr Wait_For_Key_Exit
+	;jsr Wait_For_Key_Exit
 
 	mwa #Palette Y_Register
 	lda #$03							; Set Palette 3
@@ -583,9 +583,9 @@ Palette
 	org LOAD_ADDRESS + $300
 .proc Load_Attrib_0
 	lda #$14
-	sta Reg1							; Temp storage
+	sta Reg3							; Temp storage
 
-	lda	Reg1
+	lda	Reg3
 	eor #MEMAC_GLOBAL_ENABLE			; Bank $14 VBXE Window Enabled
 	vbsta VBXE_MA_BSEL
 
@@ -614,23 +614,23 @@ Print_Load_Attrib_0_Message_L1
 	sty Reg1							; Save pointer for progress bar updates
 
 	; jsr Wait_For_Key_Exit
-	inc Reg1							; Increment bank1 for next chunk
+	inc Reg3							; Increment bank1 for next chunk
 	rts									; Return controll to loader
 
 Load_Attrib_0_Message
 	.sb 'Loading attrib0.map              '
 
+.endp
+	ini Load_Attrib_0					; Run BEFORE the data segment below so bank $14 is active when DOS writes to $2000
+
 	org VBXE_WINDOW						; Load data directly into VBXE RAM
 Attrib0
 	ins 'Assets\attrib0.map'
 
-.endp
-	ini Load_Attrib_0
-
 ; Step $0B - Load the ColourMap into VBXE RAM starting at bank $15
 	org LOAD_ADDRESS + $300
 .proc Load_Attrib_1
-	lda	Reg1
+	lda	Reg3
 	eor #MEMAC_GLOBAL_ENABLE			; Bank $15 VBXE Window Enabled
 	vbsta VBXE_MA_BSEL
 
@@ -658,25 +658,24 @@ Print_Load_Attrib_1_Message_L1
 	iny
 	sty Reg1							; Save pointer for progress bar updates
 
-
 	; jsr Wait_For_Key_Exit
-	inc Reg1							; Increment bank2 for next chunk
+	inc Reg3							; Increment bank2 for next chunk
 	rts									; Return controll to loader
 
 Load_Attrib_1_Message
 	.sb 'Loading attrib1.map              '
 
+.endp
+	ini Load_Attrib_1
+
 	org VBXE_WINDOW						; Load data directly into VBXE RAM
 Attrib1
 	ins 'Assets\attrib1.map'
 
-.endp
-	ini Load_Attrib_1
-
 ; Step $0C - Load the ColourMap into VBXE RAM starting at bank $15
 	org LOAD_ADDRESS + $300
 .proc Load_Attrib_2
-	lda	Reg1
+	lda	Reg3
 	eor #MEMAC_GLOBAL_ENABLE			; Bank $15 VBXE Window Enabled
 	vbsta VBXE_MA_BSEL
 
@@ -704,20 +703,19 @@ Print_Load_Attrib_2_Message_L1
 	iny
 	sty Reg1							; Save pointer for progress bar updates
 
-
 	; jsr Wait_For_Key_Exit
-	inc Reg1							; Increment bank3 for next chunk
+	inc Reg3							; Increment bank3 for next chunk
 	rts									; Return controll to loader
 
 Load_Attrib_2_Message
 	.sb 'Loading attrib2.map              '
 
+.endp
+	ini Load_Attrib_2
+
 	org VBXE_WINDOW						; Load data directly into VBXE RAM
 Attrib2
 	ins 'Assets\attrib2.map'
-
-.endp
-	ini Load_Attrib_2
 
 
 

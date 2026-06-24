@@ -16,21 +16,21 @@ BLT_CLEAR
 	dta $00								; Pattern feature
 	dta $00								; Control (Mode 0 with NEXT bit Cleared)
 
-; Fill the ColourMap area ($17000-$) with the MAP OV palette every 4 bytes
-; This sets up the Palette & Priority bytes for the entire Colour Map
-; GTIA/ANTIC is not used at all so these bytes will always be $00
+; Copy 9600 attrib bytes from $14000, placing each at every 4th dest byte from $17003
+; 40 cells/row * 240 rows = 9600 bytes; dest stride 4 writes to $17003,$17007,$1700B...
+; The 3 zero bytes before each data byte are left intact from BLT_SETUP_CMAP_1
 BLT_SETUP_CMAP_1
 	dta $00,$40,$01						; Source address ($14000)
-	dta $40,$01							; Source step y
-	dta $01								; Source step x
+	dta $00,$00							; Source step y (0 - sequential)
+	dta $01								; Source step x (1)
 	dta $03,$70,$01						; Destination address ($17003)
-	dta $40,$01							; Destination step y
-	dta $04								; Destination step x
-	dta $3F,$01							; Width ($140)
-	dta $EF								; Height ($F0)
-	dta %00110000						; And mask (Clear all but bits 5 and 4 i.e., only set MAP OV palette)
-	dta $00								; Xor mask (Direct Copy)
-	dta $00								; Collision and mask
+	dta $00,$00							; Destination step y (0 - sequential at stride 4)
+	dta $04								; Destination step x (4)
+	dta $27,$00							; Width-1 = 39   (40 cells/row)
+	dta $EF								; Height-1 = 239 (240 rows; 40*240 = 9600)
+	dta $FF								; And mask ($FF - pass-through, copies zero values too)
+	dta $00								; Xor mask (no inversion)
+	dta $00								; Collision mask
 	dta $00								; Zoom
 	dta $00								; Pattern feature
-	dta $00								; Control
+	dta $00								; Control: MODE=0 (copy), NEXT=0 (last BCB)
