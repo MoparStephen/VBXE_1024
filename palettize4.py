@@ -27,11 +27,14 @@ Strategy
 
 Outputs (into --out dir)
 ------------------------
-  palettes.bin   4 * 256 * 3 bytes  (RGB, palette-major, slot-major)
-  attrmap.bin    height * cells_per_line bytes (palette id 0-3 per cell)
-  indices.bin    width * height bytes (8-bit pixel index, row-major)
+  image.raw      width * height bytes (8-bit pixel index, row-major)
+  palette0.pal   256 entries * (R,G,B) = 768 bytes  (one file per palette)
+  palette1.pal     ...
+  palette2.pal
+  palette3.pal
+  attrib.map     one byte per cell (palette id 0-3), sequential row-major
   preview.png    reconstruction as the hardware would show it
-  palettes.png   swatch sheet of the 4 palettes
+  palettes.png   swatch sheet of the palettes
   report.txt     statistics and any quality warnings
 """
 
@@ -304,9 +307,14 @@ def main():
         out_rgb[mask] = colors[cids]
 
     # ---- write files --------------------------------------------------------
-    pal_rgb[:, :, :].tofile(os.path.join(args.out, "palettes.bin"))
-    cell_pal.astype(np.uint8).tofile(os.path.join(args.out, "attrmap.bin"))
-    out_idx.tofile(os.path.join(args.out, "indices.bin"))
+    # image.raw : one byte per pixel, row-major
+    out_idx.tofile(os.path.join(args.out, "image.raw"))
+    # palette#.pal : 256 entries x (R,G,B) = 768 bytes each
+    for b in range(NP):
+        pal_rgb[b].astype(np.uint8).tofile(os.path.join(args.out, f"palette{b}.pal"))
+    # attrib.map : one byte per cell (palette 0-3), sequential row-major over cells
+    cell_pal.astype(np.uint8).tofile(os.path.join(args.out, "attrib.map"))
+    # human-facing previews
     Image.fromarray(out_rgb, "RGB").save(os.path.join(args.out, "preview.png"))
 
     # palette swatch sheet
