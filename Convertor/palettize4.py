@@ -418,7 +418,6 @@ def main():
 
     # ---- report -------------------------------------------------------------
     total_px = H * W
-    unique_out = len(np.unique(out_rgb.reshape(-1, 3), axis=0))
     lines = []
     lines.append("palettize4 report")
     lines.append("=" * 48)
@@ -435,7 +434,6 @@ def main():
     if prequant:
         lines.append(f"pre-quantized    : source exceeded {NP*cap} colours -> reduced to {N}")
     lines.append(f"master colours   : {N}")
-    lines.append(f"output colours   : {unique_out}  (distinct RGB on screen)")
     lines.append(f"components        : {ncomp}  (largest = {max_comp})")
     lines.append("")
     if lossless:
@@ -451,22 +449,9 @@ def main():
             lines.append(f"  note: a single component needs {max_comp} colours (> {cap}); "
                          "duplication/substitution was unavoidable.")
     lines.append("")
-    # how many palettes each colour appears in (to find entries unique to one)
-    pal_count = np.zeros(N, dtype=np.int32)
-    for b in range(NP):
-        for c in final_colors[b]:
-            pal_count[c] += 1
-    all_pal_colors = set().union(*final_colors) if NP else set()
-    total_entries = sum(len(final_colors[b]) for b in range(NP))
-    duplicated = total_entries - len(all_pal_colors)
     lines.append("per-palette colour usage:")
     for b in range(NP):
-        uniq_b = sum(1 for c in final_colors[b] if pal_count[c] == 1)
-        lines.append(f"  palette {b}: {len(final_colors[b]):4d} / {cap} colours"
-                     f"  ({uniq_b:4d} unique to this palette)")
-    lines.append(f"  duplicated across palettes: {duplicated} "
-                 f"entr{'y' if duplicated == 1 else 'ies'} "
-                 f"({len(all_pal_colors)} distinct colours in all palettes)")
+        lines.append(f"  palette {b}: {len(final_colors[b]):4d} / {cap} colours")
     report = "\n".join(lines)
     with open(os.path.join(args.out, "report.txt"), "w") as f:
         f.write(report + "\n")
