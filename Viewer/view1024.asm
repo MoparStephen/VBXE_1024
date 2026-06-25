@@ -85,7 +85,7 @@
 	icl	'vbxe_min.asm'					; Use my VBXE_SetPalette2 to load linear palete
 
 ;-----------------------------------------------------------------------------
-; Clean up and exit based on LoadStatus
+; Clean up and exit
 ;-----------------------------------------------------------------------------
 Cleanup_Exit
 	lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
@@ -170,13 +170,6 @@ main
 ; Set RUN Vector
 	run start
 
-;-----------------------------------------------------------------------------
-; Clean up and exit
-;-----------------------------------------------------------------------------
-Exit
-	lda #$FF
-	sta CH								; Clear last key pressed
-	jmp	(DOSVEC)
 
 ;-----------------------------------------------------------------------------
 ; END OF CODE
@@ -198,6 +191,8 @@ Wait_For_Sync							; Hold until VCOUNT == 0
 	cmp #$2F							; Press Q to quit
 	beq	Exit
 	rts									; Else return to caller
+Exit
+	jmp	Cleanup_Exit					; Clean up and exit (accounts for any long branch issues)
 
 ;-----------------------------------------------------------------------------
 ; Setup_Cmap1 - Sets byte 4 for all cmap entries via blitter

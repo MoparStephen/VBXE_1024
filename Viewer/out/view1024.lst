@@ -964,7 +964,7 @@ Source: vbxe_min.asm
    230 = 31D0 00 00		PAL_PTR
     86
     87 				;-----------------------------------------------------------------------------
-    88 				; Clean up and exit based on LoadStatus
+    88 				; Clean up and exit
     89 				;-----------------------------------------------------------------------------
     90 31D2			Cleanup_Exit
     91 31D2 A9 00			lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
@@ -1653,22 +1653,22 @@ Source: init_vbxe.asm
    139
    140 330D A9 03			lda	#%00000011						; XDL,XCOLOR Enabled and transparent color index 0
    141 330F 8D 40 D6			sta	VBXE_VIDEO_CONTROL
-   142 3312 20 56 33			jsr Wait_For_Sync
+   142 3312 20 4E 33			jsr Wait_For_Sync
    143
    144 				; Load the Attribute Colour Map
    145 3315 A9 80			lda	#MEMAC_GLOBAL_ENABLE
    146 3317 8D 5F D6			sta	VBXE_MA_BSEL
-   147 331A A9 86 8D 33 31 A9 + 	mwa	#Colour FileNamePtr
+   147 331A A9 81 8D 33 31 A9 + 	mwa	#Colour FileNamePtr
    148 3324 A9 14			lda	#$14
    149 3326 85 8A			sta	BankIndex						; Load Colour Map data under $14000
    150 3328 20 AA 30			jsr	LoadData
    151
-   152 332B 20 68 33			jsr Setup_Cmap1						; Expand the data out to $17000
+   152 332B 20 63 33			jsr Setup_Cmap1						; Expand the data out to $17000
    153
    154 				; Load the Image
    155 332E A9 80			lda	#MEMAC_GLOBAL_ENABLE
    156 3330 8D 5F D6			sta	VBXE_MA_BSEL
-   157 3333 A9 93 8D 33 31 A9 + 	mwa	#Image FileNamePtr
+   157 3333 A9 8E 8D 33 31 A9 + 	mwa	#Image FileNamePtr
    158 333D A9 01			lda	#$01
    159 333F 85 8A			sta	BankIndex						; Load Colour Map data under $01000
    160 3341 20 AA 30			jsr	LoadData
@@ -1678,68 +1678,63 @@ Source: init_vbxe.asm
    164 3344 A9 00			lda #$00
    165 3346 85 4D			sta ATRACT							; Disable Attract Mode
    166
-   167 3348 20 56 33			jsr Wait_For_Sync					; Wait for VSYNC, Q quits
+   167 3348 20 4E 33			jsr Wait_For_Sync					; Wait for VSYNC, Q quits
    168 334B 4C 44 33			jmp main
    169
    170 				; Set RUN Vector
    171 02E0-02E1> 00 33			run start
    172
-   173 				;-----------------------------------------------------------------------------
-   174 				; Clean up and exit
-   175 				;-----------------------------------------------------------------------------
-   176 334E			Exit
-   177 334E-339E> A9 FF			lda #$FF
-   178 3350 8D FC 02			sta CH								; Clear last key pressed
-   179 3353 6C 0A 00			jmp	(DOSVEC)
-   180
+   173
+   174 				;-----------------------------------------------------------------------------
+   175 				; END OF CODE
+   176 				;-----------------------------------------------------------------------------
+   177
+   178 				;-----------------------------------------------------------------------------
+   179 				; Subroutines BEGIN
+   180 				;-----------------------------------------------------------------------------
    181 				;-----------------------------------------------------------------------------
-   182 				; END OF CODE
+   182 				; Wait For VSync (locks to the refresh rate, PAL=50Hz, NTSC=60Hz)  Thanks tebe
    183 				;-----------------------------------------------------------------------------
-   184
-   185 				;-----------------------------------------------------------------------------
-   186 				; Subroutines BEGIN
-   187 				;-----------------------------------------------------------------------------
-   188 				;-----------------------------------------------------------------------------
-   189 				; Wait For VSync (locks to the refresh rate, PAL=50Hz, NTSC=60Hz)  Thanks tebe
-   190 				;-----------------------------------------------------------------------------
-   191 3356			Wait_For_Sync							; Hold until VCOUNT == 0
-   192 3356 2C 0B D4			bit	VCOUNT
-   193 3359 30 FB			bmi *-3
-   194 335B 2C 0B D4			bit	VCOUNT
-   195 335E 10 FB			bpl *-3
-   196 				; If present, the next 3 lines will allow a "jump to exit" on a specific key press
-   197 3360 AD FC 02			lda CH
-   198 3363 C9 2F			cmp #$2F							; Press Q to quit
-   199 3365 F0 E7			beq	Exit
-   200 3367 60				rts									; Else return to caller
-   201
-   202 				;-----------------------------------------------------------------------------
-   203 				; Setup_Cmap1 - Sets byte 4 for all cmap entries via blitter
-   204 				;-----------------------------------------------------------------------------
-   205 3368			Setup_Cmap1
-   206 3368 A9 15			lda	#BLT_SETUP_CMAP_1-BLT_CLEAR
-   207 336A 8D 50 D6			sta	VBXE_BL_ADR0					; Setup the blitter for memory fill operation
-   208 336D A9 00			lda	#0
-   209 336F 8D 52 D6			sta	VBXE_BL_ADR2					; See the description of BCB at the end of this
-   210 3372 A9 01			lda	#$01							; Source
-   211 3374 8D 51 D6			sta	VBXE_BL_ADR1
-   212 3377 A9 00			lda	#0
-   213 3379			Setup_Cmap1_L1
-   214 3379 AD 53 D6			lda	VBXE_BLITTER_BUSY
-   215 337C C9 00			cmp	#0
-   216 337E D0 F9			bne	Setup_Cmap1_L1					; Wait for blitter to finish
-   217 3380 A9 01			lda	#1
-   218 3382 8D 53 D6			sta	VBXE_BLITTER_START				; Start the blit
-   219 3385 60				rts
-   220
-   221 				;-----------------------------------------------------------------------------
-   222 				; Subroutines END
-   223 				;-----------------------------------------------------------------------------
-   224
-   225 				;-----------------------------------------------------------------------------
-   226 				; Data Tables go here
-   227 				;-----------------------------------------------------------------------------
-   228 3386			Colour
-   229 3386 44 32 3A 41 54 54 + 	dta c'D2:ATTRIB.MAP'
-   230 3393			Image
-   231 3393 44 32 3A 49 4D 41 + 	dta c'D2:IMAGE.RAW'
+   184 334E			Wait_For_Sync							; Hold until VCOUNT == 0
+   185 334E-3399> 2C 0B D4		bit	VCOUNT
+   186 3351 30 FB			bmi *-3
+   187 3353 2C 0B D4			bit	VCOUNT
+   188 3356 10 FB			bpl *-3
+   189 				; If present, the next 3 lines will allow a "jump to exit" on a specific key press
+   190 3358 AD FC 02			lda CH
+   191 335B C9 2F			cmp #$2F							; Press Q to quit
+   192 335D F0 01			beq	Exit
+   193 335F 60				rts									; Else return to caller
+   194 3360			Exit
+   195 3360 4C D2 31			jmp	Cleanup_Exit					; Clean up and exit (accounts for any long branch issues)
+   196
+   197 				;-----------------------------------------------------------------------------
+   198 				; Setup_Cmap1 - Sets byte 4 for all cmap entries via blitter
+   199 				;-----------------------------------------------------------------------------
+   200 3363			Setup_Cmap1
+   201 3363 A9 15			lda	#BLT_SETUP_CMAP_1-BLT_CLEAR
+   202 3365 8D 50 D6			sta	VBXE_BL_ADR0					; Setup the blitter for memory fill operation
+   203 3368 A9 00			lda	#0
+   204 336A 8D 52 D6			sta	VBXE_BL_ADR2					; See the description of BCB at the end of this
+   205 336D A9 01			lda	#$01							; Source
+   206 336F 8D 51 D6			sta	VBXE_BL_ADR1
+   207 3372 A9 00			lda	#0
+   208 3374			Setup_Cmap1_L1
+   209 3374 AD 53 D6			lda	VBXE_BLITTER_BUSY
+   210 3377 C9 00			cmp	#0
+   211 3379 D0 F9			bne	Setup_Cmap1_L1					; Wait for blitter to finish
+   212 337B A9 01			lda	#1
+   213 337D 8D 53 D6			sta	VBXE_BLITTER_START				; Start the blit
+   214 3380 60				rts
+   215
+   216 				;-----------------------------------------------------------------------------
+   217 				; Subroutines END
+   218 				;-----------------------------------------------------------------------------
+   219
+   220 				;-----------------------------------------------------------------------------
+   221 				; Data Tables go here
+   222 				;-----------------------------------------------------------------------------
+   223 3381			Colour
+   224 3381 44 32 3A 41 54 54 + 	dta c'D2:ATTRIB.MAP'
+   225 338E			Image
+   226 338E 44 32 3A 49 4D 41 + 	dta c'D2:IMAGE.RAW'
