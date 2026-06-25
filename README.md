@@ -86,6 +86,7 @@ Requires Python 3 with `numpy` and `Pillow` (`pip install numpy pillow`).
 | `--display-aspect R` | 4:3 | True on-screen aspect for `cover`/`fit`, e.g. `4:3`.      |
 | `--color-bias 0..1` | 0.0 | Slider: 0 = fewest artifacts (fidelity), 1 = most colours. |
 | `--max-colors`| off     | Shorthand for `--color-bias 1.0`.                              |
+| `--coherence L` | 1.5 | Spatial smoothing of the attribute map (higher = fewer block artifacts). |
 | `--optimize` / `--no-optimize` | on | Reduce cross-palette duplication in the fidelity strategy. |
 | `--seed N`    | `0`     | RNG seed for the k-means seeding in Phase B.                   |
 
@@ -167,6 +168,17 @@ The bias slider chooses how to spend the slot budget: low bias spends slots on
 duplicates (exact colours, no blocks, fewer distinct colours); high bias spends
 them on distinct colours (more colours, more recolouring). Check `recoloured
 pixels` / `mean OKLab error` in the report to judge a given bias.
+
+**Block artifacts and `--coherence`.** When `--color-bias > 0`, the attribute map
+is built by repeatedly assigning each cell to the palette that minimizes the
+cell's total perceptual (OKLab) error and re-deriving the palette contents, so
+the two agree. Because each 8-pixel cell commits to one palette, neighbouring
+cells deciding independently can produce visible blocks/streaks in mixed or
+smooth regions. `--coherence` (default 1.5) adds a penalty for a cell disagreeing
+with its neighbours, so regions settle on one palette and the blocks disappear;
+raise it if you still see blocky patches, lower it (toward 0) for the most
+literal per-cell choice. This keeps perceptual error roughly flat as colour count
+climbs, so high bias values stay clean rather than blocky.
 
 ---
 

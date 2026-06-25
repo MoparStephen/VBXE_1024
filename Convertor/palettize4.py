@@ -298,6 +298,8 @@ def main():
                     help="shorthand for --color-bias 1.0 (maximum distinct colours).")
     ap.add_argument("--optimize", action=argparse.BooleanOptionalAction, default=True,
                     help="reduce cross-palette duplication via local search so more colours survive (fidelity strategy; default on)")
+    ap.add_argument("--coherence", type=float, default=1.5, metavar="L",
+                    help="spatial smoothing of the attribute map (higher = neighbouring cells share a palette more, fewer block artifacts; 0 = off). Used by --color-bias > 0.")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
@@ -440,68 +442,105 @@ def main():
             fcolors[b] = set(int(c) for c in keep)
         return cp, rmaps, fcolors, sp, se
 
-    def run_balanced(w, k_floor):
-        """Continuum anchored at fidelity (w=0 -> ~k_floor colours, no blocks) and
-        max colours (w=1 -> every used colour). Assign each cell to the palette
-        owning the plurality of its pixels, choose K = interp(k_floor, K_max)
-        colours to display (the most-used ones), place each in the palette where
-        it appears most, then spend all remaining slots on the highest-demand
-        duplicates -- which is what removes recolouring blocks. Higher w = more
-        colours but fewer spare slots for duplicates (more blocks); lower w = the
-        reverse."""
-        cp = np.zeros((H, cells_per_line), dtype=np.int16)
-        rmaps = [np.arange(N) for _ in range(NP)]
-        fcolors = [set() for _ in range(NP)]
-        sp = 0; se = 0.0
+    def run_balanced(w, k_floor, refine_iters=4):
+        """Continuum anchored at fidelity (w=0 -> ~k_floor colours) and max colours
+        (w=1). Picks K = interp(k_floor, K_max) colours to display, places each in
+        the palette where it's used most, fills spare slots with the best
+        duplicates. Then iterates: reassign each cell to the palette that minimizes
+        the cell's total perceptual (OKLab) error -- not plurality -- and re-pick
+        slots, so the attribute map and palette contents agree. This makes mixed
+        regions choose one palette coherently (killing the cell-to-cell streaks)."""
         home = balanced_cluster(colors_lab, NP, cap, seed=args.seed)
+        # cache each cell's (colour ids, counts), transparent excluded
+        cellcc = []
         for y in range(H):
             row = pix[y]; trow = transparent[y]
             for cx in range(cells_per_line):
                 a, bb = cx * cell_w, (cx + 1) * cell_w
                 seg = row[a:bb][~trow[a:bb]]
-                cp[y, cx] = 0 if len(seg) == 0 else int(np.bincount(home[seg], minlength=NP).argmax())
-        pp = np.repeat(cp, cell_w, axis=1)[:, :W]
-        dem = np.stack([np.bincount(pix[(pp == b) & (~transparent)].ravel(), minlength=N)
-                        for b in range(NP)])          # NP x N pixel demand
-        total = dem.sum(0)
-        used = np.nonzero(total)[0]
-        K_hi = len(used)
-        K = int(round(k_floor + w * (K_hi - k_floor)))
-        K = max(1, min(K_hi, K))
-        pd = dem.max(0)                                # best single-palette demand
-        display = used[np.argsort(pd[used])[::-1][:K]] # the K colours we will show
-        counts = [0] * NP
-        Sb = [set() for _ in range(NP)]
-        for c in display:                              # place each in its best palette
-            c = int(c)
-            for b in np.argsort(dem[:, c])[::-1]:
-                if dem[b, c] == 0:
-                    break
-                if counts[b] < cap:
-                    Sb[b].add(c); counts[b] += 1; break
-        cand = []                                      # spare slots -> best duplicates
-        for b in range(NP):
+                if len(seg) == 0:
+                    cellcc.append(None)
+                else:
+                    u, c = np.unique(seg, return_counts=True)
+                    cellcc.append((u, c))
+        cp = np.zeros((H, cells_per_line), dtype=np.int16)
+        # initial assignment: plurality of colour home cluster
+        for i, cc in enumerate(cellcc):
+            y, cx = divmod(i, cells_per_line)
+            cp[y, cx] = 0 if cc is None else int(np.bincount(home[cc[0]], weights=cc[1], minlength=NP).argmax())
+
+        def select_slots(cp):
+            pp = np.repeat(cp, cell_w, axis=1)[:, :W]
+            dem = np.stack([np.bincount(pix[(pp == b) & (~transparent)].ravel(), minlength=N)
+                            for b in range(NP)])
+            used = np.nonzero(dem.sum(0))[0]
+            K = max(1, min(len(used), int(round(k_floor + w * (len(used) - k_floor)))))
+            display = used[np.argsort(dem.max(0)[used])[::-1][:K]]
+            counts = [0] * NP; Sb = [set() for _ in range(NP)]
             for c in display:
                 c = int(c)
-                if c not in Sb[b] and dem[b, c] > 0:
-                    cand.append((int(dem[b, c]), c, b))
-        cand.sort(reverse=True)
-        for val, c, b in cand:
-            if counts[b] < cap and c not in Sb[b]:
-                Sb[b].add(c); counts[b] += 1
+                for b in np.argsort(dem[:, c])[::-1]:
+                    if dem[b, c] == 0: break
+                    if counts[b] < cap:
+                        Sb[b].add(c); counts[b] += 1; break
+            cand = [(int(dem[b, c]), int(c), b) for b in range(NP) for c in display
+                    if int(c) not in Sb[b] and dem[b, int(c)] > 0]
+            cand.sort(reverse=True)
+            for val, c, b in cand:
+                if counts[b] < cap and c not in Sb[b]:
+                    Sb[b].add(c); counts[b] += 1
+            return Sb
+
+        Sb = select_slots(cp)
+        lam = float(args.coherence)
+        for it in range(refine_iters):
+            E = np.zeros((N, NP)); rmaps = []
+            for b in range(NP):
+                kb = np.array(sorted(Sb[b])) if Sb[b] else np.array([0])
+                d = ((colors_lab[:, None, :] - colors_lab[kb][None, :, :]) ** 2).sum(2)
+                j = d.argmin(1)
+                E[:, b] = np.sqrt(d[np.arange(N), j])
+                rmaps.append(kb[j])
+            new_cp = cp.copy()
+            for i, cc in enumerate(cellcc):
+                if cc is None:
+                    continue
+                y, cx = divmod(i, cells_per_line)
+                u, c = cc
+                err = (E[u] * c[:, None]).sum(0)        # total OKLab error per palette
+                if lam > 0:                              # prefer agreeing with neighbours
+                    nb = []
+                    if y > 0: nb.append(cp[y - 1, cx])
+                    if y < H - 1: nb.append(cp[y + 1, cx])
+                    if cx > 0: nb.append(cp[y, cx - 1])
+                    if cx < cells_per_line - 1: nb.append(cp[y, cx + 1])
+                    for b in range(NP):
+                        err[b] += lam * sum(1 for v in nb if v != b)
+                new_cp[y, cx] = int(err.argmin())
+            if np.array_equal(new_cp, cp):
+                cp = new_cp; break
+            cp = new_cp
+            Sb = select_slots(cp)
+
+        # final remaps from final Sb
+        rmaps = []
         for b in range(NP):
-            keep = np.array(sorted(Sb[b])) if Sb[b] else np.array([], dtype=int)
+            kb = np.array(sorted(Sb[b])) if Sb[b] else np.array([], dtype=int)
             rb = np.arange(N)
-            if len(keep):
-                notin = np.ones(N, bool); notin[keep] = False
+            if len(kb):
+                notin = np.ones(N, bool); notin[kb] = False
                 ni = np.nonzero(notin)[0]
                 if len(ni):
-                    d = ((colors_lab[ni][:, None, :] - colors_lab[keep][None, :, :]) ** 2).sum(2)
-                    rb[ni] = keep[d.argmin(1)]
-            rmaps[b] = rb
+                    d = ((colors_lab[ni][:, None, :] - colors_lab[kb][None, :, :]) ** 2).sum(2)
+                    rb[ni] = kb[d.argmin(1)]
+            rmaps.append(rb)
+        fcolors = [set() for _ in range(NP)]; sp = 0; se = 0.0
+        pp = np.repeat(cp, cell_w, axis=1)[:, :W]
+        for b in range(NP):
+            kb = np.array(sorted(Sb[b])) if Sb[b] else np.array([], dtype=int)
             cids = pix[(pp == b) & (~transparent)].ravel()
             if len(cids):
-                off = ~np.isin(cids, keep)
+                off = ~np.isin(cids, kb)
                 if off.any():
                     oc = cids[off]; sp += int(off.sum())
                     se += float(np.sqrt(((colors_lab[oc] - colors_lab[rmaps[b][oc]]) ** 2).sum(1)).sum())
