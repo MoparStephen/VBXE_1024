@@ -31,8 +31,44 @@
 	lda SDLSTL+1
 	sta SDLSTH_OLD
 
+; Determine and save the Video Format
+	lda #$00
+	sta Ptr_Lo
+Wait1
+	lda vcount
+	beq Wait1
+Wait2
+	tay									; Save largest value in Y
+	lda vcount
+	bne Wait2
+; VCount = zero, but we've saved the largest possible in Y
+	cpy #$85 							; NTSC will never get this high
+	bcc NTSC_Detected
+
+PAL_Detected
+	lda #$30							; P
+	sta Step1_Message + $73
+	lda #$21							; A
+	sta Step1_Message + $74
+	lda #$2C							; L
+	sta Step1_Message + $75				; Set text in Row 2 of Step1_Message
+	lda #$00
+	jmp Check_SDX
+
+NTSC_Detected
+	lda #$2E							; N
+	sta Step1_Message + $72
+	lda #$34							; T
+	sta Step1_Message + $73
+	lda #$33							; S
+	sta Step1_Message + $74
+	lda #$23							; C
+	sta Step1_Message + $75				; Set text in Row 2 of Step1_Message
+	lda #$01
+
 ; Check for SDX
 Check_SDX
+	sta Video_Flag						; Save for later
 	lda $0700
 	cmp #$53							; ASCII S
 	bne SDX_No

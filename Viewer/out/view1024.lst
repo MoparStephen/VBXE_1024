@@ -398,56 +398,58 @@ Source: equates.asm
     51 				.var SDLSTH_OLD			.byte = $486	; Save the Display List Pointer
     52 				.var DOSINIL_OLD		.byte = $487	; Save the DOSINI Pointer
     53 				.var DOSINIH_OLD		.byte = $488	; Save the DOSINI Pointer
-    54
-    55 				;-----------------------------------------------------------------------------
-    56 				; Defines go here
-    57 				;-----------------------------------------------------------------------------
-    58 = FFFF0001		.def	__VBXE_AUTO__
-    59 = 2000			.def	VBXE_WINDOW						= $2000
-    60 = 1000			.def	VBXE_WINDOW_SIZE_4k				= $1000
-    61 = 2000			.def	VBXE_WINDOW_SIZE_8k				= $2000
-    62 = 3000			.def	LOAD_ADDRESS					= VBXE_WINDOW + VBXE_WINDOW_SIZE_4k
-    63
-    64 				; BCB field byte offsets
-    65 = 0000			.def	Src_Adr0						= $00
-    66 = 0001			.def	Src_Adr1						= $01
-    67 = 0002			.def	Src_Adr2						= $02
-    68 = 0006			.def	Dest_Adr0						= $06
-    69 = 0007			.def	Dest_Adr1						= $07
-    70 = 0008			.def	Dest_Adr2						= $08
-    71 = 0014			.def	Blt_Ctrl						= $14
-    72
-    73 				; Temp debug stuff
-    74 = 0010			.def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
-    75 = 0010			.def	V_1								= $10	; 0 (Screen code used for Version in loading screen)
-    76 = 0012			.def	V_2								= $12	; 1 (Screen code used for Version in loading screen)
-    77 = 0000			.def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
-    78
-    79 				;-----------------------------------------------------------------------------
-    80 				; VBXE Helpers
-    81 				;-----------------------------------------------------------------------------
-    82 = 0080			REG1
-    82 = 0081			REG2
-    82 = 0082			REG3
-    82 = 0083			REG4
-    82 = 0084			REG5
-    82 = 0085			REG6
-    82 = 0086			REG7
-    82 = 0087			REG8
-    82 = 0088			PTR_LO
-    82 = 0089			PTR_HI
-    82 = 0480			SDMCTL_OLD
-    82 = 0481			CRSINH_OLD
-    82 = 0482			LMARGIN_OLD
-    82 = 0483			COLOR2_OLD
-    82 = 0484			SP_REG_OLD
-    82 = 0485			SDLSTL_OLD
-    82 = 0486			SDLSTH_OLD
-    82 = 0487			DOSINIL_OLD
-    82 = 0488			DOSINIH_OLD
-    82 					org LOAD_ADDRESS
-    83 				.pages 3								; DO NOT go past $3300
-    84 					icl	'fileio.lib'
+    54 				.var Video_Flag			.byte = $489	; PAL = 0, NTSC = 1
+    55
+    56 				;-----------------------------------------------------------------------------
+    57 				; Defines go here
+    58 				;-----------------------------------------------------------------------------
+    59 = FFFF0001		.def	__VBXE_AUTO__
+    60 = 2000			.def	VBXE_WINDOW						= $2000
+    61 = 1000			.def	VBXE_WINDOW_SIZE_4k				= $1000
+    62 = 2000			.def	VBXE_WINDOW_SIZE_8k				= $2000
+    63 = 3000			.def	LOAD_ADDRESS					= VBXE_WINDOW + VBXE_WINDOW_SIZE_4k
+    64
+    65 				; BCB field byte offsets
+    66 = 0000			.def	Src_Adr0						= $00
+    67 = 0001			.def	Src_Adr1						= $01
+    68 = 0002			.def	Src_Adr2						= $02
+    69 = 0006			.def	Dest_Adr0						= $06
+    70 = 0007			.def	Dest_Adr1						= $07
+    71 = 0008			.def	Dest_Adr2						= $08
+    72 = 0014			.def	Blt_Ctrl						= $14
+    73
+    74 				; Temp debug stuff
+    75 = 0010			.def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
+    76 = 0010			.def	V_1								= $10	; 0 (Screen code used for Version in loading screen)
+    77 = 0013			.def	V_2								= $13	; 3 (Screen code used for Version in loading screen)
+    78 = 0000			.def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
+    79
+    80 				;-----------------------------------------------------------------------------
+    81 				; VBXE Helpers
+    82 				;-----------------------------------------------------------------------------
+    83 = 0080			REG1
+    83 = 0081			REG2
+    83 = 0082			REG3
+    83 = 0083			REG4
+    83 = 0084			REG5
+    83 = 0085			REG6
+    83 = 0086			REG7
+    83 = 0087			REG8
+    83 = 0088			PTR_LO
+    83 = 0089			PTR_HI
+    83 = 0480			SDMCTL_OLD
+    83 = 0481			CRSINH_OLD
+    83 = 0482			LMARGIN_OLD
+    83 = 0483			COLOR2_OLD
+    83 = 0484			SP_REG_OLD
+    83 = 0485			SDLSTL_OLD
+    83 = 0486			SDLSTH_OLD
+    83 = 0487			DOSINIL_OLD
+    83 = 0488			DOSINIH_OLD
+    83 = 0489			VIDEO_FLAG
+    83 					org LOAD_ADDRESS
+    84 				.pages 3								; DO NOT go past $3300
+    85 					icl	'fileio.lib'
 Source: fileio.lib
      1 				;basic CIO commands (ICCOM)
      2 = 0003			CIO_open		equ 3	;OPEN command for IOCB channell
@@ -480,7 +482,7 @@ Source: fileio.lib
     29 				.var	FileNameLng .byte
     30 				.var	TextPtr		.word
     31 				.var	LoadStatus	.byte	; $0 = failure, $1 = Success
-    32 FFFF> 3000-3203> FF	Console_IOCB		.byte 0xFF
+    32 FFFF> 3000-320B> FF	Console_IOCB		.byte 0xFF
     33 3001 20 3A 9B 00		Temporary_Handler	.byte ' :',0x9B,0x00
     34 3005 53 32 3A 9B 00	VBXE_Handler		.byte 'S2:',0x9B,0x00
     35
@@ -704,7 +706,7 @@ Source: fileio.lib
    231 = 3135 00		FILENAMELNG
    231 = 3136 00 00		TEXTPTR
    231 = 3138 00		LOADSTATUS
-    85 3139				icl	'vbxe_min.asm'					; Use my VBXE_SetPalette2 to load linear palete
+    86 3139				icl	'vbxe_min.asm'					; Use my VBXE_SetPalette2 to load linear palete
 Source: vbxe_min.asm
      1
      2 				.if .not .def __VBXE_AUTO__ .and .not .def __VBXE_D700__	; default case - vbxe at $d640
@@ -962,43 +964,48 @@ Source: vbxe_min.asm
    230 = 008F			VBXEBASE
    230 = 0091			Y_REGISTER
    230 = 31D0 00 00		PAL_PTR
-    86
-    87 				;-----------------------------------------------------------------------------
-    88 				; Clean up and exit
-    89 				;-----------------------------------------------------------------------------
-    90 31D2			Cleanup_Exit
-    91 31D2 A9 00			lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
-    92 31D4 8D 5F D6			sta VBXE_MA_BSEL
-    93 31D7 8D 40 D6			sta VBXE_VIDEO_CONTROL				; Disable XDL
+    87
+    88 				;-----------------------------------------------------------------------------
+    89 				; Clean up and exit
+    90 				;-----------------------------------------------------------------------------
+    91 31D2			Cleanup_Exit
+    92 31D2 A9 00			lda #$00
+    93 31D4 8D 2F 02			sta SDMCTL
     94
-    95 31DA AD 80 04			lda SDMCTL_OLD
-    96 31DD 8D 2F 02			sta SDMCTL							; Restore SDMCTL
-    97
-    98 31E0 AD 82 04			lda LMARGIN_OLD
-    99 31E3 85 52			sta LMARGIN							; Restore LMARGIN
+    95 31D7 20 81 33			jsr Restore_Palette0
+    96
+    97 31DA A9 00			lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
+    98 31DC 8D 5F D6			sta VBXE_MA_BSEL
+    99 31DF 8D 40 D6			sta VBXE_VIDEO_CONTROL				; Disable XDL
    100
-   101 31E5 AD 87 04			lda DOSINIL_OLD
-   102 31E8 85 0C			sta DOSINI
-   103 31EA AD 88 04			lda DOSINIH_OLD
-   104 31ED 85 0D			sta DOSINI + 1						; Restore DOSINI
-   105
-   106 31EF A9 FF			lda #$FF
-   107 31F1 8D FC 02			sta CH								; Clear last key pressed
+   101 31E2 AD 82 04			lda LMARGIN_OLD
+   102 31E5 85 52			sta LMARGIN							; Restore LMARGIN
+   103
+   104 31E7 AD 87 04			lda DOSINIL_OLD
+   105 31EA 85 0C			sta DOSINI
+   106 31EC AD 88 04			lda DOSINIH_OLD
+   107 31EF 85 0D			sta DOSINI + 1						; Restore DOSINI
    108
-   109 31F4 6C 0A 00			jmp	(DOSVEC)						; Return to DOS
-   110
-   111 31F7			Wait_For_Key_Exit
-   112 31F7 A9 FF			lda #$FF
-   113 31F9 8D FC 02			sta CH								; Clear last key pressed
-   114 31FC			Wait_For_Key_Exit_L1
-   115 31FC AD FC 02			lda CH
-   116 31FF C9 FF			cmp #$FF
-   117 3201 F0 F9			beq Wait_For_Key_Exit_L1			; Wait for Key Press
-   118 3203 60				rts									; Exit on  Key Press
-   119 3204			.endpg
-   120
-   121 				; Multi-stage loader & program initialization code begins here
-   122 3204				icl 'init_vbxe.asm'
+   109 31F1 A9 FF			lda #$FF
+   110 31F3 8D FC 02			sta CH								; Clear last key pressed
+   111
+   112 31F6 AD 80 04			lda SDMCTL_OLD
+   113 31F9 8D 2F 02			sta SDMCTL							; Restore SDMCTL
+   114
+   115 31FC 6C 0A 00			jmp	(DOSVEC)						; Return to DOS
+   116
+   117 31FF			Wait_For_Key_Exit
+   118 31FF A9 FF			lda #$FF
+   119 3201 8D FC 02			sta CH								; Clear last key pressed
+   120 3204			Wait_For_Key_Exit_L1
+   121 3204 AD FC 02			lda CH
+   122 3207 C9 FF			cmp #$FF
+   123 3209 F0 F9			beq Wait_For_Key_Exit_L1			; Wait for Key Press
+   124 320B 60				rts									; Exit on  Key Press
+   125 320C			.endpg
+   126
+   127 				; Multi-stage loader & program initialization code begins here
+   128 320C				icl 'init_vbxe.asm'
 Source: init_vbxe.asm
      1 				;-----------------------------------------------------------------------------
      2 				; Initialization
@@ -1007,7 +1014,7 @@ Source: init_vbxe.asm
      5 					org LOAD_ADDRESS + $300
      6 3300			.proc Step_1
      7 				; Save any values that will be changed so they can be restored on exit
-     8 3300-34BE> A5 0C			lda DOSINI
+     8 3300-34FE> A5 0C			lda DOSINI
      9 3302 8D 87 04			sta DOSINIL_OLD
     10 3305 A5 0D			lda DOSINI + 1
     11 3307 8D 88 04			sta DOSINIH_OLD						; Save DOSINI so we can restore it later
@@ -1033,275 +1040,311 @@ Source: init_vbxe.asm
     31 332B AD 31 02			lda SDLSTL+1
     32 332E 8D 86 04			sta SDLSTH_OLD
     33
-    34 				; Check for SDX
-    35 3331			Check_SDX
-    36 3331 AD 00 07			lda $0700
-    37 3334 C9 53			cmp #$53							; ASCII S
-    38 3336 D0 25			bne SDX_No
-    39 3338 AD 01 07			lda $0701
-    40 333B C9 44			cmp #$44							; ASCII D
-    41 333D D0 1E			bne SDX_No
-    42
-    43 				; Use IOCB channel 2 to force a CON 40 call
-    44 333F			SDX_Yes
-    45 333F A2 20			ldx #$20							; Channel 2
-    46 3341 A9 50			lda #$50
-    47 3343 9D 42 03			sta ICCMD,x
-    48 3346 A9 BC			lda #<Device
-    49 3348 9D 44 03			sta ICBAL,x
-    50 334B A9 34			lda #>Device
-    51 334D 9D 45 03			sta ICBAH,x
-    52 3350 A9 0C			lda #$0C							; Read + Write
-    53 3352 9D 4A 03			sta ICAX1,x							; Aux1
-    54 3355 A9 40			lda #$40
-    55 3357 9D 4B 03			sta ICAX2,x							; Aux2
-    56 335A 20 56 E4			jsr CIOV
+    34 				; Determine and save the Video Format
+    35 3331 A9 00			lda #$00
+    36 3333 85 88			sta Ptr_Lo
+    37 3335			Wait1
+    38 3335 AD 0B D4			lda vcount
+    39 3338 F0 FB			beq Wait1
+    40 333A			Wait2
+    41 333A A8				tay									; Save largest value in Y
+    42 333B AD 0B D4			lda vcount
+    43 333E D0 FA			bne Wait2
+    44 				; VCount = zero, but we've saved the largest possible in Y
+    45 3340 C0 85			cpy #$85 							; NTSC will never get this high
+    46 3342 90 14			bcc NTSC_Detected
+    47
+    48 3344			PAL_Detected
+    49 3344 A9 30			lda #$30							; P
+    50 3346 8D 57 34			sta Step1_Message + $73
+    51 3349 A9 21			lda #$21							; A
+    52 334B 8D 58 34			sta Step1_Message + $74
+    53 334E A9 2C			lda #$2C							; L
+    54 3350 8D 59 34			sta Step1_Message + $75				; Set text in Row 2 of Step1_Message
+    55 3353 A9 00			lda #$00
+    56 3355 4C 6E 33			jmp Check_SDX
     57
-    58 				; TODO: Close Channel #2 (and do this in the APOD viewer as well)
-    59 335D			SDX_No
-    60 335D A9 00			lda #$00
-    61 335F 85 52			sta LMARGIN
-    62
-    63 3361 A9 01			lda #$01
-    64 3363 8D F0 02			sta CRSINH
-    65
-    66 3366 A9 A2 8D 36 31 A9 + 	mwa #Clear_Screen TextPtr
-    67 3370 20 42 30			jsr PutLine							; Cheap way to get a channel open to the screen
+    58 3358			NTSC_Detected
+    59 3358 A9 2E			lda #$2E							; N
+    60 335A 8D 56 34			sta Step1_Message + $72
+    61 335D A9 34			lda #$34							; T
+    62 335F 8D 57 34			sta Step1_Message + $73
+    63 3362 A9 33			lda #$33							; S
+    64 3364 8D 58 34			sta Step1_Message + $74
+    65 3367 A9 23			lda #$23							; C
+    66 3369 8D 59 34			sta Step1_Message + $75				; Set text in Row 2 of Step1_Message
+    67 336C A9 01			lda #$01
     68
-    69 3373 A9 B0			lda #$B0							; Dark Green
-    70 3375 8D C6 02			sta COLOR2							; Set playfield
-    71 3378 A9 BA			lda #$BA							; Light Green
-    72 337A 8D C5 02			sta COLOR1							; Set text
-    73
-    74 				; Grab the pointer to the top of screen ram
-    75 337D A5 58			lda SAVMSC
-    76 337F 85 88			sta Ptr_Lo
-    77 3381 A5 59			lda SAVMSC+1
-    78 3383 85 89			sta Ptr_Hi
-    79
-    80 				; Print the initial loading message
-    81 				; Each subsequent init stage will update it
-    82 3385 A0 00			ldy #$00
-    83 3387			Print_Loading_L1						; Copy the 1st $100 bytes
-    84 3387 B9 A4 33			lda Step1_Message,y
-    85 338A 91 88			sta (Ptr_Lo),y
-    86 338C 88				dey
-    87 338D D0 F8			bne Print_Loading_L1
-    88
-    89 338F A0 17			ldy #$17
-    90 3391 E6 89			inc Ptr_Hi
-    91 3393			Print_Loading_L2						; Copy the last $180 bytes
-    92 3393 B9 A4 34			lda Step1_Message+$100,y
-    93 3396 91 88			sta (Ptr_Lo),y
-    94 3398 88				dey
-    95 3399 10 F8			bpl Print_Loading_L2
-    96
-    97 339B C6 89			dec Ptr_Hi							; Restore to beginning of screen RAM
-    98 339D A9 CA			lda #$CA
-    99 339F 85 80			sta Reg1							; Pointer to screen RAM for progress dots
-   100
-   101 					; jsr Wait_For_Key_Exit
-   102 33A1 60				rts									; Return controll to loader
-   103
-   104 33A2			Clear_Screen
-   105 33A2 7D 9B			.byte $7D,$9B
-   106 33A4			Step1_Message							; Internal screen codes
-   107 33A4 51 52 52 52 52 52 + 	.byte $51,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$45
-   108 33CC 7C 00 36 22 38 25 + 	.byte $7C,$00,$36,$22,$38,$25,$00,$11,$10,$12,$14,$00,$23,$6F,$6C,$6F,$75,$72,$00,$30,$69,$63,$74,$75,$72,$65,$00,$36,$69,$65,$77,$65,$72,$00,V_0,$0E,V_1,V_2,V_3,$7C
-   109 33F4 7C 00 00 00 00 00 + 	.byte $7C,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$7C
-   110 341C 7C 00 00 00 00 00 + 	.byte $7C,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$7C
-   111 3444 41 52 52 52 52 52 + 	.byte $41,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$44
-   112 346C 7C 00 00 00 00 00 + 	.byte $7C,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$7C
-   113 3494 5A 52 52 52 52 52 + 	.byte $5A,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$43
-   114 34BC			Device
-   115 34BC 45 3A 9B			dta c"E:",$9B
-   116 				.endp
-   117 02E2-02E3> 00 33			ini Step_1
-   118
-   119 				; Step $02 - Ensure RAMTOP is = $C0 and no BASIC cart/ROM is present
-   120 					org LOAD_ADDRESS + $300
-   121 3300			.proc Check_RAMTOP
-   122 				; Disable BASIC
-   123 3300-33A3> A9 C0			lda #$C0							; Check if RAMTOP is already OK
-   124 3302 C5 6A			cmp RAMTOP							; Prevent flickering if BASIC is already off
-   125 3304 F0 38			beq Ram_Ok
-   126
-   127 3306 A9 01			lda #$01							; Set BASICF for OS
-   128 3308 8D F8 03			sta BASICF							; so BASIC remains OFF after RESET
-   129
-   130 330B AD 01 D3			lda PORTB							; Disable BASIC bit in PORTB for MMU
-   131 330E 09 02			ora #$02							; by Setting bit 2
-   132 3310 8D 01 D3			sta PORTB
-   133
-   134 3313 AD 00 A0			lda $A000							; Check if BASIC ROM area is now RAM
-   135 3316 EE 00 A0			inc $A000							; This will also catch SDX not launching
-   136 3319 CD 00 A0			cmp $A000							; the app via X
-   137 331C F0 21			beq Ram_Not_Ok						; If not, perform print error and exit
-   138
-   139 331E A9 0C			lda #$0C							; 12 = CLOSE
-   140 3320 20 2E 33			jsr Do_CIOV							; Close editor
-   141
-   142 3323 A9 C0			lda #$C0
-   143 3325 85 6A			sta RAMTOP							; Set RAMTOP to end of BASIC
-   144 3327 8D E4 02			sta RAMSIZ							; Set RAMSIZ also
-   145
-   146 332A A2 00			ldx #$00							; Channel #0
-   147 332C A9 04			lda #$04							; 4 = OPEN_READ
-   148 332E			Do_CIOV
-   149 332E 8D 42 03			sta ICCOM							; Store the Command
-   150 3331 A9 68			lda #<Device_Name
-   151 3333 8D 44 03			sta ICBAL							; Use channel #0
-   152 3336 A9 33			lda #>Device_Name
-   153 3338 8D 45 03			sta ICBAH
-   154 333B 20 56 E4			jsr CIOV
-   155
-   156 333E			Ram_Ok
-   157 					; jsr Wait_For_Key_Exit
-   158 333E 60				rts
-   159
-   160 333F			Ram_Not_Ok; Add your error handling here, there still is a ROM....
-   161 333F A0 42			ldy #$42							; Dark Red
-   162 3341 8C C6 02			sty COLOR2							; Set playfield
-   163
-   164 				; Print RAM_Failure_Message - line 3 (y = $79)
-   165 3344 A0 79			ldy #$79
-   166 3346 A2 00			ldx #$00
-   167 3348			RAM_Failure_Message_L1
-   168 3348 BD 6B 33			lda RAM_Failure_Message_Line1,x
-   169 334B 91 88			sta (Ptr_Lo),y
-   170 334D E8				inx
-   171 334E C8				iny
-   172 334F E0 23			cpx #$23							; Copy $23 characters
-   173 3351 D0 F5			bne RAM_Failure_Message_L1
+    69 				; Check for SDX
+    70 336E			Check_SDX
+    71 336E 8D 89 04			sta Video_Flag						; Save for later
+    72 3371 AD 00 07			lda $0700
+    73 3374 C9 53			cmp #$53							; ASCII S
+    74 3376 D0 25			bne SDX_No
+    75 3378 AD 01 07			lda $0701
+    76 337B C9 44			cmp #$44							; ASCII D
+    77 337D D0 1E			bne SDX_No
+    78
+    79 				; Use IOCB channel 2 to force a CON 40 call
+    80 337F			SDX_Yes
+    81 337F A2 20			ldx #$20							; Channel 2
+    82 3381 A9 50			lda #$50
+    83 3383 9D 42 03			sta ICCMD,x
+    84 3386 A9 FC			lda #<Device
+    85 3388 9D 44 03			sta ICBAL,x
+    86 338B A9 34			lda #>Device
+    87 338D 9D 45 03			sta ICBAH,x
+    88 3390 A9 0C			lda #$0C							; Read + Write
+    89 3392 9D 4A 03			sta ICAX1,x							; Aux1
+    90 3395 A9 40			lda #$40
+    91 3397 9D 4B 03			sta ICAX2,x							; Aux2
+    92 339A 20 56 E4			jsr CIOV
+    93
+    94 				; TODO: Close Channel #2 (and do this in the APOD viewer as well)
+    95 339D			SDX_No
+    96 339D A9 00			lda #$00
+    97 339F 85 52			sta LMARGIN
+    98
+    99 33A1 A9 01			lda #$01
+   100 33A3 8D F0 02			sta CRSINH
+   101
+   102 33A6 A9 E2 8D 36 31 A9 + 	mwa #Clear_Screen TextPtr
+   103 33B0 20 42 30			jsr PutLine							; Cheap way to get a channel open to the screen
+   104
+   105 33B3 A9 B0			lda #$B0							; Dark Green
+   106 33B5 8D C6 02			sta COLOR2							; Set playfield
+   107 33B8 A9 BA			lda #$BA							; Light Green
+   108 33BA 8D C5 02			sta COLOR1							; Set text
+   109
+   110 				; Grab the pointer to the top of screen ram
+   111 33BD A5 58			lda SAVMSC
+   112 33BF 85 88			sta Ptr_Lo
+   113 33C1 A5 59			lda SAVMSC+1
+   114 33C3 85 89			sta Ptr_Hi
+   115
+   116 				; Print the initial loading message
+   117 				; Each subsequent init stage will update it
+   118 33C5 A0 00			ldy #$00
+   119 33C7			Print_Loading_L1						; Copy the 1st $100 bytes
+   120 33C7 B9 E4 33			lda Step1_Message,y
+   121 33CA 91 88			sta (Ptr_Lo),y
+   122 33CC 88				dey
+   123 33CD D0 F8			bne Print_Loading_L1
+   124
+   125 33CF A0 17			ldy #$17
+   126 33D1 E6 89			inc Ptr_Hi
+   127 33D3			Print_Loading_L2						; Copy the last $180 bytes
+   128 33D3 B9 E4 34			lda Step1_Message+$100,y
+   129 33D6 91 88			sta (Ptr_Lo),y
+   130 33D8 88				dey
+   131 33D9 10 F8			bpl Print_Loading_L2
+   132
+   133 33DB C6 89			dec Ptr_Hi							; Restore to beginning of screen RAM
+   134 33DD A9 CA			lda #$CA
+   135 33DF 85 80			sta Reg1							; Pointer to screen RAM for progress dots
+   136
+   137 					; jsr Wait_For_Key_Exit
+   138 33E1 60				rts									; Return controll to loader
+   139
+   140 33E2			Clear_Screen
+   141 33E2 7D 9B			.byte $7D,$9B
+   142 33E4			Step1_Message							; Internal screen codes
+   143 33E4 51 52 52 52 52 52 + 	.byte $51,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$45
+   144 340C 7C 00 36 22 38 25 + 	.byte $7C,$00,$36,$22,$38,$25,$00,$11,$10,$12,$14,$00,$23,$6F,$6C,$6F,$75,$72,$00,$30,$69,$63,$74,$75,$72,$65,$00,$36,$69,$65,$77,$65,$72,$00,V_0,$0E,V_1,V_2,V_3,$7C
+   145 3434 7C 00 00 00 00 00 + 	.byte $7C,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$7C
+   146 345C 7C 00 00 00 00 00 + 	.byte $7C,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$7C
+   147 3484 41 52 52 52 52 52 + 	.byte $41,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$44
+   148 34AC 7C 00 00 00 00 00 + 	.byte $7C,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$7C
+   149 34D4 5A 52 52 52 52 52 + 	.byte $5A,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$43
+   150 34FC			Device
+   151 34FC 45 3A 9B			dta c"E:",$9B
+   152 				.endp
+   153 02E2-02E3> 00 33			ini Step_1
+   154
+   155 				; Step $02 - Ensure RAMTOP is = $C0 and no BASIC cart/ROM is present
+   156 					org LOAD_ADDRESS + $300
+   157 3300			.proc Check_RAMTOP
+   158 				; Disable BASIC
+   159 3300-33A3> A9 C0			lda #$C0							; Check if RAMTOP is already OK
+   160 3302 C5 6A			cmp RAMTOP							; Prevent flickering if BASIC is already off
+   161 3304 F0 38			beq Ram_Ok
+   162
+   163 3306 A9 01			lda #$01							; Set BASICF for OS
+   164 3308 8D F8 03			sta BASICF							; so BASIC remains OFF after RESET
+   165
+   166 330B AD 01 D3			lda PORTB							; Disable BASIC bit in PORTB for MMU
+   167 330E 09 02			ora #$02							; by Setting bit 2
+   168 3310 8D 01 D3			sta PORTB
+   169
+   170 3313 AD 00 A0			lda $A000							; Check if BASIC ROM area is now RAM
+   171 3316 EE 00 A0			inc $A000							; This will also catch SDX not launching
+   172 3319 CD 00 A0			cmp $A000							; the app via X
+   173 331C F0 21			beq Ram_Not_Ok						; If not, perform print error and exit
    174
-   175 				; Print RAM_Failure_Message - line 5
-   176 3353 A0 D1			ldy #$D1
-   177 3355 A2 00			ldx #$00
-   178 3357			RAM_Failure_Message_L2
-   179 3357 BD 8E 33			lda RAM_Failure_Message_Line2,x
-   180 335A 91 88			sta (Ptr_Lo),y
-   181 335C E8				inx
-   182 335D C8				iny
-   183 335E E0 15			cpx #$15							; Copy $15 characters
-   184 3360 D0 F5			bne RAM_Failure_Message_L2
-   185
-   186 3362 20 F7 31			jsr Wait_For_Key_Exit
-   187
-   188 3365 4C 74 E4			jmp WARMSV							; Warm Start
-   189
-   190 3368			Device_Name
-   191 3368 45 3A 00			dta c'E:', $00
-   192 336B			RAM_Failure_Message_Line1
-   193 336B 34 68 69 73 00 70 + 	.byte $34,$68,$69,$73,$00,$70,$72,$6F,$67,$72,$61,$6D,$00,$72,$65,$71,$75,$69,$72,$65,$73,$00,$61,$74,$00,$6C,$65,$61,$73,$74,$00,$14,$18,$6B,$22
-   194 338E			RAM_Failure_Message_Line2
-   195 338E 30 72 65 73 73 00 + 	.byte $30,$72,$65,$73,$73,$00,$61,$6E,$79,$00,$6B,$65,$79,$00,$74,$6F,$00,$65,$78,$69,$74,$80
-   196 				.endp
-   197 02E2-02E3> 00 33			ini Check_RAMTOP
-   198
-   199 				; Step $03 - Detect the VBXE and print address or Quit if not found
-   200 					org LOAD_ADDRESS + $300
-   201 3300			.proc Detecting_VBXE
-   202 3300-3390> 20 39 31		jsr VBXE_Detect						; VBXE core 1.07 and above detection TODO: This is apparently broken, fix it so D700 works (6/23/2026)
-   203 3303 90 1A			bcc VBXE_Found						; If found skip the code below
-   204
-   205 3305			VBXE_Not_Found
-   206 3305 A0 42			ldy #$42							; Dark Red
-   207 3307 8C C6 02			sty COLOR2							; Set playfield
-   208
-   209 				; Print VBXE_NPresent - line 3 (y = $79)
-   210 330A A0 79			ldy #$79
-   211 330C A2 00			ldx #$00
-   212 330E			Print_VBXE_NPresent_L1
-   213 330E BD 6F 33			lda VBXE_NPresent,x
-   214 3311 91 88			sta (Ptr_Lo),y
-   215 3313 E8				inx
-   216 3314 C8				iny
-   217 3315 E0 21			cpx #$21							; Copy $21 characters
-   218 3317 D0 F5			bne Print_VBXE_NPresent_L1
-   219
-   220 3319 20 F7 31			jsr Wait_For_Key_Exit
-   221 331C 4C D2 31			jmp Cleanup_Exit					; Cleanup then return controll to DOS
-   222
-   223 331F			VBXE_Found
-   224 331F A0 36			ldy #$36							; ASCII 6
-   225 3321 E0 D6			cpx #$D6
-   226 3323 F0 04			beq VBXE_Found_Done					; VBXE at D6
-   227 3325 EE 5F 33			inc VBXE_Address+1					; VBXE at D7 so change text!
-   228 3328 C8				iny									; Now ASCII 7
-   229
-   230 3329			VBXE_Found_Done
-   231 3329 84 81			sty Reg2							; Save for later so we can update the About Panel
-   232 				; Print VBXE_Detected - line 3 (y = $79)
-   233 332B A0 79			ldy #$79
-   234 332D A2 00			ldx #$00
-   235 332F			Print_VBXE_Detected_L1
-   236 332F BD 4D 33			lda VBXE_Detected,x
-   237 3332 91 88			sta (Ptr_Lo),y
-   238 3334 E8				inx
-   239 3335 C8				iny
-   240 3336 E0 21			cpx #$21							; Copy $21 characters
-   241 3338 D0 F5			bne Print_VBXE_Detected_L1
-   242
-   243 				; Update Progress bar - line 5 (y = $CB + (4 * increment #))
-   244 333A A4 80			ldy Reg1
-   245 333C A9 54			lda #$54							; Screen RAM code for Ctrl+T
-   246 333E 91 88			sta (Ptr_Lo),y
-   247 3340 C8				iny
-   248 3341 91 88			sta (Ptr_Lo),y
-   249 3343 C8				iny
-   250 3344 91 88			sta (Ptr_Lo),y
-   251 3346 C8				iny
-   252 3347 91 88			sta (Ptr_Lo),y
-   253 3349 C8				iny
-   254 334A 84 80			sty Reg1							; Save pointer for progress bar updates
+   175 331E A9 0C			lda #$0C							; 12 = CLOSE
+   176 3320 20 2E 33			jsr Do_CIOV							; Close editor
+   177
+   178 3323 A9 C0			lda #$C0
+   179 3325 85 6A			sta RAMTOP							; Set RAMTOP to end of BASIC
+   180 3327 8D E4 02			sta RAMSIZ							; Set RAMSIZ also
+   181
+   182 332A A2 00			ldx #$00							; Channel #0
+   183 332C A9 04			lda #$04							; 4 = OPEN_READ
+   184 332E			Do_CIOV
+   185 332E 8D 42 03			sta ICCOM							; Store the Command
+   186 3331 A9 68			lda #<Device_Name
+   187 3333 8D 44 03			sta ICBAL							; Use channel #0
+   188 3336 A9 33			lda #>Device_Name
+   189 3338 8D 45 03			sta ICBAH
+   190 333B 20 56 E4			jsr CIOV
+   191
+   192 333E			Ram_Ok
+   193 					; jsr Wait_For_Key_Exit
+   194 333E 60				rts
+   195
+   196 333F			Ram_Not_Ok; Add your error handling here, there still is a ROM....
+   197 333F A0 42			ldy #$42							; Dark Red
+   198 3341 8C C6 02			sty COLOR2							; Set playfield
+   199
+   200 				; Print RAM_Failure_Message - line 3 (y = $79)
+   201 3344 A0 79			ldy #$79
+   202 3346 A2 00			ldx #$00
+   203 3348			RAM_Failure_Message_L1
+   204 3348 BD 6B 33			lda RAM_Failure_Message_Line1,x
+   205 334B 91 88			sta (Ptr_Lo),y
+   206 334D E8				inx
+   207 334E C8				iny
+   208 334F E0 23			cpx #$23							; Copy $23 characters
+   209 3351 D0 F5			bne RAM_Failure_Message_L1
+   210
+   211 				; Print RAM_Failure_Message - line 5
+   212 3353 A0 D1			ldy #$D1
+   213 3355 A2 00			ldx #$00
+   214 3357			RAM_Failure_Message_L2
+   215 3357 BD 8E 33			lda RAM_Failure_Message_Line2,x
+   216 335A 91 88			sta (Ptr_Lo),y
+   217 335C E8				inx
+   218 335D C8				iny
+   219 335E E0 15			cpx #$15							; Copy $15 characters
+   220 3360 D0 F5			bne RAM_Failure_Message_L2
+   221
+   222 3362 20 FF 31			jsr Wait_For_Key_Exit
+   223
+   224 3365 4C 74 E4			jmp WARMSV							; Warm Start
+   225
+   226 3368			Device_Name
+   227 3368 45 3A 00			dta c'E:', $00
+   228 336B			RAM_Failure_Message_Line1
+   229 336B 34 68 69 73 00 70 + 	.byte $34,$68,$69,$73,$00,$70,$72,$6F,$67,$72,$61,$6D,$00,$72,$65,$71,$75,$69,$72,$65,$73,$00,$61,$74,$00,$6C,$65,$61,$73,$74,$00,$14,$18,$6B,$22
+   230 338E			RAM_Failure_Message_Line2
+   231 338E 30 72 65 73 73 00 + 	.byte $30,$72,$65,$73,$73,$00,$61,$6E,$79,$00,$6B,$65,$79,$00,$74,$6F,$00,$65,$78,$69,$74,$80
+   232 				.endp
+   233 02E2-02E3> 00 33			ini Check_RAMTOP
+   234
+   235 				; Step $03 - Detect the VBXE and print address or Quit if not found
+   236 					org LOAD_ADDRESS + $300
+   237 3300			.proc Detecting_VBXE
+   238 3300-3390> 20 39 31		jsr VBXE_Detect						; VBXE core 1.07 and above detection TODO: This is apparently broken, fix it so D700 works (6/23/2026)
+   239 3303 90 1A			bcc VBXE_Found						; If found skip the code below
+   240
+   241 3305			VBXE_Not_Found
+   242 3305 A0 42			ldy #$42							; Dark Red
+   243 3307 8C C6 02			sty COLOR2							; Set playfield
+   244
+   245 				; Print VBXE_NPresent - line 3 (y = $79)
+   246 330A A0 79			ldy #$79
+   247 330C A2 00			ldx #$00
+   248 330E			Print_VBXE_NPresent_L1
+   249 330E BD 6F 33			lda VBXE_NPresent,x
+   250 3311 91 88			sta (Ptr_Lo),y
+   251 3313 E8				inx
+   252 3314 C8				iny
+   253 3315 E0 21			cpx #$21							; Copy $21 characters
+   254 3317 D0 F5			bne Print_VBXE_NPresent_L1
    255
-   256 					; jsr Wait_For_Key_Exit
-   257
-   258 334C 60				rts									; Return controll to loader
-   259
-   260 334D			VBXE_Detected
-   261 334D 36 22 38 25 00 24 + 	.byte $36,$22,$38,$25,$00,$24,$65,$74,$65,$63,$74,$65,$64,$00,$61,$74,$00	; VBXE Detected at
-   262 335E			VBXE_Address
-   263 335E 04 24 16 14 10 00 + 	.byte $04,$24,$16,$14,$10,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00	; $D640
-   264 336F			VBXE_NPresent
-   265 336F 01 00 36 22 38 25 + 	.byte $01,$00,$36,$22,$38,$25,$00,$6E,$6F,$74,$00,$66,$6F,$75,$6E,$64,$00,$0D,$00,$61,$6E,$79,$00,$6B,$65,$79,$00,$31,$75,$69,$74,$00,$01,$00	; ! VBXE not found - any key Quit !
-   266
-   267 				.endp
-   268 02E2-02E3> 00 33			ini Detecting_VBXE
-   269
-   270 				; Step $04 - Clear VBXE RAM
-   271 					org LOAD_ADDRESS + $300
-   272 3300			.proc clear_vbxe
-   273 				; Print Clearing_Message - line 3 (y = $79)
-   274 3300-339C> A0 79			ldy #$79
-   275 3302 A2 00			ldx #$00
-   276 3304			Print_Clearing_Message_L1
-   277 3304 BD 7B 33			lda Clearing_Message,x
-   278 3307 91 88			sta (Ptr_Lo),y
-   279 3309 E8				inx
-   280 330A C8				iny
-   281 330B E0 21			cpx #$21							; Copy $21 characters
-   282 330D D0 F5			bne Print_Clearing_Message_L1
-   283
-   284 				; Update Progress bar - line 5 (y = $CB + (4 * increment #))
-   285 330F A4 80			ldy Reg1
-   286 3311 A9 54			lda #$54							; Screen RAM code for Ctrl+T
-   287 3313 91 88			sta (Ptr_Lo),y
-   288 3315 C8				iny
-   289 3316 91 88			sta (Ptr_Lo),y
-   290 3318 C8				iny
-   291 3319 91 88			sta (Ptr_Lo),y
-   292 331B C8				iny
-   293 331C 91 88			sta (Ptr_Lo),y
-   294 331E C8				iny
-   295 331F 84 80			sty Reg1							; Save pointer for progress bar updates
-   296
-   297 					; jsr Wait_For_Key_Exit
-   298
-   299 				; Set the base address of MEMA window to VBXE_WINDOW
-   300 				; Size to 4k and accesible only by CPU
-   301 3321 A9 28			lda	#>VBXE_WINDOW + 8
-   302 3323				vbsta VBXE_MA_CTL
+   256 3319 20 FF 31			jsr Wait_For_Key_Exit
+   257 331C 4C D2 31			jmp Cleanup_Exit					; Cleanup then return controll to DOS
+   258
+   259 331F			VBXE_Found
+   260 331F A0 36			ldy #$36							; ASCII 6
+   261 3321 E0 D6			cpx #$D6
+   262 3323 F0 04			beq VBXE_Found_Done					; VBXE at D6
+   263 3325 EE 5F 33			inc VBXE_Address+1					; VBXE at D7 so change text!
+   264 3328 C8				iny									; Now ASCII 7
+   265
+   266 3329			VBXE_Found_Done
+   267 3329 84 81			sty Reg2							; Save for later so we can update the About Panel
+   268 				; Print VBXE_Detected - line 3 (y = $79)
+   269 332B A0 79			ldy #$79
+   270 332D A2 00			ldx #$00
+   271 332F			Print_VBXE_Detected_L1
+   272 332F BD 4D 33			lda VBXE_Detected,x
+   273 3332 91 88			sta (Ptr_Lo),y
+   274 3334 E8				inx
+   275 3335 C8				iny
+   276 3336 E0 21			cpx #$21							; Copy $21 characters
+   277 3338 D0 F5			bne Print_VBXE_Detected_L1
+   278
+   279 				; Update Progress bar - line 5 (y = $CB + (4 * increment #))
+   280 333A A4 80			ldy Reg1
+   281 333C A9 54			lda #$54							; Screen RAM code for Ctrl+T
+   282 333E 91 88			sta (Ptr_Lo),y
+   283 3340 C8				iny
+   284 3341 91 88			sta (Ptr_Lo),y
+   285 3343 C8				iny
+   286 3344 91 88			sta (Ptr_Lo),y
+   287 3346 C8				iny
+   288 3347 91 88			sta (Ptr_Lo),y
+   289 3349 C8				iny
+   290 334A 84 80			sty Reg1							; Save pointer for progress bar updates
+   291
+   292 					; jsr Wait_For_Key_Exit
+   293
+   294 334C 60				rts									; Return controll to loader
+   295
+   296 334D			VBXE_Detected
+   297 334D 36 22 38 25 00 24 + 	.byte $36,$22,$38,$25,$00,$24,$65,$74,$65,$63,$74,$65,$64,$00,$61,$74,$00	; VBXE Detected at
+   298 335E			VBXE_Address
+   299 335E 04 24 16 14 10 00 + 	.byte $04,$24,$16,$14,$10,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00	; $D640
+   300 336F			VBXE_NPresent
+   301 336F 01 00 36 22 38 25 + 	.byte $01,$00,$36,$22,$38,$25,$00,$6E,$6F,$74,$00,$66,$6F,$75,$6E,$64,$00,$0D,$00,$61,$6E,$79,$00,$6B,$65,$79,$00,$31,$75,$69,$74,$00,$01,$00	; ! VBXE not found - any key Quit !
+   302
+   303 				.endp
+   304 02E2-02E3> 00 33			ini Detecting_VBXE
+   305
+   306 				; Step $04 - Clear VBXE RAM
+   307 					org LOAD_ADDRESS + $300
+   308 3300			.proc clear_vbxe
+   309 				; Print Clearing_Message - line 3 (y = $79)
+   310 3300-339C> A0 79			ldy #$79
+   311 3302 A2 00			ldx #$00
+   312 3304			Print_Clearing_Message_L1
+   313 3304 BD 7B 33			lda Clearing_Message,x
+   314 3307 91 88			sta (Ptr_Lo),y
+   315 3309 E8				inx
+   316 330A C8				iny
+   317 330B E0 21			cpx #$21							; Copy $21 characters
+   318 330D D0 F5			bne Print_Clearing_Message_L1
+   319
+   320 				; Update Progress bar - line 5 (y = $CB + (4 * increment #))
+   321 330F A4 80			ldy Reg1
+   322 3311 A9 54			lda #$54							; Screen RAM code for Ctrl+T
+   323 3313 91 88			sta (Ptr_Lo),y
+   324 3315 C8				iny
+   325 3316 91 88			sta (Ptr_Lo),y
+   326 3318 C8				iny
+   327 3319 91 88			sta (Ptr_Lo),y
+   328 331B C8				iny
+   329 331C 91 88			sta (Ptr_Lo),y
+   330 331E C8				iny
+   331 331F 84 80			sty Reg1							; Save pointer for progress bar updates
+   332
+   333 					; jsr Wait_For_Key_Exit
+   334
+   335 				; Set the base address of MEMA window to VBXE_WINDOW
+   336 				; Size to 4k and accesible only by CPU
+   337 3321 A9 28			lda	#>VBXE_WINDOW + 8
+   338 3323				vbsta VBXE_MA_CTL
 Macro: VBSTA [Source: vbxe_min.asm]
      2 3323 48				pha
      3 3324 A5 90			lda	VBXEBase+1
@@ -1310,9 +1353,9 @@ Macro: VBSTA [Source: vbxe_min.asm]
      6 332A 8D 5E D6			sta.w	VBXE_MA_CTL
      7 = 332C			vbsta_adr	equ *-1
 Source: init_vbxe.asm
-   303
-   304 332D A9 80			lda	#$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
-   305 332F				vbsta VBXE_MA_BSEL
+   339
+   340 332D A9 80			lda	#$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
+   341 332F				vbsta VBXE_MA_BSEL
 Macro: VBSTA [Source: vbxe_min.asm]
      2 332F 48				pha
      3 3330 A5 90			lda	VBXEBase+1
@@ -1321,23 +1364,23 @@ Macro: VBSTA [Source: vbxe_min.asm]
      6 3336 8D 5F D6			sta.w	VBXE_MA_BSEL
      7 = 3338			vbsta_adr	equ *-1
 Source: init_vbxe.asm
-   306
-   307 					; Copy blit to VBXE memory
-   308 3339 A2 14			ldx #$14
-   309 333B BD 66 33 9D 00 20 + 	mva:rpl blit_clear,x VBXE_WINDOW,x-
-   310
-   311 					; Kick blit
-   312 3344 A9 00			lda #$00
-   313 3346 8D 50 D6			sta VBXE_BL_ADR0
-   314 3349 8D 51 D6			sta VBXE_BL_ADR1
-   315 334C 8D 52 D6			sta VBXE_BL_ADR2
-   316 334F A9 01 8D 53 D6		mva #$01 VBXE_BLITTER_START
-   317
-   318 					; Wait for blit complete
-   319 3354 AD 53 D6 D0 FB		lda:rne VBXE_BLITTER_BUSY
-   320
-   321 3359 A9 00			lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
-   322 335B				vbsta VBXE_MA_BSEL
+   342
+   343 					; Copy blit to VBXE memory
+   344 3339 A2 14			ldx #$14
+   345 333B BD 66 33 9D 00 20 + 	mva:rpl blit_clear,x VBXE_WINDOW,x-
+   346
+   347 					; Kick blit
+   348 3344 A9 00			lda #$00
+   349 3346 8D 50 D6			sta VBXE_BL_ADR0
+   350 3349 8D 51 D6			sta VBXE_BL_ADR1
+   351 334C 8D 52 D6			sta VBXE_BL_ADR2
+   352 334F A9 01 8D 53 D6		mva #$01 VBXE_BLITTER_START
+   353
+   354 					; Wait for blit complete
+   355 3354 AD 53 D6 D0 FB		lda:rne VBXE_BLITTER_BUSY
+   356
+   357 3359 A9 00			lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
+   358 335B				vbsta VBXE_MA_BSEL
 Macro: VBSTA [Source: vbxe_min.asm]
      2 335B 48				pha
      3 335C A5 90			lda	VBXEBase+1
@@ -1346,40 +1389,40 @@ Macro: VBSTA [Source: vbxe_min.asm]
      6 3362 8D 5F D6			sta.w	VBXE_MA_BSEL
      7 = 3364			vbsta_adr	equ *-1
 Source: init_vbxe.asm
-   323
-   324 3365 60				rts									; Return controll to loader
-   325
-   326 3366			blit_clear
-   327 					; clear 496kB (leave bottom 16kB for the SVBXE.SYS driver)
-   328 					; 496x16 zoom 8x8 clear blit (this takes 2 frames)
-   329
-   330 					;	dta e($00000)	; Source address
-   331 					;	dta a($0000)	; Source step y
-   332 					;	dta 0			; Source step x
-   333 					;	dta e($7BFFF)	; Destination address
-   334 					;	dta a(-$0F80)	; Destination step y (backwards 3968 bytes) - NOTE: this equals 496 * zoom factor of 8
-   335 					;	dta -1			; Destination step x (backwards	1 byte)
-   336 					;	dta a($01EF)	; Width-1  (495)	496 * 8 bytes wide
-   337 					;	dta $0F			; Height-1 (15)		 16 * 8 bytes high
-   338 					;	dta $00			; And mask (And mask equal to 0 so clear)
-   339 					;	dta $00			; Xor mask (will be filled with xor mask)
-   340 					;	dta $00			; Collision and mask
-   341 					;	dta $77			; Zoom (BLT_ZOOMY = 7, BLT_ZOOMX = 7 so 8Y*8X)
-   342 					;	dta $00			; Pattern feature
-   343 					;	dta $00			; Control (Mode 0 with NEXT bit Cleared)
-   344
-   345 3366 00 00 00 00 00 00 + 	dta e($00000), a($0000), 0, e($7BFFF), a(-$0F80), -1, a($01EF), $0F, $00, $00, $00, $77, $00, $00
-   346 337B			Clearing_Message
-   347 337B 23 6C 65 61 72 69 + 	.byte $23,$6C,$65,$61,$72,$69,$6E,$67,$00,$36,$22,$38,$25,$00,$32,$21,$2D,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00	; Clearing VBXE RAM
-   348
-   349 				.endp
-   350 02E2-02E3> 00 33			ini clear_vbxe
-   351
-   352 				; Step $05 - Load the XDL
-   353 					org LOAD_ADDRESS + $300
-   354 3300			.proc Load_XDL
-   355 3300-334F> A9 80			lda	#$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
-   356 3302				vbsta VBXE_MA_BSEL
+   359
+   360 3365 60				rts									; Return controll to loader
+   361
+   362 3366			blit_clear
+   363 					; clear 496kB (leave bottom 16kB for the SVBXE.SYS driver)
+   364 					; 496x16 zoom 8x8 clear blit (this takes 2 frames)
+   365
+   366 					;	dta e($00000)	; Source address
+   367 					;	dta a($0000)	; Source step y
+   368 					;	dta 0			; Source step x
+   369 					;	dta e($7BFFF)	; Destination address
+   370 					;	dta a(-$0F80)	; Destination step y (backwards 3968 bytes) - NOTE: this equals 496 * zoom factor of 8
+   371 					;	dta -1			; Destination step x (backwards	1 byte)
+   372 					;	dta a($01EF)	; Width-1  (495)	496 * 8 bytes wide
+   373 					;	dta $0F			; Height-1 (15)		 16 * 8 bytes high
+   374 					;	dta $00			; And mask (And mask equal to 0 so clear)
+   375 					;	dta $00			; Xor mask (will be filled with xor mask)
+   376 					;	dta $00			; Collision and mask
+   377 					;	dta $77			; Zoom (BLT_ZOOMY = 7, BLT_ZOOMX = 7 so 8Y*8X)
+   378 					;	dta $00			; Pattern feature
+   379 					;	dta $00			; Control (Mode 0 with NEXT bit Cleared)
+   380
+   381 3366 00 00 00 00 00 00 + 	dta e($00000), a($0000), 0, e($7BFFF), a(-$0F80), -1, a($01EF), $0F, $00, $00, $00, $77, $00, $00
+   382 337B			Clearing_Message
+   383 337B 23 6C 65 61 72 69 + 	.byte $23,$6C,$65,$61,$72,$69,$6E,$67,$00,$36,$22,$38,$25,$00,$32,$21,$2D,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00	; Clearing VBXE RAM
+   384
+   385 				.endp
+   386 02E2-02E3> 00 33			ini clear_vbxe
+   387
+   388 				; Step $05 - Load the XDL
+   389 					org LOAD_ADDRESS + $300
+   390 3300			.proc Load_XDL
+   391 3300-334F> A9 80			lda	#$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
+   392 3302				vbsta VBXE_MA_BSEL
 Macro: VBSTA [Source: vbxe_min.asm]
      2 3302 48				pha
      3 3303 A5 90			lda	VBXEBase+1
@@ -1388,44 +1431,44 @@ Macro: VBSTA [Source: vbxe_min.asm]
      6 3309 8D 5F D6			sta.w	VBXE_MA_BSEL
      7 = 330B			vbsta_adr	equ *-1
 Source: init_vbxe.asm
-   357
-   358 				; Print Load_XDL_Message - line 3 (y = $79)
-   359 330C A0 79			ldy #$79
-   360 330E A2 00			ldx #$00
-   361 3310			Print_Load_XDL_Message_L1
-   362 3310 BD 2E 33			lda Load_XDL_Message,x
-   363 3313 91 88			sta (Ptr_Lo),y
-   364 3315 E8				inx
-   365 3316 C8				iny
-   366 3317 E0 21			cpx #$21							; Copy $21 characters
-   367 3319 D0 F5			bne Print_Load_XDL_Message_L1
-   368
-   369 				; Update Progress bar - line 5 (y = $CB + (4 * increment #))
-   370 331B A4 80			ldy Reg1
-   371 331D A9 54			lda #$54							; Screen RAM code for Ctrl+T
-   372 331F 91 88			sta (Ptr_Lo),y
-   373 3321 C8				iny
-   374 3322 91 88			sta (Ptr_Lo),y
-   375 3324 C8				iny
-   376 3325 91 88			sta (Ptr_Lo),y
-   377 3327 C8				iny
-   378 3328 91 88			sta (Ptr_Lo),y
-   379 332A C8				iny
-   380 332B 84 80			sty Reg1							; Save pointer for progress bar updates
-   381
-   382 					; jsr Wait_For_Key_Exit
-   383
-   384 332D 60				rts									; Return controll to loader
-   385
-   386 332E			Load_XDL_Message
-   387 332E 2C 6F 61 64 69 6E + 	.byte $2C,$6F,$61,$64,$69,$6E,$67,$00,$38,$24,$2C,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00	; Loading XDLs
-   388
-   389 				.endp
-   390 02E2-02E3> 00 33			ini Load_XDL
-   391
-   392 					org VBXE_WINDOW						; Load data directly into VBXE RAM
-   393 2000			XDL_START
-   394 2000				icl 'xdl.asm'
+   393
+   394 				; Print Load_XDL_Message - line 3 (y = $79)
+   395 330C A0 79			ldy #$79
+   396 330E A2 00			ldx #$00
+   397 3310			Print_Load_XDL_Message_L1
+   398 3310 BD 2E 33			lda Load_XDL_Message,x
+   399 3313 91 88			sta (Ptr_Lo),y
+   400 3315 E8				inx
+   401 3316 C8				iny
+   402 3317 E0 21			cpx #$21							; Copy $21 characters
+   403 3319 D0 F5			bne Print_Load_XDL_Message_L1
+   404
+   405 				; Update Progress bar - line 5 (y = $CB + (4 * increment #))
+   406 331B A4 80			ldy Reg1
+   407 331D A9 54			lda #$54							; Screen RAM code for Ctrl+T
+   408 331F 91 88			sta (Ptr_Lo),y
+   409 3321 C8				iny
+   410 3322 91 88			sta (Ptr_Lo),y
+   411 3324 C8				iny
+   412 3325 91 88			sta (Ptr_Lo),y
+   413 3327 C8				iny
+   414 3328 91 88			sta (Ptr_Lo),y
+   415 332A C8				iny
+   416 332B 84 80			sty Reg1							; Save pointer for progress bar updates
+   417
+   418 					; jsr Wait_For_Key_Exit
+   419
+   420 332D 60				rts									; Return controll to loader
+   421
+   422 332E			Load_XDL_Message
+   423 332E 2C 6F 61 64 69 6E + 	.byte $2C,$6F,$61,$64,$69,$6E,$67,$00,$38,$24,$2C,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00	; Loading XDLs
+   424
+   425 				.endp
+   426 02E2-02E3> 00 33			ini Load_XDL
+   427
+   428 					org VBXE_WINDOW						; Load data directly into VBXE RAM
+   429 2000			XDL_START
+   430 2000				icl 'xdl.asm'
 Source: xdl.asm
      1 2000			XDL										; Graphics mode,SD resolution, 240 lines, start at $01000, $140 bytes/line
      2 				;		 76543210  76543210
@@ -1437,13 +1480,13 @@ Source: xdl.asm
      8 2011 11 FF			dta	%00010001,$FF					; XDLC_OVATT (2 bytes)  
      9 				;		 76543210  76543210
     10 2013 00 80			dta %00000000,%10000000				; XDLC (2 Bytes) - End of XDL, wait for VSYNC
-   395 = 0015			XDL_Length	equ *-XDL_START
-   396
-   397 				; Step $06 - Load the BCBs
-   398 					org LOAD_ADDRESS + $300
-   399 3300			.proc Load_BCB
-   400 3300-334F> A9 80			lda	#$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
-   401 3302				vbsta VBXE_MA_BSEL
+   431 = 0015			XDL_Length	equ *-XDL_START
+   432
+   433 				; Step $06 - Load the BCBs
+   434 					org LOAD_ADDRESS + $300
+   435 3300			.proc Load_BCB
+   436 3300-334F> A9 80			lda	#$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
+   437 3302				vbsta VBXE_MA_BSEL
 Macro: VBSTA [Source: vbxe_min.asm]
      2 3302 48				pha
      3 3303 A5 90			lda	VBXEBase+1
@@ -1452,44 +1495,44 @@ Macro: VBSTA [Source: vbxe_min.asm]
      6 3309 8D 5F D6			sta.w	VBXE_MA_BSEL
      7 = 330B			vbsta_adr	equ *-1
 Source: init_vbxe.asm
-   402
-   403 				; Print Load_BCB_Message - line 3 (y = $79)
-   404 330C A0 79			ldy #$79
-   405 330E A2 00			ldx #$00
-   406 3310			Print_Load_BCB_Message_L1
-   407 3310 BD 2E 33			lda Load_BCB_Message,x
-   408 3313 91 88			sta (Ptr_Lo),y
-   409 3315 E8				inx
-   410 3316 C8				iny
-   411 3317 E0 21			cpx #$21							; Copy $21 characters
-   412 3319 D0 F5			bne Print_Load_BCB_Message_L1
-   413
-   414 				; Update Progress bar - line 5 (y = $CB + (4 * increment #))
-   415 331B A4 80			ldy Reg1
-   416 331D A9 54			lda #$54							; Screen RAM code for Ctrl+T
-   417 331F 91 88			sta (Ptr_Lo),y
-   418 3321 C8				iny
-   419 3322 91 88			sta (Ptr_Lo),y
-   420 3324 C8				iny
-   421 3325 91 88			sta (Ptr_Lo),y
-   422 3327 C8				iny
-   423 3328 91 88			sta (Ptr_Lo),y
-   424 332A C8				iny
-   425 332B 84 80			sty Reg1							; Save pointer for progress bar updates
-   426
-   427 					; jsr Wait_For_Key_Exit
-   428
-   429 332D 60				rts									; Return controll to loader
-   430
-   431 332E			Load_BCB_Message
-   432 332E 2C 6F 61 64 69 6E + 	.byte $2C,$6F,$61,$64,$69,$6E,$67,$00,$22,$23,$22,$73,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00	; Loading BCBs
-   433
-   434 				.endp
-   435 02E2-02E3> 00 33			ini Load_BCB
-   436
-   437 					org VBXE_WINDOW + $100				; Load data directly into VBXE RAM
-   438 2100			BCB_START
-   439 2100				icl 'bcbs.asm'
+   438
+   439 				; Print Load_BCB_Message - line 3 (y = $79)
+   440 330C A0 79			ldy #$79
+   441 330E A2 00			ldx #$00
+   442 3310			Print_Load_BCB_Message_L1
+   443 3310 BD 2E 33			lda Load_BCB_Message,x
+   444 3313 91 88			sta (Ptr_Lo),y
+   445 3315 E8				inx
+   446 3316 C8				iny
+   447 3317 E0 21			cpx #$21							; Copy $21 characters
+   448 3319 D0 F5			bne Print_Load_BCB_Message_L1
+   449
+   450 				; Update Progress bar - line 5 (y = $CB + (4 * increment #))
+   451 331B A4 80			ldy Reg1
+   452 331D A9 54			lda #$54							; Screen RAM code for Ctrl+T
+   453 331F 91 88			sta (Ptr_Lo),y
+   454 3321 C8				iny
+   455 3322 91 88			sta (Ptr_Lo),y
+   456 3324 C8				iny
+   457 3325 91 88			sta (Ptr_Lo),y
+   458 3327 C8				iny
+   459 3328 91 88			sta (Ptr_Lo),y
+   460 332A C8				iny
+   461 332B 84 80			sty Reg1							; Save pointer for progress bar updates
+   462
+   463 					; jsr Wait_For_Key_Exit
+   464
+   465 332D 60				rts									; Return controll to loader
+   466
+   467 332E			Load_BCB_Message
+   468 332E 2C 6F 61 64 69 6E + 	.byte $2C,$6F,$61,$64,$69,$6E,$67,$00,$22,$23,$22,$73,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00	; Loading BCBs
+   469
+   470 				.endp
+   471 02E2-02E3> 00 33			ini Load_BCB
+   472
+   473 					org VBXE_WINDOW + $100				; Load data directly into VBXE RAM
+   474 2100			BCB_START
+   475 2100				icl 'bcbs.asm'
 Source: bcbs.asm
      1 				; Clear 496kB (leave bottom 16kB for the SVBXE.SYS driver)
      2 				; 496x16 zoom 8x8 clear blit (this takes 2 frames)
@@ -1527,13 +1570,13 @@ Source: bcbs.asm
     34 2127 00				dta $00								; Zoom
     35 2128 00				dta $00								; Pattern feature
     36 2129 00				dta $00								; Control: MODE=0 (copy), NEXT=0 (last BCB)
-   440 = 002A			BLT_Length	equ *-BCB_START
-   441
-   442 				; Step $07 - Load VBXE NTSC Palette so we can restore it on exit
-   443 					org LOAD_ADDRESS + $300
-   444 3300			.proc Load_Palette1
-   445 3300-334D> A9 80			lda	#$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
-   446 3302				vbsta VBXE_MA_BSEL
+   476 = 002A			BLT_Length	equ *-BCB_START
+   477
+   478 				; Step $07 - Load VBXE NTSC Palette so we can restore it on exit
+   479 					org LOAD_ADDRESS + $300
+   480 3300			.proc Load_Palette1
+   481 3300-334D> A9 80			lda	#$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
+   482 3302				vbsta VBXE_MA_BSEL
 Macro: VBSTA [Source: vbxe_min.asm]
      2 3302 48				pha
      3 3303 A5 90			lda	VBXEBase+1
@@ -1542,199 +1585,210 @@ Macro: VBSTA [Source: vbxe_min.asm]
      6 3309 8D 5F D6			sta.w	VBXE_MA_BSEL
      7 = 330B			vbsta_adr	equ *-1
 Source: init_vbxe.asm
-   447
-   448 				; Print Load_Palette1_Message - line 3 (y = $79)
-   449 330C A0 79			ldy #$79
-   450 330E A2 00			ldx #$00
-   451 3310			Print_Load_Palette1_Message_L1
-   452 3310 BD 2E 33			lda Load_Palette1_Message,x
-   453 3313 91 88			sta (Ptr_Lo),y
-   454 3315 E8				inx
-   455 3316 C8				iny
-   456 3317 E0 21			cpx #$21							; Copy $21 characters
-   457 3319 D0 F5			bne Print_Load_Palette1_Message_L1
-   458
-   459 				; Update Progress bar - line 5 (y = $CB + (4 * increment #))
-   460 331B A4 80			ldy Reg1
-   461 331D A9 54			lda #$54							; Screen RAM code for Ctrl+T
-   462 331F 91 88			sta (Ptr_Lo),y
-   463 3321 C8				iny
-   464 3322 91 88			sta (Ptr_Lo),y
-   465 3324 C8				iny
-   466 3325 91 88			sta (Ptr_Lo),y
-   467 3327 C8				iny
-   468 3328 91 88			sta (Ptr_Lo),y
-   469 332A C8				iny
-   470 332B 84 80			sty Reg1							; Save pointer for progress bar updates
-   471
-   472 					; jsr Wait_For_Key_Exit
-   473
-   474 332D 60				rts									; Return controll to loader
-   475
-   476 332E			Load_Palette1_Message
-   477 332E 2C 6F 61 64 69 6E + 	.sb 'Loading vbxe_ntsc.pal           '
-   478
-   479 				.endp
-   480 02E2-02E3> 00 33			ini Load_Palette1
-   481
-   482 					org VBXE_WINDOW + $200				; Load data directly into VBXE RAM
-   483 2200			Palette1
-   484 2200-24FF> 00 00 00 07 + 	ins 'vbxe_ntsc.pal'
-   485
-   486 				; Step $08 - Load VBXE PAL Palette so we can restore it on exit
-   487 					org LOAD_ADDRESS + $300
-   488 3300			.proc Load_Palette2
-   489 3300-3650> A9 80			lda	#$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
-   490 3302				vbsta VBXE_MA_BSEL
-Macro: VBSTA [Source: vbxe_min.asm]
-     2 3302 48				pha
-     3 3303 A5 90			lda	VBXEBase+1
-     4 3305 8D 0B 33			sta	vbsta_adr
-     5 3308 68				pla
-     6 3309 8D 5F D6			sta.w	VBXE_MA_BSEL
-     7 = 330B			vbsta_adr	equ *-1
-Source: init_vbxe.asm
-   491
-   492 				; Print Load_Palette_Message - line 3 (y = $79)
-   493 330C A0 79			ldy #$79
-   494 330E A2 00			ldx #$00
-   495 3310			Print_Load_Palette2_Message_L1
-   496 3310 BD 31 33			lda Load_Palette2_Message,x
-   497 3313 91 88			sta (Ptr_Lo),y
-   498 3315 E8				inx
-   499 3316 C8				iny
-   500 3317 E0 21			cpx #$21							; Copy $21 characters
-   501 3319 D0 F5			bne Print_Load_Palette2_Message_L1
-   502
-   503 				; Update Progress bar - line 5 (y = $CB + (4 * increment #))
-   504 331B A4 80			ldy Reg1
-   505 331D A9 54			lda #$54							; Screen RAM code for Ctrl+T
-   506 331F 91 88			sta (Ptr_Lo),y
-   507 3321 C8				iny
-   508 3322 91 88			sta (Ptr_Lo),y
-   509 3324 C8				iny
-   510 3325 91 88			sta (Ptr_Lo),y
-   511 3327 C8				iny
-   512 3328 91 88			sta (Ptr_Lo),y
-   513 332A C8				iny
-   514 332B 84 80			sty Reg1							; Save pointer for progress bar updates
-   515
-   516 332D 20 F7 31			jsr Wait_For_Key_Exit
+   483
+   484 				; Print Load_Palette1_Message - line 3 (y = $79)
+   485 330C A0 79			ldy #$79
+   486 330E A2 00			ldx #$00
+   487 3310			Print_Load_Palette1_Message_L1
+   488 3310 BD 2E 33			lda Load_Palette1_Message,x
+   489 3313 91 88			sta (Ptr_Lo),y
+   490 3315 E8				inx
+   491 3316 C8				iny
+   492 3317 E0 21			cpx #$21							; Copy $21 characters
+   493 3319 D0 F5			bne Print_Load_Palette1_Message_L1
+   494
+   495 				; Update Progress bar - line 5 (y = $CB + (4 * increment #))
+   496 331B A4 80			ldy Reg1
+   497 331D A9 54			lda #$54							; Screen RAM code for Ctrl+T
+   498 331F 91 88			sta (Ptr_Lo),y
+   499 3321 C8				iny
+   500 3322 91 88			sta (Ptr_Lo),y
+   501 3324 C8				iny
+   502 3325 91 88			sta (Ptr_Lo),y
+   503 3327 C8				iny
+   504 3328 91 88			sta (Ptr_Lo),y
+   505 332A C8				iny
+   506 332B 84 80			sty Reg1							; Save pointer for progress bar updates
+   507
+   508 					; jsr Wait_For_Key_Exit
+   509
+   510 332D 60				rts									; Return controll to loader
+   511
+   512 332E			Load_Palette1_Message
+   513 332E 2C 6F 61 64 69 6E + 	.sb 'Loading vbxe_ntsc.pal           '
+   514
+   515 				.endp
+   516 02E2-02E3> 00 33			ini Load_Palette1
    517
-   518 3330 60				rts									; Return controll to loader
-   519
-   520 3331			Load_Palette2_Message
-   521 3331 2C 6F 61 64 69 6E + 	.sb 'Loading vbxe_pal.pal            '
-   522 3351			Palette
-   523 3351 00 00 00 11 11 11 + 	ins 'vbxe_pal.pal'
-   524
-   525 				.endp
-   526 02E2-02E3> 00 33			ini Load_Palette2
+   518 					org VBXE_WINDOW + $200				; Load data directly into VBXE RAM
+   519 2200			Palette1
+   520 2200-24FF> 00 00 00 07 + 	ins 'vbxe_ntsc.pal'
+   521
+   522 				; Step $08 - Load VBXE PAL Palette so we can restore it on exit
+   523 					org LOAD_ADDRESS + $300
+   524 3300			.proc Load_Palette2
+   525 3300-3650> A9 80			lda	#$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
+   526 3302				vbsta VBXE_MA_BSEL
+Macro: VBSTA [Source: vbxe_min.asm]
+     2 3302 48				pha
+     3 3303 A5 90			lda	VBXEBase+1
+     4 3305 8D 0B 33			sta	vbsta_adr
+     5 3308 68				pla
+     6 3309 8D 5F D6			sta.w	VBXE_MA_BSEL
+     7 = 330B			vbsta_adr	equ *-1
+Source: init_vbxe.asm
    527
-   528 					org VBXE_WINDOW + $500				; Load data directly into VBXE RAM
-   529 2500			Palette2
-   530 2500-27FF> 00 00 00 07 + 	ins 'vbxe_ntsc.pal'
-   123
-   124 					org LOAD_ADDRESS + $300				; Libraries live above
-   125
-   126 				;-----------------------------------------------------------------------------
-   127 				; Main loop
-   128 				;-----------------------------------------------------------------------------
-   129 3300			start
-   130 				; Initialization code can go here
+   528 				; Print Load_Palette_Message - line 3 (y = $79)
+   529 330C A0 79			ldy #$79
+   530 330E A2 00			ldx #$00
+   531 3310			Print_Load_Palette2_Message_L1
+   532 3310 BD 31 33			lda Load_Palette2_Message,x
+   533 3313 91 88			sta (Ptr_Lo),y
+   534 3315 E8				inx
+   535 3316 C8				iny
+   536 3317 E0 21			cpx #$21							; Copy $21 characters
+   537 3319 D0 F5			bne Print_Load_Palette2_Message_L1
+   538
+   539 				; Update Progress bar - line 5 (y = $CB + (4 * increment #))
+   540 331B A4 80			ldy Reg1
+   541 331D A9 54			lda #$54							; Screen RAM code for Ctrl+T
+   542 331F 91 88			sta (Ptr_Lo),y
+   543 3321 C8				iny
+   544 3322 91 88			sta (Ptr_Lo),y
+   545 3324 C8				iny
+   546 3325 91 88			sta (Ptr_Lo),y
+   547 3327 C8				iny
+   548 3328 91 88			sta (Ptr_Lo),y
+   549 332A C8				iny
+   550 332B 84 80			sty Reg1							; Save pointer for progress bar updates
+   551
+   552 332D 20 FF 31			jsr Wait_For_Key_Exit
+   553
+   554 3330 60				rts									; Return controll to loader
+   555
+   556 3331			Load_Palette2_Message
+   557 3331 2C 6F 61 64 69 6E + 	.sb 'Loading vbxe_pal.pal            '
+   558 3351			Palette
+   559 3351 00 00 00 11 11 11 + 	ins 'vbxe_pal.pal'
+   560
+   561 				.endp
+   562 02E2-02E3> 00 33			ini Load_Palette2
+   563
+   564 					org VBXE_WINDOW + $500				; Load data directly into VBXE RAM
+   565 2500			Palette2
+   566 2500-27FF> 00 00 00 07 + 	ins 'vbxe_ntsc.pal'
+   129
+   130 					org LOAD_ADDRESS + $300				; Libraries live above
    131
-   132 3300-334D> A9 00			lda	#0								; Setup VBXE for displaying picture data
-   133 3302 8D 41 D6			sta	VBXE_XDL_ADR0					; But don't show the overlay just yet!
-   134 3305 8D 43 D6			sta	VBXE_XDL_ADR2
-   135 3308 8D 42 D6			sta	VBXE_XDL_ADR1
-   136
-   137 330B A9 00			lda	#$00
-   138 					;sta SDMCTL							; Turn ANTIC DMA off
-   139
-   140 330D A9 03			lda	#%00000011						; XDL,XCOLOR Enabled and transparent color index 0
-   141 330F 8D 40 D6			sta	VBXE_VIDEO_CONTROL
-   142 3312 20 4E 33			jsr Wait_For_Sync
-   143
-   144 				; Load the Attribute Colour Map
-   145 3315 A9 80			lda	#MEMAC_GLOBAL_ENABLE
-   146 3317 8D 5F D6			sta	VBXE_MA_BSEL
-   147 331A A9 81 8D 33 31 A9 + 	mwa	#Colour FileNamePtr
-   148 3324 A9 14			lda	#$14
-   149 3326 85 8A			sta	BankIndex						; Load Colour Map data under $14000
-   150 3328 20 AA 30			jsr	LoadData
-   151
-   152 332B 20 63 33			jsr Setup_Cmap1						; Expand the data out to $17000
-   153
-   154 				; Load the Image
-   155 332E A9 80			lda	#MEMAC_GLOBAL_ENABLE
-   156 3330 8D 5F D6			sta	VBXE_MA_BSEL
-   157 3333 A9 8E 8D 33 31 A9 + 	mwa	#Image FileNamePtr
-   158 333D A9 01			lda	#$01
-   159 333F 85 8A			sta	BankIndex						; Load Colour Map data under $01000
-   160 3341 20 AA 30			jsr	LoadData
-   161
-   162 3344			main
-   163 				; All done - now loop forever
-   164 3344 A9 00			lda #$00
-   165 3346 85 4D			sta ATRACT							; Disable Attract Mode
-   166
-   167 3348 20 4E 33			jsr Wait_For_Sync					; Wait for VSYNC, Q quits
-   168 334B 4C 44 33			jmp main
-   169
-   170 				; Set RUN Vector
-   171 02E0-02E1> 00 33			run start
+   132 				;-----------------------------------------------------------------------------
+   133 				; Main loop
+   134 				;-----------------------------------------------------------------------------
+   135 3300			start
+   136 				; Initialization code can go here
+   137
+   138 3300-334D> A9 00			lda	#0								; Setup VBXE for displaying picture data
+   139 3302 8D 41 D6			sta	VBXE_XDL_ADR0					; But don't show the overlay just yet!
+   140 3305 8D 43 D6			sta	VBXE_XDL_ADR2
+   141 3308 8D 42 D6			sta	VBXE_XDL_ADR1
+   142
+   143 330B A9 00			lda	#$00
+   144 					;sta SDMCTL							; Turn ANTIC DMA off
+   145
+   146 330D A9 03			lda	#%00000011						; XDL,XCOLOR Enabled and transparent color index 0
+   147 330F 8D 40 D6			sta	VBXE_VIDEO_CONTROL
+   148 3312 20 4E 33			jsr Wait_For_Sync
+   149
+   150 				; Load the Attribute Colour Map
+   151 3315 A9 80			lda	#MEMAC_GLOBAL_ENABLE
+   152 3317 8D 5F D6			sta	VBXE_MA_BSEL
+   153 331A A9 82 8D 33 31 A9 + 	mwa	#Colour FileNamePtr
+   154 3324 A9 14			lda	#$14
+   155 3326 85 8A			sta	BankIndex						; Load Colour Map data under $14000
+   156 3328 20 AA 30			jsr	LoadData
+   157
+   158 332B 20 63 33			jsr Setup_Cmap1						; Expand the data out to $17000
+   159
+   160 				; Load the Image
+   161 332E A9 80			lda	#MEMAC_GLOBAL_ENABLE
+   162 3330 8D 5F D6			sta	VBXE_MA_BSEL
+   163 3333 A9 8F 8D 33 31 A9 + 	mwa	#Image FileNamePtr
+   164 333D A9 01			lda	#$01
+   165 333F 85 8A			sta	BankIndex						; Load Colour Map data under $01000
+   166 3341 20 AA 30			jsr	LoadData
+   167
+   168 3344			main
+   169 				; All done - now loop forever
+   170 3344 A9 00			lda #$00
+   171 3346 85 4D			sta ATRACT							; Disable Attract Mode
    172
-   173
-   174 				;-----------------------------------------------------------------------------
-   175 				; END OF CODE
-   176 				;-----------------------------------------------------------------------------
-   177
-   178 				;-----------------------------------------------------------------------------
-   179 				; Subroutines BEGIN
+   173 3348 20 4E 33			jsr Wait_For_Sync					; Wait for VSYNC, Q quits
+   174 334B 4C 44 33			jmp main
+   175
+   176 				; Set RUN Vector
+   177 02E0-02E1> 00 33			run start
+   178
+   179
    180 				;-----------------------------------------------------------------------------
-   181 				;-----------------------------------------------------------------------------
-   182 				; Wait For VSync (locks to the refresh rate, PAL=50Hz, NTSC=60Hz)  Thanks tebe
-   183 				;-----------------------------------------------------------------------------
-   184 334E			Wait_For_Sync							; Hold until VCOUNT == 0
-   185 334E-3399> 2C 0B D4		bit	VCOUNT
-   186 3351 30 FB			bmi *-3
-   187 3353 2C 0B D4			bit	VCOUNT
-   188 3356 10 FB			bpl *-3
-   189 				; If present, the next 3 lines will allow a "jump to exit" on a specific key press
-   190 3358 AD FC 02			lda CH
-   191 335B C9 2F			cmp #$2F							; Press Q to quit
-   192 335D F0 01			beq	Exit
-   193 335F 60				rts									; Else return to caller
-   194 3360			Exit
-   195 3360 4C D2 31			jmp	Cleanup_Exit					; Clean up and exit (accounts for any long branch issues)
-   196
-   197 				;-----------------------------------------------------------------------------
-   198 				; Setup_Cmap1 - Sets byte 4 for all cmap entries via blitter
-   199 				;-----------------------------------------------------------------------------
-   200 3363			Setup_Cmap1
-   201 3363 A9 15			lda	#BLT_SETUP_CMAP_1-BLT_CLEAR
-   202 3365 8D 50 D6			sta	VBXE_BL_ADR0					; Setup the blitter for memory fill operation
-   203 3368 A9 00			lda	#0
-   204 336A 8D 52 D6			sta	VBXE_BL_ADR2					; See the description of BCB at the end of this
-   205 336D A9 01			lda	#$01							; Source
-   206 336F 8D 51 D6			sta	VBXE_BL_ADR1
-   207 3372 A9 00			lda	#0
-   208 3374			Setup_Cmap1_L1
-   209 3374 AD 53 D6			lda	VBXE_BLITTER_BUSY
-   210 3377 C9 00			cmp	#0
-   211 3379 D0 F9			bne	Setup_Cmap1_L1					; Wait for blitter to finish
-   212 337B A9 01			lda	#1
-   213 337D 8D 53 D6			sta	VBXE_BLITTER_START				; Start the blit
-   214 3380 60				rts
-   215
-   216 				;-----------------------------------------------------------------------------
-   217 				; Subroutines END
-   218 				;-----------------------------------------------------------------------------
-   219
-   220 				;-----------------------------------------------------------------------------
-   221 				; Data Tables go here
+   181 				; END OF CODE
+   182 				;-----------------------------------------------------------------------------
+   183
+   184 				;-----------------------------------------------------------------------------
+   185 				; Subroutines BEGIN
+   186 				;-----------------------------------------------------------------------------
+   187 				;-----------------------------------------------------------------------------
+   188 				; Wait For VSync (locks to the refresh rate, PAL=50Hz, NTSC=60Hz)  Thanks tebe
+   189 				;-----------------------------------------------------------------------------
+   190 334E			Wait_For_Sync							; Hold until VCOUNT == 0
+   191 334E-339A> 2C 0B D4		bit	VCOUNT
+   192 3351 30 FB			bmi *-3
+   193 3353 2C 0B D4			bit	VCOUNT
+   194 3356 10 FB			bpl *-3
+   195 				; If present, the next 3 lines will allow a "jump to exit" on a specific key press
+   196 3358 AD FC 02			lda CH
+   197 335B C9 2F			cmp #$2F							; Press Q to quit
+   198 335D F0 01			beq	Exit
+   199 335F 60				rts									; Else return to caller
+   200 3360			Exit
+   201 3360 4C D2 31			jmp	Cleanup_Exit					; Clean up and exit (accounts for any long branch issues)
+   202
+   203 				;-----------------------------------------------------------------------------
+   204 				; Setup_Cmap1 - Sets byte 4 for all cmap entries via blitter
+   205 				;-----------------------------------------------------------------------------
+   206 3363			Setup_Cmap1
+   207 3363 A9 15			lda	#BLT_SETUP_CMAP_1-BLT_CLEAR
+   208 3365 8D 50 D6			sta	VBXE_BL_ADR0					; Setup the blitter for memory fill operation
+   209 3368 A9 00			lda	#0
+   210 336A 8D 52 D6			sta	VBXE_BL_ADR2					; See the description of BCB at the end of this
+   211 336D A9 01			lda	#$01							; Source
+   212 336F 8D 51 D6			sta	VBXE_BL_ADR1
+   213 3372 A9 00			lda	#0
+   214 3374			Setup_Cmap1_L1
+   215 3374 AD 53 D6			lda	VBXE_BLITTER_BUSY
+   216 3377 C9 00			cmp	#0
+   217 3379 D0 F9			bne	Setup_Cmap1_L1					; Wait for blitter to finish
+   218 337B A9 01			lda	#1
+   219 337D 8D 53 D6			sta	VBXE_BLITTER_START				; Start the blit
+   220 3380 60				rts
+   221
    222 				;-----------------------------------------------------------------------------
-   223 3381			Colour
-   224 3381 44 32 3A 41 54 54 + 	dta c'D2:ATTRIB.MAP'
-   225 338E			Image
-   226 338E 44 32 3A 49 4D 41 + 	dta c'D2:IMAGE.RAW'
+   223 				; Restores VBXE Palette 0 based on NTSC/PAL test
+   224 				;-----------------------------------------------------------------------------
+   225 3381			Restore_Palette0
+   226
+   227 3381 60				rts
+   228
+   229 				;-----------------------------------------------------------------------------
+   230 				; Subroutines END
+   231 				;-----------------------------------------------------------------------------
+   232
+   233 				;-----------------------------------------------------------------------------
+   234 				; Data Tables go here
+   235 				;-----------------------------------------------------------------------------
+   236 3382			Colour
+   237 3382 44 32 3A 41 54 54 + 	dta c'D2:ATTRIB.MAP'
+   238 338F			Image
+   239 338F 44 32 3A 49 4D 41 + 	dta c'D2:IMAGE.RAW'
+   240 					
+   241 				;-----------------------------------------------------------------------------
+   242 				; 
+   243 				;-----------------------------------------------------------------------------

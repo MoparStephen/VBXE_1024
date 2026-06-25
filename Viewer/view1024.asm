@@ -51,6 +51,7 @@
 .var SDLSTH_OLD			.byte = $486	; Save the Display List Pointer
 .var DOSINIL_OLD		.byte = $487	; Save the DOSINI Pointer
 .var DOSINIH_OLD		.byte = $488	; Save the DOSINI Pointer
+.var Video_Flag			.byte = $489	; PAL = 0, NTSC = 1
 
 ;-----------------------------------------------------------------------------
 ; Defines go here
@@ -73,7 +74,7 @@
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $10	; 0 (Screen code used for Version in loading screen)
-.def	V_2								= $12	; 1 (Screen code used for Version in loading screen)
+.def	V_2								= $13	; 3 (Screen code used for Version in loading screen)
 .def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
@@ -88,12 +89,14 @@
 ; Clean up and exit
 ;-----------------------------------------------------------------------------
 Cleanup_Exit
+	lda #$00
+	sta SDMCTL
+
+	jsr Restore_Palette0
+
 	lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
 	sta VBXE_MA_BSEL
 	sta VBXE_VIDEO_CONTROL				; Disable XDL
-
-	lda SDMCTL_OLD
-	sta SDMCTL							; Restore SDMCTL
 
 	lda LMARGIN_OLD
 	sta LMARGIN							; Restore LMARGIN
@@ -105,6 +108,9 @@ Cleanup_Exit
 
 	lda #$FF
 	sta CH								; Clear last key pressed
+
+	lda SDMCTL_OLD
+	sta SDMCTL							; Restore SDMCTL
 
 	jmp	(DOSVEC)						; Return to DOS
 
@@ -214,6 +220,13 @@ Setup_Cmap1_L1
 	rts
 
 ;-----------------------------------------------------------------------------
+; Restores VBXE Palette 0 based on NTSC/PAL test
+;-----------------------------------------------------------------------------
+Restore_Palette0
+
+	rts
+
+;-----------------------------------------------------------------------------
 ; Subroutines END
 ;-----------------------------------------------------------------------------
 
@@ -224,3 +237,7 @@ Colour
 	dta c'D2:ATTRIB.MAP'
 Image
 	dta c'D2:IMAGE.RAW'
+	
+;-----------------------------------------------------------------------------
+; 
+;-----------------------------------------------------------------------------
