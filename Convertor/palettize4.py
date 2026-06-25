@@ -292,8 +292,10 @@ def main():
                     help="aspect handling when source AR != display AR (default stretch); 'fit' letterboxes with transparent index 0")
     ap.add_argument("--display-aspect", default="4:3", metavar="R",
                     help="true on-screen aspect for cover/fit (default 4:3; handles non-square pixels e.g. 160-wide modes)")
+    ap.add_argument("--color-bias", type=float, default=0.0, metavar="0..1",
+                    help="slider between fewest artifacts (0.0 = fidelity) and most colours (1.0). Intermediate values trade block artifacts for colour count smoothly.")
     ap.add_argument("--max-colors", action="store_true",
-                    help="maximize distinct output colours: give each colour one palette (no duplication), recolouring boundary pixels instead. Raises colour count, may add slight per-pixel error at cell boundaries.")
+                    help="shorthand for --color-bias 1.0 (maximum distinct colours).")
     ap.add_argument("--optimize", action=argparse.BooleanOptionalAction, default=True,
                     help="reduce cross-palette duplication via local search so more colours survive (fidelity strategy; default on)")
     ap.add_argument("--seed", type=int, default=0)
@@ -438,22 +440,20 @@ def main():
             fcolors[b] = set(int(c) for c in keep)
         return cp, rmaps, fcolors, sp, se
 
-    def run_partition():
-        """Give each colour exactly one palette (zero duplication) so all slots
-        hold distinct colours; recolour boundary pixels to the nearest owned
-        colour. Maximizes colour count; adds error where cells straddle palettes."""
+    def run_balanced(w, k_floor):
+        """Continuum anchored at fidelity (w=0 -> ~k_floor colours, no blocks) and
+        max colours (w=1 -> every used colour). Assign each cell to the palette
+        owning the plurality of its pixels, choose K = interp(k_floor, K_max)
+        colours to display (the most-used ones), place each in the palette where
+        it appears most, then spend all remaining slots on the highest-demand
+        duplicates -- which is what removes recolouring blocks. Higher w = more
+        colours but fewer spare slots for duplicates (more blocks); lower w = the
+        reverse."""
         cp = np.zeros((H, cells_per_line), dtype=np.int16)
         rmaps = [np.arange(N) for _ in range(NP)]
         fcolors = [set() for _ in range(NP)]
         sp = 0; se = 0.0
         home = balanced_cluster(colors_lab, NP, cap, seed=args.seed)
-        for b in range(NP):
-            hb = np.where(home == b)[0]
-            rb = np.arange(N)
-            if len(hb):
-                d = ((colors_lab[:, None, :] - colors_lab[hb][None, :, :]) ** 2).sum(2)
-                nn = hb[d.argmin(1)]; notb = home != b; rb[notb] = nn[notb]
-            rmaps[b] = rb
         for y in range(H):
             row = pix[y]; trow = transparent[y]
             for cx in range(cells_per_line):
@@ -461,29 +461,62 @@ def main():
                 seg = row[a:bb][~trow[a:bb]]
                 cp[y, cx] = 0 if len(seg) == 0 else int(np.bincount(home[seg], minlength=NP).argmax())
         pp = np.repeat(cp, cell_w, axis=1)[:, :W]
+        dem = np.stack([np.bincount(pix[(pp == b) & (~transparent)].ravel(), minlength=N)
+                        for b in range(NP)])          # NP x N pixel demand
+        total = dem.sum(0)
+        used = np.nonzero(total)[0]
+        K_hi = len(used)
+        K = int(round(k_floor + w * (K_hi - k_floor)))
+        K = max(1, min(K_hi, K))
+        pd = dem.max(0)                                # best single-palette demand
+        display = used[np.argsort(pd[used])[::-1][:K]] # the K colours we will show
+        counts = [0] * NP
+        Sb = [set() for _ in range(NP)]
+        for c in display:                              # place each in its best palette
+            c = int(c)
+            for b in np.argsort(dem[:, c])[::-1]:
+                if dem[b, c] == 0:
+                    break
+                if counts[b] < cap:
+                    Sb[b].add(c); counts[b] += 1; break
+        cand = []                                      # spare slots -> best duplicates
         for b in range(NP):
+            for c in display:
+                c = int(c)
+                if c not in Sb[b] and dem[b, c] > 0:
+                    cand.append((int(dem[b, c]), c, b))
+        cand.sort(reverse=True)
+        for val, c, b in cand:
+            if counts[b] < cap and c not in Sb[b]:
+                Sb[b].add(c); counts[b] += 1
+        for b in range(NP):
+            keep = np.array(sorted(Sb[b])) if Sb[b] else np.array([], dtype=int)
+            rb = np.arange(N)
+            if len(keep):
+                notin = np.ones(N, bool); notin[keep] = False
+                ni = np.nonzero(notin)[0]
+                if len(ni):
+                    d = ((colors_lab[ni][:, None, :] - colors_lab[keep][None, :, :]) ** 2).sum(2)
+                    rb[ni] = keep[d.argmin(1)]
+            rmaps[b] = rb
             cids = pix[(pp == b) & (~transparent)].ravel()
-            if len(cids) == 0:
-                continue
-            off = home[cids] != b
-            if off.any():
-                oc = cids[off]; sp += int(off.sum())
-                se += float(np.sqrt(((colors_lab[oc] - colors_lab[rmaps[b][oc]]) ** 2).sum(1)).sum())
-            fcolors[b] = set(int(c) for c in np.unique(rmaps[b][cids]))
+            if len(cids):
+                off = ~np.isin(cids, keep)
+                if off.any():
+                    oc = cids[off]; sp += int(off.sum())
+                    se += float(np.sqrt(((colors_lab[oc] - colors_lab[rmaps[b][oc]]) ** 2).sum(1)).sum())
+                fcolors[b] = set(int(c) for c in np.unique(rmaps[b][cids]))
         return cp, rmaps, fcolors, sp, se
 
     strategy = "lossless"
     if not lossless:
+        bias = 1.0 if args.max_colors else max(0.0, min(1.0, args.color_bias))
         fid = run_fidelity()
-        chosen = fid
-        strategy = "fidelity"
-        if args.max_colors:
-            # only switch to partition if it actually yields more distinct colours
-            par = run_partition()
-            fid_n = len(set().union(*fid[2]))
-            par_n = len(set().union(*par[2]))
-            if par_n > fid_n:
-                chosen = par; strategy = "max-colors (partition)"
+        if bias <= 0.0:
+            chosen = fid; strategy = "fidelity (bias 0.00)"
+        else:
+            k_floor = len(set().union(*fid[2]))        # fidelity colour count = anchor
+            chosen = run_balanced(bias, k_floor); strategy = f"balanced (bias {bias:.2f})"
         cell_pal, remaps, final_colors, sub_pixels, sub_err_sum = chosen
 
     # ---- build palette RAM + slot lookup -----------------------------------
@@ -560,9 +593,9 @@ def main():
         lines.append("RESULT: LOSSY     - cells could not be partitioned cleanly.")
         lines.append(f"  recoloured pixels  : {sub_pixels} ({pct:.3f}% of image)")
         lines.append(f"  mean OKLab error   : {mean_err:.4f}  (on recoloured pixels only)")
-        if max_comp > cap and strategy == "fidelity":
+        if max_comp > cap and strategy.startswith("fidelity"):
             lines.append(f"  note: a single component needs {max_comp} colours (> {cap}); "
-                         "duplication/substitution was unavoidable. Try --max-colors.")
+                         "raise --color-bias (e.g. 0.5 or 1.0) to recover more colours.")
     lines.append("")
     # how many palettes each colour appears in (to find entries unique to one)
     pal_count = np.zeros(N, dtype=np.int32)

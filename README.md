@@ -84,7 +84,8 @@ Requires Python 3 with `numpy` and `Pillow` (`pip install numpy pillow`).
 | `--filter F`  | lanczos | Resampling filter: `nearest box bilinear hamming bicubic lanczos`. |
 | `--fit MODE`  | stretch | Aspect handling: `stretch`, `cover`, or `fit` (see below).      |
 | `--display-aspect R` | 4:3 | True on-screen aspect for `cover`/`fit`, e.g. `4:3`.      |
-| `--max-colors`| off     | Maximize distinct output colours (see Colour count below).      |
+| `--color-bias 0..1` | 0.0 | Slider: 0 = fewest artifacts (fidelity), 1 = most colours. |
+| `--max-colors`| off     | Shorthand for `--color-bias 1.0`.                              |
 | `--optimize` / `--no-optimize` | on | Reduce cross-palette duplication in the fidelity strategy. |
 | `--seed N`    | `0`     | RNG seed for the k-means seeding in Phase B.                   |
 
@@ -144,24 +145,28 @@ The report makes this visible: compare `master colours` (input) with `output
 colours` (result), and read `duplicated across palettes`. A large duplicated
 count with `output < master` is the signature of this problem.
 
-Two strategies trade off colour count against per-pixel accuracy:
+Colour count and per-pixel accuracy trade off against each other, controlled by
+**`--color-bias`** (0.0–1.0):
 
-- **Fidelity (default).** Every pixel keeps its exact colour; colours are
-  duplicated across palettes as needed; colours are only merged when a palette
-  overflows. This is optimal — zero loss — whenever the colours fit the slot
-  budget, and it's the right choice for photographs.
-- **`--max-colors` (partition).** Each colour is given a single owning palette
-  (zero duplication), so all slots can hold distinct colours. Pixels whose colour
-  isn't owned by their cell's palette are recoloured to the nearest owned colour.
-  This recovers the lost colours, at the cost of slight recolouring where a cell
-  straddles a palette boundary.
+- **`--color-bias 0.0` (default, "fidelity").** Every pixel keeps its exact
+  colour; colours are duplicated across palettes as needed and only merged when a
+  palette overflows. No block artifacts. Optimal — zero loss — whenever the
+  colours fit the slot budget, and the right choice for photographs.
+- **`--color-bias 1.0` (= `--max-colors`).** Display as many distinct colours as
+  possible. Each colour is placed in the palette where it's most used and the
+  remaining slots go to the highest-demand duplicates; pixels whose colour isn't
+  in their cell's palette are recoloured to the nearest available one. Maximizes
+  colours but, because a whole 8-pixel cell commits to one palette, can produce
+  visible recoloured **blocks** where cells straddle a colour boundary.
+- **Intermediate values** slide smoothly between the two. The colour count rises
+  monotonically with the bias while the spare slots available to suppress blocks
+  fall. `0.5`–`0.75` is often the sweet spot for busy/pixelated images: most of
+  the extra colours, far fewer blocks than `1.0`.
 
-`--max-colors` is self-guarding: it runs both strategies and keeps whichever
-produces more distinct colours, so it never reduces the count below the default.
-It is most useful on busy/pixelated sources where the default leaves colours on
-the table; on images that already fit it changes nothing. Check the report's
-`recoloured pixels` / `mean OKLab error` to judge whether the extra colours are
-worth the boundary recolouring for a given image.
+The bias slider chooses how to spend the slot budget: low bias spends slots on
+duplicates (exact colours, no blocks, fewer distinct colours); high bias spends
+them on distinct colours (more colours, more recolouring). Check `recoloured
+pixels` / `mean OKLab error` in the report to judge a given bias.
 
 ---
 
