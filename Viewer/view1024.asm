@@ -74,7 +74,7 @@
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $10	; 0 (Screen code used for Version in loading screen)
-.def	V_2								= $13	; 3 (Screen code used for Version in loading screen)
+.def	V_2								= $14	; 4 (Screen code used for Version in loading screen)
 .def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
@@ -223,6 +223,31 @@ Setup_Cmap1_L1
 ; Restores VBXE Palette 0 based on NTSC/PAL test
 ;-----------------------------------------------------------------------------
 Restore_Palette0
+	lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
+	sta VBXE_MA_BSEL
+
+	lda Video_Flag						; 0 = PAL, 1 = NTSC
+	bne Restore_Palette0_Setup_NTSC
+Restore_Palette0_Setup_PAL
+	lda <(VBXE_WINDOW + $0500)
+	sta Y_Register
+	lda >(VBXE_WINDOW + $0500)			; PAL_Palette = $00500 - $006FF
+	sta Y_Register + $01
+	jmp Restore_Palette0_SetPalette
+
+Restore_Palette0_Setup_NTSC
+	lda <(VBXE_WINDOW + $0200)
+	sta Y_Register
+	lda >(VBXE_WINDOW + $0200)			; NTSC_Palette = $00200 - $004FF
+	sta Y_Register + $01
+
+Restore_Palette0_SetPalette
+	lda #$00							; Set Palette 0
+	jsr VBXE_SetPalette2
+
+Restore_Palette0_Done
+	lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
+	sta VBXE_MA_BSEL
 
 	rts
 
