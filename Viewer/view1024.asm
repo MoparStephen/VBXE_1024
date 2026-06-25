@@ -6,11 +6,13 @@
 ; Load Address = 
 ; Run Address = 
 ; VBXE:
-;    XDL         = $00000 - $00014
-;    BCBs        = $00100 - $
-;    VRAM        = $01000 - $13BFF (Video Ram)
-;    CRAM_Buffer = $14000 - $1657F (Compressed palette bytes)
-;    CRAM        = $17000 - $205FF (Colour Ram)
+;    XDL           = $00000 - $00014
+;    BCBs          = $00100 - $001FF
+;    NTSC_Palette  = $00200 - $004FF (Used to restore Palette 0 on program exit)
+;    PAL_Palette   = $00500 - $006FF (Used to restore Palette 0 on program exit)
+;    VRAM          = $01000 - $13BFF (Video Ram)
+;    CRAM_Buffer   = $14000 - $1657F (Compressed palette bytes)
+;    CRAM          = $17000 - $205FF (Colour Ram)
 
 ;-----------------------------------------------------------------------------
 ;  HARDWARE EQUATES
@@ -71,7 +73,7 @@
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $10	; 0 (Screen code used for Version in loading screen)
-.def	V_2								= $11	; 1 (Screen code used for Version in loading screen)
+.def	V_2								= $12	; 1 (Screen code used for Version in loading screen)
 .def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
@@ -133,7 +135,7 @@ start
 	sta	VBXE_XDL_ADR1
 
 	lda	#$00
-	sta SDMCTL							; Turn ANTIC DMA off
+	;sta SDMCTL							; Turn ANTIC DMA off
 
 	lda	#%00000011						; XDL,XCOLOR Enabled and transparent color index 0
 	sta	VBXE_VIDEO_CONTROL

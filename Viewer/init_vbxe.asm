@@ -439,10 +439,10 @@ BCB_START
 	icl 'bcbs.asm'
 BLT_Length	equ *-BCB_START
 
-; Step $07 - Load VBXE Palette #1
+; Step $07 - Load VBXE NTSC Palette so we can restore it on exit
 	org LOAD_ADDRESS + $300
 .proc Load_Palette1
-	lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
+	lda	#$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
 	vbsta VBXE_MA_BSEL
 
 ; Print Load_Palette1_Message - line 3 (y = $79)
@@ -471,24 +471,22 @@ Print_Load_Palette1_Message_L1
 
 	; jsr Wait_For_Key_Exit
 
-	mwa #Palette Y_Register
-	lda #$01							; Set Palette 1
-	jsr VBXE_SetPalette2
-
 	rts									; Return controll to loader
 
 Load_Palette1_Message
-	.sb 'Loading palette1.pal            '
-Palette
-	ins 'Assets\Stanley\palette1.pal'
+	.sb 'Loading vbxe_ntsc.pal           '
 
 .endp
 	ini Load_Palette1
 
-; Step $08 - Load VBXE Palette #2
+	org VBXE_WINDOW + $200				; Load data directly into VBXE RAM
+Palette1
+	ins 'vbxe_ntsc.pal'
+
+; Step $08 - Load VBXE PAL Palette so we can restore it on exit
 	org LOAD_ADDRESS + $300
 .proc Load_Palette2
-	lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
+	lda	#$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
 	vbsta VBXE_MA_BSEL
 
 ; Print Load_Palette_Message - line 3 (y = $79)
@@ -515,253 +513,18 @@ Print_Load_Palette2_Message_L1
 	iny
 	sty Reg1							; Save pointer for progress bar updates
 
-	; jsr Wait_For_Key_Exit
-
-	mwa #Palette Y_Register
-	lda #$02							; Set Palette 2
-	jsr VBXE_SetPalette2
+	jsr Wait_For_Key_Exit
 
 	rts									; Return controll to loader
 
 Load_Palette2_Message
-	.sb 'Loading palette2.pal            '
+	.sb 'Loading vbxe_pal.pal            '
 Palette
-	ins 'Assets\Stanley\palette2.pal'
+	ins 'vbxe_pal.pal'
 
 .endp
 	ini Load_Palette2
 
-; Step $09 - Load VBXE Palette #3
-	org LOAD_ADDRESS + $300
-.proc Load_Palette3
-	lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
-	vbsta VBXE_MA_BSEL
-
-; Print Load_Palette_Message - line 3 (y = $79)
-	ldy #$79
-	ldx #$00
-Print_Load_Palette3_Message_L1
-	lda Load_Palette3_Message,x
-	sta (Ptr_Lo),y
-	inx
-	iny
-	cpx #$21							; Copy $21 characters
-	bne Print_Load_Palette3_Message_L1
-
-; Update Progress bar - line 5 (y = $CB + (4 * increment #))
-	ldy Reg1
-	lda #$54							; Screen RAM code for Ctrl+T
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
-	sty Reg1							; Save pointer for progress bar updates
-
-	;jsr Wait_For_Key_Exit
-
-	mwa #Palette Y_Register
-	lda #$03							; Set Palette 3
-	jsr VBXE_SetPalette2
-
-	rts									; Return controll to loader
-
-Load_Palette3_Message
-	.sb 'Loading palette3.pal            '
-Palette
-	ins 'Assets\Stanley\palette3.pal'
-
-.endp
-	ini Load_Palette3
-
-/*
-; We're loading these large files in chunks so that we can bump the progress bar with each 4kB chunk
-
-; Step $0A - Load the ColourMap into VBXE RAM starting at bank $14
-	org LOAD_ADDRESS + $300
-.proc Load_Attrib_0
-	lda #$14
-	sta Reg3							; Temp storage
-
-	lda	Reg3
-	eor #MEMAC_GLOBAL_ENABLE			; Bank $14 VBXE Window Enabled
-	vbsta VBXE_MA_BSEL
-
-; Print Load_Palette_Message - line 3 (y = $79)
-	ldy #$79
-	ldx #$00
-Print_Load_Attrib_0_Message_L1
-	lda Load_Attrib_0_Message,x
-	sta (Ptr_Lo),y
-	inx
-	iny
-	cpx #$21							; Copy $21 characters
-	bne Print_Load_Attrib_0_Message_L1
-
-; Update Progress bar - line 5 (y = $CB + (4 * increment #))
-	ldy Reg1
-	lda #$54							; Screen RAM code for Ctrl+T
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
-	sty Reg1							; Save pointer for progress bar updates
-
-	; jsr Wait_For_Key_Exit
-	inc Reg3							; Increment bank1 for next chunk
-	rts									; Return controll to loader
-
-Load_Attrib_0_Message
-	.sb 'Loading attrib0.map              '
-
-.endp
-	ini Load_Attrib_0					; Run BEFORE the data segment below so bank $14 is active when DOS writes to $2000
-
-	org VBXE_WINDOW						; Load data directly into VBXE RAM
-Attrib0
-	ins 'Assets\Stanley\attrib0.map'
-
-; Step $0B - Load the ColourMap into VBXE RAM starting at bank $15
-	org LOAD_ADDRESS + $300
-.proc Load_Attrib_1
-	lda	Reg3
-	eor #MEMAC_GLOBAL_ENABLE			; Bank $15 VBXE Window Enabled
-	vbsta VBXE_MA_BSEL
-
-; Print Load_Palette_Message - line 3 (y = $79)
-	ldy #$79
-	ldx #$00
-Print_Load_Attrib_1_Message_L1
-	lda Load_Attrib_1_Message,x
-	sta (Ptr_Lo),y
-	inx
-	iny
-	cpx #$21							; Copy $21 characters
-	bne Print_Load_Attrib_1_Message_L1
-
-; Update Progress bar - line 5 (y = $CB + (4 * increment #))
-	ldy Reg1
-	lda #$54							; Screen RAM code for Ctrl+T
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
-	sty Reg1							; Save pointer for progress bar updates
-
-	; jsr Wait_For_Key_Exit
-	inc Reg3							; Increment bank2 for next chunk
-	rts									; Return controll to loader
-
-Load_Attrib_1_Message
-	.sb 'Loading attrib1.map              '
-
-.endp
-	ini Load_Attrib_1
-
-	org VBXE_WINDOW						; Load data directly into VBXE RAM
-Attrib1
-	ins 'Assets\Stanley\attrib1.map'
-
-; Step $0C - Load the ColourMap into VBXE RAM starting at bank $15
-	org LOAD_ADDRESS + $300
-.proc Load_Attrib_2
-	lda	Reg3
-	eor #MEMAC_GLOBAL_ENABLE			; Bank $15 VBXE Window Enabled
-	vbsta VBXE_MA_BSEL
-
-; Print Load_Palette_Message - line 3 (y = $79)
-	ldy #$79
-	ldx #$00
-Print_Load_Attrib_2_Message_L1
-	lda Load_Attrib_2_Message,x
-	sta (Ptr_Lo),y
-	inx
-	iny
-	cpx #$21							; Copy $21 characters
-	bne Print_Load_Attrib_2_Message_L1
-
-; Update Progress bar - line 5 (y = $CB + (4 * increment #))
-	ldy Reg1
-	lda #$54							; Screen RAM code for Ctrl+T
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
-	sty Reg1							; Save pointer for progress bar updates
-
-	; jsr Wait_For_Key_Exit
-	inc Reg3							; Increment bank3 for next chunk
-	rts									; Return controll to loader
-
-Load_Attrib_2_Message
-	.sb 'Loading attrib2.map              '
-
-.endp
-	ini Load_Attrib_2
-
-	org VBXE_WINDOW						; Load data directly into VBXE RAM
-Attrib2
-	ins 'Assets\Stanley\attrib2.map'
-*/
-; Do this last because setting Palette 0 will kill text output from VBXE
-; Note, our code must reset Palette 0 to "stock" on program exit else a power cycle will be needed
-; Step $## - Load VBXE Palette #0
-	org LOAD_ADDRESS + $300
-.proc Load_Palette0
-	lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
-	vbsta VBXE_MA_BSEL
-
-; Print Load_Palette0_Message - line 3 (y = $79)
-	ldy #$79
-	ldx #$00
-Print_Load_Palette0_Message_L1
-	lda Load_Palette0_Message,x
-	sta (Ptr_Lo),y
-	inx
-	iny
-	cpx #$21							; Copy $21 characters
-	bne Print_Load_Palette0_Message_L1
-
-; Update Progress bar - line 5 (y = $CB + (4 * increment #))
-	ldy Reg1
-	lda #$54							; Screen RAM code for Ctrl+T
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
-	sty Reg1							; Save pointer for progress bar updates
-
-	; jsr Wait_For_Key_Exit
-
-	mwa #Palette Y_Register
-	lda #$00							; Set Palette 0
-	jsr VBXE_SetPalette2
-
-	rts									; Return controll to loader
-
-Load_Palette0_Message
-	.sb 'Loading palette0.pal            '
-Palette
-	ins 'Assets\Stanley\palette0.pal'
-
-.endp
-	ini Load_Palette0
+	org VBXE_WINDOW + $500				; Load data directly into VBXE RAM
+Palette2
+	ins 'vbxe_ntsc.pal'
