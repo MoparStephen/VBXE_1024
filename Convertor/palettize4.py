@@ -211,6 +211,68 @@ def median_cut(colors, counts, target):
     return pal, mapping
 
 
+def reduce_duplication(cell_pal, cells, NP, cap, max_passes=16):
+    """Local search that moves whole cells between palettes to cut cross-palette
+    duplication (each colour copied into fewer palettes -> more distinct colours
+    survive). Hypergraph-partitioning style: a colour is a hyperedge over the
+    cells that use it; we shrink the number of palettes each hyperedge spans.
+    Never lets a palette exceed `cap` distinct colours. Mutates cell_pal."""
+    cnt = [dict() for _ in range(NP)]            # palette -> {colour: #cells using it}
+    for (y, cx, u) in cells:
+        b = int(cell_pal[y, cx])
+        for c in u:
+            c = int(c); cnt[b][c] = cnt[b].get(c, 0) + 1
+    for _ in range(max_passes):
+        moved = 0
+        for (y, cx, u) in cells:
+            if len(u) == 0:
+                continue
+            p = int(cell_pal[y, cx])
+            uu = [int(c) for c in u]
+            leave_p = sum(1 for c in uu if cnt[p].get(c, 0) == 1)   # colours freed from p
+            best_gain, best_q = 0, p
+            for q in range(NP):
+                if q == p:
+                    continue
+                enter = sum(1 for c in uu if c not in cnt[q])       # new colours into q
+                if len(cnt[q]) + enter > cap:
+                    continue
+                gain = leave_p - enter
+                if gain > best_gain:
+                    best_gain, best_q = gain, q
+            if best_q != p:
+                for c in uu:
+                    cnt[p][c] -= 1
+                    if cnt[p][c] == 0:
+                        del cnt[p][c]
+                    cnt[best_q][c] = cnt[best_q].get(c, 0) + 1
+                cell_pal[y, cx] = best_q
+                moved += 1
+        if moved == 0:
+            break
+    return cell_pal
+
+
+def balanced_cluster(colors_lab, NP, cap, seed=0):
+    """Partition the N colours into NP clusters, each <= cap, by OKLab similarity.
+    Returns home[N] giving each colour's single owning palette (-> zero cross-
+    palette duplication)."""
+    N = len(colors_lab)
+    lab, C = kmeans(colors_lab, NP, seed=seed)
+    D = ((colors_lab[:, None, :] - C[None, :, :]) ** 2).sum(2)   # N x NP
+    pref = np.argsort(D, axis=1)                                  # nearest clusters
+    # decisiveness = gap between nearest and 2nd-nearest centroid
+    part = np.partition(D, 1, axis=1)
+    gap = part[:, 1] - part[:, 0]
+    counts = [0] * NP
+    home = np.full(N, -1, dtype=np.int32)
+    for i in np.argsort(-gap):            # place most-decisive colours first
+        for q in pref[i]:
+            if counts[q] < cap:
+                home[i] = q; counts[q] += 1; break
+    return home
+
+
 # ----------------------------------------------------------------------------
 def main():
     ap = argparse.ArgumentParser(description="Pack an image into 4x256 palettes with 8-pixel cell overrides.")
@@ -230,6 +292,10 @@ def main():
                     help="aspect handling when source AR != display AR (default stretch); 'fit' letterboxes with transparent index 0")
     ap.add_argument("--display-aspect", default="4:3", metavar="R",
                     help="true on-screen aspect for cover/fit (default 4:3; handles non-square pixels e.g. 160-wide modes)")
+    ap.add_argument("--max-colors", action="store_true",
+                    help="maximize distinct output colours: give each colour one palette (no duplication), recolouring boundary pixels instead. Raises colour count, may add slight per-pixel error at cell boundaries.")
+    ap.add_argument("--optimize", action=argparse.BooleanOptionalAction, default=True,
+                    help="reduce cross-palette duplication via local search so more colours survive (fidelity strategy; default on)")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
@@ -329,19 +395,22 @@ def main():
                 else:
                     cell_pal[y, cx] = 0
 
-    # ---- Phase B: cell-level greedy + substitution -------------------------
-    if not lossless:
+    # ---- Phase B: two strategies -------------------------------------------
+    def run_fidelity():
+        """Keep every pixel's true colour; duplicate colours across palettes as
+        needed; substitute only when a palette overflows. Optimal when colours
+        fit the slot budget; loses colours to duplication overflow otherwise."""
+        cp = np.zeros((H, cells_per_line), dtype=np.int16)
+        rmaps = [np.arange(N) for _ in range(NP)]
+        fcolors = [set() for _ in range(NP)]
+        sp = 0; se = 0.0
         lab, _ = kmeans(colors_lab, NP, seed=args.seed)
-        palette = [set() for _ in range(NP)]
-        binsize = [0] * NP
-        cidx = sorted(range(len(cells)), key=lambda i: -len(cells[i][2]))
-        for i in cidx:
+        palette = [set() for _ in range(NP)]; binsize = [0] * NP
+        for i in sorted(range(len(cells)), key=lambda i: -len(cells[i][2])):
             y, cx, u = cells[i]
             if len(u) == 0:
-                cell_pal[y, cx] = 0; continue
-            # dominant k-means cluster of this cell (pixel-weighted)
-            pref = int(np.bincount(lab[u], weights=color_count[u],
-                                   minlength=NP).argmax())
+                cp[y, cx] = 0; continue
+            pref = int(np.bincount(lab[u], weights=color_count[u], minlength=NP).argmax())
             adds = [sum(1 for c in u if int(c) not in palette[b]) for b in range(NP)]
             room = [b for b in range(NP) if binsize[b] + adds[b] <= cap]
             cand = room if room else list(range(NP))
@@ -349,30 +418,73 @@ def main():
             for c in u:
                 if int(c) not in palette[b]:
                     palette[b].add(int(c)); binsize[b] += 1
-            cell_pal[y, cx] = b
-
-        # palette membership per pixel (expand cells across width)
-        pal_pp = np.repeat(cell_pal, cell_w, axis=1)[:, :W]
-
-        # resolve over-capacity palettes by substitution (ignore transparent px)
+            cp[y, cx] = b
+        if args.optimize:
+            reduce_duplication(cp, cells, NP, cap)
+        pp = np.repeat(cp, cell_w, axis=1)[:, :W]
         for b in range(NP):
-            mask = (pal_pp == b) & (~transparent)
+            mask = (pp == b) & (~transparent)
             cc = np.bincount(pix[mask].ravel(), minlength=N)
             used = np.nonzero(cc)[0]
             if len(used) <= cap:
-                final_colors[b] = set(int(c) for c in used)
-                continue
-            # keep the `cap` most frequent colours in this palette
+                fcolors[b] = set(int(c) for c in used); continue
             keep = used[np.argsort(cc[used])[::-1][:cap]]
-            drop = np.setdiff1d(used, keep, assume_unique=False)
+            drop = np.setdiff1d(used, keep)
             keep_lab = colors_lab[keep]
             for c in drop:
                 d = ((keep_lab - colors_lab[c]) ** 2).sum(1)
                 nn = int(keep[d.argmin()])
-                remaps[b][c] = nn
-                sub_pixels += int(cc[c])
-                sub_err_sum += float(np.sqrt(d.min())) * int(cc[c])
-            final_colors[b] = set(int(c) for c in keep)
+                rmaps[b][c] = nn; sp += int(cc[c]); se += float(np.sqrt(d.min())) * int(cc[c])
+            fcolors[b] = set(int(c) for c in keep)
+        return cp, rmaps, fcolors, sp, se
+
+    def run_partition():
+        """Give each colour exactly one palette (zero duplication) so all slots
+        hold distinct colours; recolour boundary pixels to the nearest owned
+        colour. Maximizes colour count; adds error where cells straddle palettes."""
+        cp = np.zeros((H, cells_per_line), dtype=np.int16)
+        rmaps = [np.arange(N) for _ in range(NP)]
+        fcolors = [set() for _ in range(NP)]
+        sp = 0; se = 0.0
+        home = balanced_cluster(colors_lab, NP, cap, seed=args.seed)
+        for b in range(NP):
+            hb = np.where(home == b)[0]
+            rb = np.arange(N)
+            if len(hb):
+                d = ((colors_lab[:, None, :] - colors_lab[hb][None, :, :]) ** 2).sum(2)
+                nn = hb[d.argmin(1)]; notb = home != b; rb[notb] = nn[notb]
+            rmaps[b] = rb
+        for y in range(H):
+            row = pix[y]; trow = transparent[y]
+            for cx in range(cells_per_line):
+                a, bb = cx * cell_w, (cx + 1) * cell_w
+                seg = row[a:bb][~trow[a:bb]]
+                cp[y, cx] = 0 if len(seg) == 0 else int(np.bincount(home[seg], minlength=NP).argmax())
+        pp = np.repeat(cp, cell_w, axis=1)[:, :W]
+        for b in range(NP):
+            cids = pix[(pp == b) & (~transparent)].ravel()
+            if len(cids) == 0:
+                continue
+            off = home[cids] != b
+            if off.any():
+                oc = cids[off]; sp += int(off.sum())
+                se += float(np.sqrt(((colors_lab[oc] - colors_lab[rmaps[b][oc]]) ** 2).sum(1)).sum())
+            fcolors[b] = set(int(c) for c in np.unique(rmaps[b][cids]))
+        return cp, rmaps, fcolors, sp, se
+
+    strategy = "lossless"
+    if not lossless:
+        fid = run_fidelity()
+        chosen = fid
+        strategy = "fidelity"
+        if args.max_colors:
+            # only switch to partition if it actually yields more distinct colours
+            par = run_partition()
+            fid_n = len(set().union(*fid[2]))
+            par_n = len(set().union(*par[2]))
+            if par_n > fid_n:
+                chosen = par; strategy = "max-colors (partition)"
+        cell_pal, remaps, final_colors, sub_pixels, sub_err_sum = chosen
 
     # ---- build palette RAM + slot lookup -----------------------------------
     pal_rgb = np.zeros((NP, args.slots, 3), dtype=np.uint8)
@@ -418,6 +530,7 @@ def main():
 
     # ---- report -------------------------------------------------------------
     total_px = H * W
+    unique_out = len(np.unique(out_rgb.reshape(-1, 3), axis=0))
     lines = []
     lines.append("palettize4 report")
     lines.append("=" * 48)
@@ -434,6 +547,7 @@ def main():
     if prequant:
         lines.append(f"pre-quantized    : source exceeded {NP*cap} colours -> reduced to {N}")
     lines.append(f"master colours   : {N}")
+    lines.append(f"output colours   : {unique_out}  (distinct RGB on screen)")
     lines.append(f"components        : {ncomp}  (largest = {max_comp})")
     lines.append("")
     if lossless:
@@ -442,16 +556,30 @@ def main():
     else:
         pct = 100.0 * sub_pixels / total_px
         mean_err = (sub_err_sum / sub_pixels) if sub_pixels else 0.0
+        lines.append(f"strategy         : {strategy}")
         lines.append("RESULT: LOSSY     - cells could not be partitioned cleanly.")
-        lines.append(f"  substituted pixels : {sub_pixels} ({pct:.3f}% of image)")
-        lines.append(f"  mean OKLab error   : {mean_err:.4f}  (on substituted pixels only)")
-        if max_comp > cap:
+        lines.append(f"  recoloured pixels  : {sub_pixels} ({pct:.3f}% of image)")
+        lines.append(f"  mean OKLab error   : {mean_err:.4f}  (on recoloured pixels only)")
+        if max_comp > cap and strategy == "fidelity":
             lines.append(f"  note: a single component needs {max_comp} colours (> {cap}); "
-                         "duplication/substitution was unavoidable.")
+                         "duplication/substitution was unavoidable. Try --max-colors.")
     lines.append("")
+    # how many palettes each colour appears in (to find entries unique to one)
+    pal_count = np.zeros(N, dtype=np.int32)
+    for b in range(NP):
+        for c in final_colors[b]:
+            pal_count[c] += 1
+    all_pal_colors = set().union(*final_colors) if NP else set()
+    total_entries = sum(len(final_colors[b]) for b in range(NP))
+    duplicated = total_entries - len(all_pal_colors)
     lines.append("per-palette colour usage:")
     for b in range(NP):
-        lines.append(f"  palette {b}: {len(final_colors[b]):4d} / {cap} colours")
+        uniq_b = sum(1 for c in final_colors[b] if pal_count[c] == 1)
+        lines.append(f"  palette {b}: {len(final_colors[b]):4d} / {cap} colours"
+                     f"  ({uniq_b:4d} unique to this palette)")
+    lines.append(f"  duplicated across palettes: {duplicated} "
+                 f"entr{'y' if duplicated == 1 else 'ies'} "
+                 f"({len(all_pal_colors)} distinct colours in all palettes)")
     report = "\n".join(lines)
     with open(os.path.join(args.out, "report.txt"), "w") as f:
         f.write(report + "\n")

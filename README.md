@@ -84,6 +84,8 @@ Requires Python 3 with `numpy` and `Pillow` (`pip install numpy pillow`).
 | `--filter F`  | lanczos | Resampling filter: `nearest box bilinear hamming bicubic lanczos`. |
 | `--fit MODE`  | stretch | Aspect handling: `stretch`, `cover`, or `fit` (see below).      |
 | `--display-aspect R` | 4:3 | True on-screen aspect for `cover`/`fit`, e.g. `4:3`.      |
+| `--max-colors`| off     | Maximize distinct output colours (see Colour count below).      |
+| `--optimize` / `--no-optimize` | on | Reduce cross-palette duplication in the fidelity strategy. |
 | `--seed N`    | `0`     | RNG seed for the k-means seeding in Phase B.                   |
 
 If the source has more than `palettes × slots` unique colours it is first
@@ -123,6 +125,43 @@ Caveats:
   check the substitution percentage in `report.txt`.
 - **First frame only.** Animated GIFs and multi-page TIFFs are read as their
   first frame. Video and vector formats are not supported.
+
+---
+
+## Maximizing colour count
+
+When the output uses fewer colours than you hoped, the cause is almost always
+**cross-palette duplication**, not the source being short of colours. Because a
+colour can only display through a palette a cell is using, a colour that appears
+in cells scattered across the image must be copied into every palette those cells
+land on — and each copy consumes one of the 4×255 slots. Images with colours
+spread all over (a "pixelated" or busy look, where the same shades recur
+everywhere) duplicate heavily; the duplicates fill the slots and the colours that
+no longer fit get merged away. Smooth images, where each colour lives in a
+localized region, barely duplicate and keep almost everything.
+
+The report makes this visible: compare `master colours` (input) with `output
+colours` (result), and read `duplicated across palettes`. A large duplicated
+count with `output < master` is the signature of this problem.
+
+Two strategies trade off colour count against per-pixel accuracy:
+
+- **Fidelity (default).** Every pixel keeps its exact colour; colours are
+  duplicated across palettes as needed; colours are only merged when a palette
+  overflows. This is optimal — zero loss — whenever the colours fit the slot
+  budget, and it's the right choice for photographs.
+- **`--max-colors` (partition).** Each colour is given a single owning palette
+  (zero duplication), so all slots can hold distinct colours. Pixels whose colour
+  isn't owned by their cell's palette are recoloured to the nearest owned colour.
+  This recovers the lost colours, at the cost of slight recolouring where a cell
+  straddles a palette boundary.
+
+`--max-colors` is self-guarding: it runs both strategies and keeps whichever
+produces more distinct colours, so it never reduces the count below the default.
+It is most useful on busy/pixelated sources where the default leaves colours on
+the table; on images that already fit it changes nothing. Check the report's
+`recoloured pixels` / `mean OKLab error` to judge whether the extra colours are
+worth the boundary recolouring for a given image.
 
 ---
 
