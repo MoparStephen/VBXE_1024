@@ -417,7 +417,7 @@ Source: equates.asm
     70
     71 				; Temp debug stuff
     72 = 0010			.def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
-    73 = 0016			.def	V_1								= $16	; 6 (Screen code used for Version in loading screen)
+    73 = 0010			.def	V_1								= $10	; 0 (Screen code used for Version in loading screen)
     74 = 0011			.def	V_2								= $11	; 1 (Screen code used for Version in loading screen)
     75 = 0000			.def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
     76
@@ -1105,7 +1105,7 @@ Source: init_vbxe.asm
    105 33A2 7D 9B			.byte $7D,$9B
    106 33A4			Step1_Message							; Internal screen codes
    107 33A4 51 52 52 52 52 52 + 	.byte $51,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$45
-   108 33CC 7C 00 00 00 00 2C + 	.byte $7C,$00,$00,$00,$00,$2C,$6F,$61,$64,$69,$6E,$67,$00,$36,$22,$38,$25,$00,$22,$6C,$69,$74,$74,$65,$72,$00,$24,$65,$6D,$6F,$00,V_0,$0E,V_1,V_2,V_3,$00,$00,$00,$7C
+   108 33CC 7C 00 36 22 38 25 + 	.byte $7C,$00,$36,$22,$38,$25,$00,$11,$10,$12,$14,$00,$23,$6F,$6C,$6F,$75,$72,$00,$30,$69,$63,$74,$75,$72,$65,$00,$36,$69,$65,$77,$65,$72,$00,V_0,$0E,V_1,V_2,V_3,$7C
    109 33F4 7C 00 00 00 00 00 + 	.byte $7C,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$7C
    110 341C 7C 00 00 00 00 00 + 	.byte $7C,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$7C
    111 3444 41 52 52 52 52 52 + 	.byte $41,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$44
@@ -1576,7 +1576,7 @@ Source: init_vbxe.asm
    480 333B			Load_Palette1_Message
    481 333B 2C 6F 61 64 69 6E + 	.sb 'Loading palette1.pal            '
    482 335B			Palette
-   483 335B 0E 1A 7A 0F 19 6C + 	ins 'Assets\palette1.pal'
+   483 335B 00 00 00 10 5F B2 + 	ins 'Assets\Stanley\palette1.pal'
    484
    485 				.endp
    486 02E2-02E3> 00 33			ini Load_Palette1
@@ -1630,7 +1630,7 @@ Source: init_vbxe.asm
    526 333B			Load_Palette2_Message
    527 333B 2C 6F 61 64 69 6E + 	.sb 'Loading palette2.pal            '
    528 335B			Palette
-   529 335B 00 00 00 0A 2D 3F + 	ins 'Assets\palette2.pal'
+   529 335B 00 00 00 00 00 00 + 	ins 'Assets\Stanley\palette2.pal'
    530
    531 				.endp
    532 02E2-02E3> 00 33			ini Load_Palette2
@@ -1684,182 +1684,160 @@ Source: init_vbxe.asm
    572 333B			Load_Palette3_Message
    573 333B 2C 6F 61 64 69 6E + 	.sb 'Loading palette3.pal            '
    574 335B			Palette
-   575 335B 49 37 1B 4C 75 65 + 	ins 'Assets\palette3.pal'
+   575 335B 00 00 00 3B 8D 9D + 	ins 'Assets\Stanley\palette3.pal'
    576
    577 				.endp
    578 02E2-02E3> 00 33			ini Load_Palette3
    579
-   580 				; We're loading these large files in chunks so that we can bump the progress bar with each 4kB chunk
-   581
-   582 				; Step $0A - Load the ColourMap into VBXE RAM starting at bank $14
-   583 					org LOAD_ADDRESS + $300
-   584 3300			.proc Load_Attrib_0
-   585 3300-3356> A9 14			lda #$14
-   586 3302 85 82			sta Reg3							; Temp storage
-   587
-   588 3304 A5 82			lda	Reg3
-   589 3306 49 80			eor #MEMAC_GLOBAL_ENABLE			; Bank $14 VBXE Window Enabled
-   590 3308				vbsta VBXE_MA_BSEL
-Macro: VBSTA [Source: vbxe_min.asm]
-     2 3308 48				pha
-     3 3309 A5 90			lda	VBXEBase+1
-     4 330B 8D 11 33			sta	vbsta_adr
-     5 330E 68				pla
-     6 330F 8D 5F D6			sta.w	VBXE_MA_BSEL
-     7 = 3311			vbsta_adr	equ *-1
-Source: init_vbxe.asm
-   591
-   592 				; Print Load_Palette_Message - line 3 (y = $79)
-   593 3312 A0 79			ldy #$79
-   594 3314 A2 00			ldx #$00
-   595 3316			Print_Load_Attrib_0_Message_L1
-   596 3316 BD 36 33			lda Load_Attrib_0_Message,x
-   597 3319 91 88			sta (Ptr_Lo),y
-   598 331B E8				inx
-   599 331C C8				iny
-   600 331D E0 21			cpx #$21							; Copy $21 characters
-   601 331F D0 F5			bne Print_Load_Attrib_0_Message_L1
-   602
-   603 				; Update Progress bar - line 5 (y = $CB + (4 * increment #))
-   604 3321 A4 80			ldy Reg1
-   605 3323 A9 54			lda #$54							; Screen RAM code for Ctrl+T
-   606 3325 91 88			sta (Ptr_Lo),y
-   607 3327 C8				iny
-   608 3328 91 88			sta (Ptr_Lo),y
-   609 332A C8				iny
-   610 332B 91 88			sta (Ptr_Lo),y
-   611 332D C8				iny
-   612 332E 91 88			sta (Ptr_Lo),y
-   613 3330 C8				iny
-   614 3331 84 80			sty Reg1							; Save pointer for progress bar updates
-   615
-   616 					; jsr Wait_For_Key_Exit
-   617 3333 E6 82			inc Reg3							; Increment bank1 for next chunk
-   618 3335 60				rts									; Return controll to loader
-   619
-   620 3336			Load_Attrib_0_Message
-   621 3336 2C 6F 61 64 69 6E + 	.sb 'Loading attrib0.map              '
-   622
-   623 				.endp
-   624 02E2-02E3> 00 33			ini Load_Attrib_0					; Run BEFORE the data segment below so bank $14 is active when DOS writes to $2000
-   625
-   626 					org VBXE_WINDOW						; Load data directly into VBXE RAM
-   627 2000			Attrib0
-   628 2000-2FFF> 20 20 20 20 + 	ins 'Assets\attrib0.map'
-   629
-   630 				; Step $0B - Load the ColourMap into VBXE RAM starting at bank $15
-   631 					org LOAD_ADDRESS + $300
-   632 3300			.proc Load_Attrib_1
-   633 3300-3352> A5 82			lda	Reg3
-   634 3302 49 80			eor #MEMAC_GLOBAL_ENABLE			; Bank $15 VBXE Window Enabled
-   635 3304				vbsta VBXE_MA_BSEL
-Macro: VBSTA [Source: vbxe_min.asm]
-     2 3304 48				pha
-     3 3305 A5 90			lda	VBXEBase+1
-     4 3307 8D 0D 33			sta	vbsta_adr
-     5 330A 68				pla
-     6 330B 8D 5F D6			sta.w	VBXE_MA_BSEL
-     7 = 330D			vbsta_adr	equ *-1
-Source: init_vbxe.asm
-   636
-   637 				; Print Load_Palette_Message - line 3 (y = $79)
-   638 330E A0 79			ldy #$79
-   639 3310 A2 00			ldx #$00
-   640 3312			Print_Load_Attrib_1_Message_L1
-   641 3312 BD 32 33			lda Load_Attrib_1_Message,x
-   642 3315 91 88			sta (Ptr_Lo),y
-   643 3317 E8				inx
-   644 3318 C8				iny
-   645 3319 E0 21			cpx #$21							; Copy $21 characters
-   646 331B D0 F5			bne Print_Load_Attrib_1_Message_L1
-   647
-   648 				; Update Progress bar - line 5 (y = $CB + (4 * increment #))
-   649 331D A4 80			ldy Reg1
-   650 331F A9 54			lda #$54							; Screen RAM code for Ctrl+T
-   651 3321 91 88			sta (Ptr_Lo),y
-   652 3323 C8				iny
-   653 3324 91 88			sta (Ptr_Lo),y
-   654 3326 C8				iny
-   655 3327 91 88			sta (Ptr_Lo),y
-   656 3329 C8				iny
-   657 332A 91 88			sta (Ptr_Lo),y
-   658 332C C8				iny
-   659 332D 84 80			sty Reg1							; Save pointer for progress bar updates
-   660
-   661 					; jsr Wait_For_Key_Exit
-   662 332F E6 82			inc Reg3							; Increment bank2 for next chunk
-   663 3331 60				rts									; Return controll to loader
-   664
-   665 3332			Load_Attrib_1_Message
-   666 3332 2C 6F 61 64 69 6E + 	.sb 'Loading attrib1.map              '
-   667
-   668 				.endp
-   669 02E2-02E3> 00 33			ini Load_Attrib_1
-   670
-   671 					org VBXE_WINDOW						; Load data directly into VBXE RAM
-   672 2000			Attrib1
-   673 2000-2FFF> 30 10 00 00 + 	ins 'Assets\attrib1.map'
-   674
-   675 				; Step $0C - Load the ColourMap into VBXE RAM starting at bank $15
-   676 					org LOAD_ADDRESS + $300
-   677 3300			.proc Load_Attrib_2
-   678 3300-3352> A5 82			lda	Reg3
-   679 3302 49 80			eor #MEMAC_GLOBAL_ENABLE			; Bank $15 VBXE Window Enabled
-   680 3304				vbsta VBXE_MA_BSEL
-Macro: VBSTA [Source: vbxe_min.asm]
-     2 3304 48				pha
-     3 3305 A5 90			lda	VBXEBase+1
-     4 3307 8D 0D 33			sta	vbsta_adr
-     5 330A 68				pla
-     6 330B 8D 5F D6			sta.w	VBXE_MA_BSEL
-     7 = 330D			vbsta_adr	equ *-1
-Source: init_vbxe.asm
-   681
-   682 				; Print Load_Palette_Message - line 3 (y = $79)
-   683 330E A0 79			ldy #$79
-   684 3310 A2 00			ldx #$00
-   685 3312			Print_Load_Attrib_2_Message_L1
-   686 3312 BD 32 33			lda Load_Attrib_2_Message,x
-   687 3315 91 88			sta (Ptr_Lo),y
-   688 3317 E8				inx
-   689 3318 C8				iny
-   690 3319 E0 21			cpx #$21							; Copy $21 characters
-   691 331B D0 F5			bne Print_Load_Attrib_2_Message_L1
-   692
-   693 				; Update Progress bar - line 5 (y = $CB + (4 * increment #))
-   694 331D A4 80			ldy Reg1
-   695 331F A9 54			lda #$54							; Screen RAM code for Ctrl+T
-   696 3321 91 88			sta (Ptr_Lo),y
-   697 3323 C8				iny
-   698 3324 91 88			sta (Ptr_Lo),y
-   699 3326 C8				iny
-   700 3327 91 88			sta (Ptr_Lo),y
-   701 3329 C8				iny
-   702 332A 91 88			sta (Ptr_Lo),y
-   703 332C C8				iny
-   704 332D 84 80			sty Reg1							; Save pointer for progress bar updates
-   705
-   706 					; jsr Wait_For_Key_Exit
-   707 332F E6 82			inc Reg3							; Increment bank3 for next chunk
-   708 3331 60				rts									; Return controll to loader
-   709
-   710 3332			Load_Attrib_2_Message
-   711 3332 2C 6F 61 64 69 6E + 	.sb 'Loading attrib2.map              '
-   712
-   713 				.endp
-   714 02E2-02E3> 00 33			ini Load_Attrib_2
-   715
-   716 					org VBXE_WINDOW						; Load data directly into VBXE RAM
-   717 2000			Attrib2
-   718 2000-257F> 00 00 20 20 + 	ins 'Assets\attrib2.map'
-   719
-   720 				; Do this last because setting Palette 0 will kill text output from VBXE
-   721 				; Note, our code must reset Palette 0 to "stock" on program exit else a power cycle will be needed
-   722 				; Step $## - Load VBXE Palette #0
-   723 					org LOAD_ADDRESS + $300
-   724 3300			.proc Load_Palette0
-   725 3300-365A> A9 00			lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
-   726 3302				vbsta VBXE_MA_BSEL
+   580 				/*
+   581 				; We're loading these large files in chunks so that we can bump the progress bar with each 4kB chunk
+   582
+   583 				; Step $0A - Load the ColourMap into VBXE RAM starting at bank $14
+   584 					org LOAD_ADDRESS + $300
+   585 				.proc Load_Attrib_0
+   586 					lda #$14
+   587 					sta Reg3							; Temp storage
+   588
+   589 					lda	Reg3
+   590 					eor #MEMAC_GLOBAL_ENABLE			; Bank $14 VBXE Window Enabled
+   591 					vbsta VBXE_MA_BSEL
+   592
+   593 				; Print Load_Palette_Message - line 3 (y = $79)
+   594 					ldy #$79
+   595 					ldx #$00
+   596 				Print_Load_Attrib_0_Message_L1
+   597 					lda Load_Attrib_0_Message,x
+   598 					sta (Ptr_Lo),y
+   599 					inx
+   600 					iny
+   601 					cpx #$21							; Copy $21 characters
+   602 					bne Print_Load_Attrib_0_Message_L1
+   603
+   604 				; Update Progress bar - line 5 (y = $CB + (4 * increment #))
+   605 					ldy Reg1
+   606 					lda #$54							; Screen RAM code for Ctrl+T
+   607 					sta (Ptr_Lo),y
+   608 					iny
+   609 					sta (Ptr_Lo),y
+   610 					iny
+   611 					sta (Ptr_Lo),y
+   612 					iny
+   613 					sta (Ptr_Lo),y
+   614 					iny
+   615 					sty Reg1							; Save pointer for progress bar updates
+   616
+   617 					; jsr Wait_For_Key_Exit
+   618 					inc Reg3							; Increment bank1 for next chunk
+   619 					rts									; Return controll to loader
+   620
+   621 				Load_Attrib_0_Message
+   622 					.sb 'Loading attrib0.map              '
+   623
+   624 				.endp
+   625 					ini Load_Attrib_0					; Run BEFORE the data segment below so bank $14 is active when DOS writes to $2000
+   626
+   627 					org VBXE_WINDOW						; Load data directly into VBXE RAM
+   628 				Attrib0
+   629 					ins 'Assets\Stanley\attrib0.map'
+   630
+   631 				; Step $0B - Load the ColourMap into VBXE RAM starting at bank $15
+   632 					org LOAD_ADDRESS + $300
+   633 				.proc Load_Attrib_1
+   634 					lda	Reg3
+   635 					eor #MEMAC_GLOBAL_ENABLE			; Bank $15 VBXE Window Enabled
+   636 					vbsta VBXE_MA_BSEL
+   637
+   638 				; Print Load_Palette_Message - line 3 (y = $79)
+   639 					ldy #$79
+   640 					ldx #$00
+   641 				Print_Load_Attrib_1_Message_L1
+   642 					lda Load_Attrib_1_Message,x
+   643 					sta (Ptr_Lo),y
+   644 					inx
+   645 					iny
+   646 					cpx #$21							; Copy $21 characters
+   647 					bne Print_Load_Attrib_1_Message_L1
+   648
+   649 				; Update Progress bar - line 5 (y = $CB + (4 * increment #))
+   650 					ldy Reg1
+   651 					lda #$54							; Screen RAM code for Ctrl+T
+   652 					sta (Ptr_Lo),y
+   653 					iny
+   654 					sta (Ptr_Lo),y
+   655 					iny
+   656 					sta (Ptr_Lo),y
+   657 					iny
+   658 					sta (Ptr_Lo),y
+   659 					iny
+   660 					sty Reg1							; Save pointer for progress bar updates
+   661
+   662 					; jsr Wait_For_Key_Exit
+   663 					inc Reg3							; Increment bank2 for next chunk
+   664 					rts									; Return controll to loader
+   665
+   666 				Load_Attrib_1_Message
+   667 					.sb 'Loading attrib1.map              '
+   668
+   669 				.endp
+   670 					ini Load_Attrib_1
+   671
+   672 					org VBXE_WINDOW						; Load data directly into VBXE RAM
+   673 				Attrib1
+   674 					ins 'Assets\Stanley\attrib1.map'
+   675
+   676 				; Step $0C - Load the ColourMap into VBXE RAM starting at bank $15
+   677 					org LOAD_ADDRESS + $300
+   678 				.proc Load_Attrib_2
+   679 					lda	Reg3
+   680 					eor #MEMAC_GLOBAL_ENABLE			; Bank $15 VBXE Window Enabled
+   681 					vbsta VBXE_MA_BSEL
+   682
+   683 				; Print Load_Palette_Message - line 3 (y = $79)
+   684 					ldy #$79
+   685 					ldx #$00
+   686 				Print_Load_Attrib_2_Message_L1
+   687 					lda Load_Attrib_2_Message,x
+   688 					sta (Ptr_Lo),y
+   689 					inx
+   690 					iny
+   691 					cpx #$21							; Copy $21 characters
+   692 					bne Print_Load_Attrib_2_Message_L1
+   693
+   694 				; Update Progress bar - line 5 (y = $CB + (4 * increment #))
+   695 					ldy Reg1
+   696 					lda #$54							; Screen RAM code for Ctrl+T
+   697 					sta (Ptr_Lo),y
+   698 					iny
+   699 					sta (Ptr_Lo),y
+   700 					iny
+   701 					sta (Ptr_Lo),y
+   702 					iny
+   703 					sta (Ptr_Lo),y
+   704 					iny
+   705 					sty Reg1							; Save pointer for progress bar updates
+   706
+   707 					; jsr Wait_For_Key_Exit
+   708 					inc Reg3							; Increment bank3 for next chunk
+   709 					rts									; Return controll to loader
+   710
+   711 				Load_Attrib_2_Message
+   712 					.sb 'Loading attrib2.map              '
+   713
+   714 				.endp
+   715 					ini Load_Attrib_2
+   716
+   717 					org VBXE_WINDOW						; Load data directly into VBXE RAM
+   718 				Attrib2
+   719 					ins 'Assets\Stanley\attrib2.map'
+   720 				*/
+   720
+   721 				; Do this last because setting Palette 0 will kill text output from VBXE
+   722 				; Note, our code must reset Palette 0 to "stock" on program exit else a power cycle will be needed
+   723 				; Step $## - Load VBXE Palette #0
+   724 					org LOAD_ADDRESS + $300
+   725 3300			.proc Load_Palette0
+   726 3300-365A> A9 00			lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
+   727 3302				vbsta VBXE_MA_BSEL
 Macro: VBSTA [Source: vbxe_min.asm]
      2 3302 48				pha
      3 3303 A5 90			lda	VBXEBase+1
@@ -1868,46 +1846,46 @@ Macro: VBSTA [Source: vbxe_min.asm]
      6 3309 8D 5F D6			sta.w	VBXE_MA_BSEL
      7 = 330B			vbsta_adr	equ *-1
 Source: init_vbxe.asm
-   727
-   728 				; Print Load_Palette0_Message - line 3 (y = $79)
-   729 330C A0 79			ldy #$79
-   730 330E A2 00			ldx #$00
-   731 3310			Print_Load_Palette0_Message_L1
-   732 3310 BD 3B 33			lda Load_Palette0_Message,x
-   733 3313 91 88			sta (Ptr_Lo),y
-   734 3315 E8				inx
-   735 3316 C8				iny
-   736 3317 E0 21			cpx #$21							; Copy $21 characters
-   737 3319 D0 F5			bne Print_Load_Palette0_Message_L1
-   738
-   739 				; Update Progress bar - line 5 (y = $CB + (4 * increment #))
-   740 331B A4 80			ldy Reg1
-   741 331D A9 54			lda #$54							; Screen RAM code for Ctrl+T
-   742 331F 91 88			sta (Ptr_Lo),y
-   743 3321 C8				iny
-   744 3322 91 88			sta (Ptr_Lo),y
-   745 3324 C8				iny
-   746 3325 91 88			sta (Ptr_Lo),y
-   747 3327 C8				iny
-   748 3328 91 88			sta (Ptr_Lo),y
-   749 332A C8				iny
-   750 332B 84 80			sty Reg1							; Save pointer for progress bar updates
-   751
-   752 					; jsr Wait_For_Key_Exit
-   753
-   754 332D A9 5B 85 91 A9 33 + 	mwa #Palette Y_Register
-   755 3335 A9 00			lda #$00							; Set Palette 0
-   756 3337 20 6C 31			jsr VBXE_SetPalette2
-   757
-   758 333A 60				rts									; Return controll to loader
-   759
-   760 333B			Load_Palette0_Message
-   761 333B 2C 6F 61 64 69 6E + 	.sb 'Loading palette0.pal            '
-   762 335B			Palette
-   763 335B 12 51 18 14 8C 47 + 	ins 'Assets\palette0.pal'
-   764
-   765 				.endp
-   766 02E2-02E3> 00 33			ini Load_Palette0
+   728
+   729 				; Print Load_Palette0_Message - line 3 (y = $79)
+   730 330C A0 79			ldy #$79
+   731 330E A2 00			ldx #$00
+   732 3310			Print_Load_Palette0_Message_L1
+   733 3310 BD 3B 33			lda Load_Palette0_Message,x
+   734 3313 91 88			sta (Ptr_Lo),y
+   735 3315 E8				inx
+   736 3316 C8				iny
+   737 3317 E0 21			cpx #$21							; Copy $21 characters
+   738 3319 D0 F5			bne Print_Load_Palette0_Message_L1
+   739
+   740 				; Update Progress bar - line 5 (y = $CB + (4 * increment #))
+   741 331B A4 80			ldy Reg1
+   742 331D A9 54			lda #$54							; Screen RAM code for Ctrl+T
+   743 331F 91 88			sta (Ptr_Lo),y
+   744 3321 C8				iny
+   745 3322 91 88			sta (Ptr_Lo),y
+   746 3324 C8				iny
+   747 3325 91 88			sta (Ptr_Lo),y
+   748 3327 C8				iny
+   749 3328 91 88			sta (Ptr_Lo),y
+   750 332A C8				iny
+   751 332B 84 80			sty Reg1							; Save pointer for progress bar updates
+   752
+   753 					; jsr Wait_For_Key_Exit
+   754
+   755 332D A9 5B 85 91 A9 33 + 	mwa #Palette Y_Register
+   756 3335 A9 00			lda #$00							; Set Palette 0
+   757 3337 20 6C 31			jsr VBXE_SetPalette2
+   758
+   759 333A 60				rts									; Return controll to loader
+   760
+   761 333B			Load_Palette0_Message
+   762 333B 2C 6F 61 64 69 6E + 	.sb 'Loading palette0.pal            '
+   763 335B			Palette
+   764 335B 00 00 00 0C 77 78 + 	ins 'Assets\Stanley\palette0.pal'
+   765
+   766 				.endp
+   767 02E2-02E3> 00 33			ini Load_Palette0
    121
    122 					org LOAD_ADDRESS + $300				; Libraries live above
    123
@@ -1916,80 +1894,104 @@ Source: init_vbxe.asm
    126 				;-----------------------------------------------------------------------------
    127 3300			start
    128 				; Initialization code can go here
-   129 3300-3320> 20 3B 33		jsr Setup_Cmap1
-   130
-   131 3303 A9 00			lda	#0								; Setup VBXE for displaying picture data
-   132 3305 8D 41 D6			sta	VBXE_XDL_ADR0					; But don't show the overlay just yet!
-   133 3308 8D 43 D6			sta	VBXE_XDL_ADR2
-   134 330B 8D 42 D6			sta	VBXE_XDL_ADR1
-   135
-   136 330E A9 00			lda	#$00
-   137 3310 8D 2F 02			sta SDMCTL							; Turn ANTIC DMA off
-   138
-   139 3313 A9 03			lda	#%00000011						; XDL,XCOLOR Enabled and transparent color index 0
-   140 3315 8D 40 D6			sta	VBXE_VIDEO_CONTROL
-   141 3318 20 29 33			jsr Wait_For_Sync
-   142
-   143 331B			main
-   144 				; All done - now loop forever
-   145 331B 20 29 33			jsr Wait_For_Sync					; Wait for VSYNC, Q quits
-   146 331E 4C 1B 33			jmp main
-   147
-   148 				; Set RUN Vector
-   149 02E0-02E1> 00 33			run start
-   150
-   151 				;-----------------------------------------------------------------------------
-   152 				; Clean up and exit
-   153 				;-----------------------------------------------------------------------------
-   154 3321			Exit
-   155 3321-3358> A9 FF			lda #$FF
-   156 3323 8D FC 02			sta CH								; Clear last key pressed
-   157 3326 6C 0A 00			jmp	(DOSVEC)
-   158
-   159 				;-----------------------------------------------------------------------------
-   160 				; END OF CODE
-   161 				;-----------------------------------------------------------------------------
-   162
-   163 				;-----------------------------------------------------------------------------
-   164 				; Subroutines BEGIN
-   165 				;-----------------------------------------------------------------------------
-   166 				;-----------------------------------------------------------------------------
-   167 				; Wait For VSync (locks to the refresh rate, PAL=50Hz, NTSC=60Hz)  Thanks tebe
-   168 				;-----------------------------------------------------------------------------
-   169 3329			Wait_For_Sync							; Hold until VCOUNT == 0
-   170 3329 2C 0B D4			bit	VCOUNT
-   171 332C 30 FB			bmi *-3
-   172 332E 2C 0B D4			bit	VCOUNT
-   173 3331 10 FB			bpl *-3
-   174 				; If present, the next 3 lines will allow a "jump to exit" on a specific key press
-   175 3333 AD FC 02			lda CH
-   176 3336 C9 2F			cmp #$2F							; Press Q to quit
-   177 3338 F0 E7			beq	Exit
-   178 333A 60				rts									; Else return to caller
-   179
-   180 				;-----------------------------------------------------------------------------
-   181 				; Setup_Cmap1 - Sets byte 4 for all cmap entries via blitter
-   182 				;-----------------------------------------------------------------------------
-   183 333B			Setup_Cmap1
-   184 333B A9 15			lda	#BLT_SETUP_CMAP_1-BLT_CLEAR
-   185 333D 8D 50 D6			sta	VBXE_BL_ADR0					; Setup the blitter for memory fill operation
-   186 3340 A9 00			lda	#0
-   187 3342 8D 52 D6			sta	VBXE_BL_ADR2					; See the description of BCB at the end of this
-   188 3345 A9 01			lda	#$01							; Source
-   189 3347 8D 51 D6			sta	VBXE_BL_ADR1
-   190 334A A9 00			lda	#0
-   191 334C			Setup_Cmap1_L1
-   192 334C AD 53 D6			lda	VBXE_BLITTER_BUSY
-   193 334F C9 00			cmp	#0
-   194 3351 D0 F9			bne	Setup_Cmap1_L1					; Wait for blitter to finish
-   195 3353 A9 01			lda	#1
-   196 3355 8D 53 D6			sta	VBXE_BLITTER_START				; Start the blit
-   197 3358 60				rts
-   198
-   199 				;-----------------------------------------------------------------------------
-   200 				; Subroutines END
-   201 				;-----------------------------------------------------------------------------
-   202
-   203 				;-----------------------------------------------------------------------------
-   204 				; Data Tables go here
-   205 				;-----------------------------------------------------------------------------
+   129
+   130 3300-3350> A9 00			lda	#0								; Setup VBXE for displaying picture data
+   131 3302 8D 41 D6			sta	VBXE_XDL_ADR0					; But don't show the overlay just yet!
+   132 3305 8D 43 D6			sta	VBXE_XDL_ADR2
+   133 3308 8D 42 D6			sta	VBXE_XDL_ADR1
+   134
+   135 330B A9 00			lda	#$00
+   136 330D 8D 2F 02			sta SDMCTL							; Turn ANTIC DMA off
+   137
+   138 3310 A9 03			lda	#%00000011						; XDL,XCOLOR Enabled and transparent color index 0
+   139 3312 8D 40 D6			sta	VBXE_VIDEO_CONTROL
+   140 3315 20 59 33			jsr Wait_For_Sync
+   141
+   142 				; Load the Attribute Colour Map
+   143 3318 A9 80			lda	#MEMAC_GLOBAL_ENABLE
+   144 331A 8D 5F D6			sta	VBXE_MA_BSEL
+   145 331D A9 89 8D 33 31 A9 + 	mwa	#Colour FileNamePtr
+   146 3327 A9 14			lda	#$14
+   147 3329 85 8A			sta	BankIndex						; Load Colour Map data under $14000
+   148 332B 20 AA 30			jsr	LoadData
+   149
+   150 332E 20 6B 33			jsr Setup_Cmap1						; Expand the data out to $17000
+   151
+   152 				; Load the Image
+   153 3331 A9 80			lda	#MEMAC_GLOBAL_ENABLE
+   154 3333 8D 5F D6			sta	VBXE_MA_BSEL
+   155 3336 A9 96 8D 33 31 A9 + 	mwa	#Image FileNamePtr
+   156 3340 A9 01			lda	#$01
+   157 3342 85 8A			sta	BankIndex						; Load Colour Map data under $01000
+   158 3344 20 AA 30			jsr	LoadData
+   159
+   160 3347			main
+   161 				; All done - now loop forever
+   162 3347 A9 00			lda #$00
+   163 3349 85 4D			sta ATRACT							; Disable Attract Mode
+   164
+   165 334B 20 59 33			jsr Wait_For_Sync					; Wait for VSYNC, Q quits
+   166 334E 4C 47 33			jmp main
+   167
+   168 				; Set RUN Vector
+   169 02E0-02E1> 00 33			run start
+   170
+   171 				;-----------------------------------------------------------------------------
+   172 				; Clean up and exit
+   173 				;-----------------------------------------------------------------------------
+   174 3351			Exit
+   175 3351-33A1> A9 FF			lda #$FF
+   176 3353 8D FC 02			sta CH								; Clear last key pressed
+   177 3356 6C 0A 00			jmp	(DOSVEC)
+   178
+   179 				;-----------------------------------------------------------------------------
+   180 				; END OF CODE
+   181 				;-----------------------------------------------------------------------------
+   182
+   183 				;-----------------------------------------------------------------------------
+   184 				; Subroutines BEGIN
+   185 				;-----------------------------------------------------------------------------
+   186 				;-----------------------------------------------------------------------------
+   187 				; Wait For VSync (locks to the refresh rate, PAL=50Hz, NTSC=60Hz)  Thanks tebe
+   188 				;-----------------------------------------------------------------------------
+   189 3359			Wait_For_Sync							; Hold until VCOUNT == 0
+   190 3359 2C 0B D4			bit	VCOUNT
+   191 335C 30 FB			bmi *-3
+   192 335E 2C 0B D4			bit	VCOUNT
+   193 3361 10 FB			bpl *-3
+   194 				; If present, the next 3 lines will allow a "jump to exit" on a specific key press
+   195 3363 AD FC 02			lda CH
+   196 3366 C9 2F			cmp #$2F							; Press Q to quit
+   197 3368 F0 E7			beq	Exit
+   198 336A 60				rts									; Else return to caller
+   199
+   200 				;-----------------------------------------------------------------------------
+   201 				; Setup_Cmap1 - Sets byte 4 for all cmap entries via blitter
+   202 				;-----------------------------------------------------------------------------
+   203 336B			Setup_Cmap1
+   204 336B A9 15			lda	#BLT_SETUP_CMAP_1-BLT_CLEAR
+   205 336D 8D 50 D6			sta	VBXE_BL_ADR0					; Setup the blitter for memory fill operation
+   206 3370 A9 00			lda	#0
+   207 3372 8D 52 D6			sta	VBXE_BL_ADR2					; See the description of BCB at the end of this
+   208 3375 A9 01			lda	#$01							; Source
+   209 3377 8D 51 D6			sta	VBXE_BL_ADR1
+   210 337A A9 00			lda	#0
+   211 337C			Setup_Cmap1_L1
+   212 337C AD 53 D6			lda	VBXE_BLITTER_BUSY
+   213 337F C9 00			cmp	#0
+   214 3381 D0 F9			bne	Setup_Cmap1_L1					; Wait for blitter to finish
+   215 3383 A9 01			lda	#1
+   216 3385 8D 53 D6			sta	VBXE_BLITTER_START				; Start the blit
+   217 3388 60				rts
+   218
+   219 				;-----------------------------------------------------------------------------
+   220 				; Subroutines END
+   221 				;-----------------------------------------------------------------------------
+   222
+   223 				;-----------------------------------------------------------------------------
+   224 				; Data Tables go here
+   225 				;-----------------------------------------------------------------------------
+   226 3389			Colour
+   227 3389 44 32 3A 41 54 54 + 	dta c'D2:ATTRIB.MAP'
+   228 3396			Image
+   229 3396 44 32 3A 49 4D 41 + 	dta c'D2:IMAGE.RAW'

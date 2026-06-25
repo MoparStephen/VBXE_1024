@@ -70,7 +70,7 @@
 
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
-.def	V_1								= $16	; 6 (Screen code used for Version in loading screen)
+.def	V_1								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_2								= $11	; 1 (Screen code used for Version in loading screen)
 .def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
@@ -126,7 +126,6 @@ Wait_For_Key_Exit_L1
 ;-----------------------------------------------------------------------------
 start
 ; Initialization code can go here
-	jsr Setup_Cmap1
 
 	lda	#0								; Setup VBXE for displaying picture data
 	sta	VBXE_XDL_ADR0					; But don't show the overlay just yet!
@@ -140,8 +139,29 @@ start
 	sta	VBXE_VIDEO_CONTROL
 	jsr Wait_For_Sync
 
+; Load the Attribute Colour Map
+	lda	#MEMAC_GLOBAL_ENABLE
+	sta	VBXE_MA_BSEL
+	mwa	#Colour FileNamePtr
+	lda	#$14
+	sta	BankIndex						; Load Colour Map data under $14000
+	jsr	LoadData
+
+	jsr Setup_Cmap1						; Expand the data out to $17000
+
+; Load the Image
+	lda	#MEMAC_GLOBAL_ENABLE
+	sta	VBXE_MA_BSEL
+	mwa	#Image FileNamePtr
+	lda	#$01
+	sta	BankIndex						; Load Colour Map data under $01000
+	jsr	LoadData
+
 main
 ; All done - now loop forever
+	lda #$00
+	sta ATRACT							; Disable Attract Mode
+
 	jsr Wait_For_Sync					; Wait for VSYNC, Q quits
 	jmp main
 
@@ -203,3 +223,7 @@ Setup_Cmap1_L1
 ;-----------------------------------------------------------------------------
 ; Data Tables go here
 ;-----------------------------------------------------------------------------
+Colour
+	dta c'D2:ATTRIB.MAP'
+Image
+	dta c'D2:IMAGE.RAW'

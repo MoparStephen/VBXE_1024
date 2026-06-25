@@ -105,7 +105,7 @@ Clear_Screen
 	.byte $7D,$9B
 Step1_Message							; Internal screen codes
 	.byte $51,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$45
-	.byte $7C,$00,$00,$00,$00,$2C,$6F,$61,$64,$69,$6E,$67,$00,$36,$22,$38,$25,$00,$22,$6C,$69,$74,$74,$65,$72,$00,$24,$65,$6D,$6F,$00,V_0,$0E,V_1,V_2,V_3,$00,$00,$00,$7C
+	.byte $7C,$00,$36,$22,$38,$25,$00,$11,$10,$12,$14,$00,$23,$6F,$6C,$6F,$75,$72,$00,$30,$69,$63,$74,$75,$72,$65,$00,$36,$69,$65,$77,$65,$72,$00,V_0,$0E,V_1,V_2,V_3,$7C
 	.byte $7C,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$7C
 	.byte $7C,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$7C
 	.byte $41,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$44
@@ -480,7 +480,7 @@ Print_Load_Palette1_Message_L1
 Load_Palette1_Message
 	.sb 'Loading palette1.pal            '
 Palette
-	ins 'Assets\palette1.pal'
+	ins 'Assets\Stanley\palette1.pal'
 
 .endp
 	ini Load_Palette1
@@ -526,7 +526,7 @@ Print_Load_Palette2_Message_L1
 Load_Palette2_Message
 	.sb 'Loading palette2.pal            '
 Palette
-	ins 'Assets\palette2.pal'
+	ins 'Assets\Stanley\palette2.pal'
 
 .endp
 	ini Load_Palette2
@@ -572,11 +572,12 @@ Print_Load_Palette3_Message_L1
 Load_Palette3_Message
 	.sb 'Loading palette3.pal            '
 Palette
-	ins 'Assets\palette3.pal'
+	ins 'Assets\Stanley\palette3.pal'
 
 .endp
 	ini Load_Palette3
 
+/*
 ; We're loading these large files in chunks so that we can bump the progress bar with each 4kB chunk
 
 ; Step $0A - Load the ColourMap into VBXE RAM starting at bank $14
@@ -625,7 +626,7 @@ Load_Attrib_0_Message
 
 	org VBXE_WINDOW						; Load data directly into VBXE RAM
 Attrib0
-	ins 'Assets\attrib0.map'
+	ins 'Assets\Stanley\attrib0.map'
 
 ; Step $0B - Load the ColourMap into VBXE RAM starting at bank $15
 	org LOAD_ADDRESS + $300
@@ -670,7 +671,7 @@ Load_Attrib_1_Message
 
 	org VBXE_WINDOW						; Load data directly into VBXE RAM
 Attrib1
-	ins 'Assets\attrib1.map'
+	ins 'Assets\Stanley\attrib1.map'
 
 ; Step $0C - Load the ColourMap into VBXE RAM starting at bank $15
 	org LOAD_ADDRESS + $300
@@ -715,8 +716,8 @@ Load_Attrib_2_Message
 
 	org VBXE_WINDOW						; Load data directly into VBXE RAM
 Attrib2
-	ins 'Assets\attrib2.map'
-
+	ins 'Assets\Stanley\attrib2.map'
+*/
 ; Do this last because setting Palette 0 will kill text output from VBXE
 ; Note, our code must reset Palette 0 to "stock" on program exit else a power cycle will be needed
 ; Step $## - Load VBXE Palette #0
@@ -760,7 +761,7 @@ Print_Load_Palette0_Message_L1
 Load_Palette0_Message
 	.sb 'Loading palette0.pal            '
 Palette
-	ins 'Assets\palette0.pal'
+	ins 'Assets\Stanley\palette0.pal'
 
 .endp
 	ini Load_Palette0
