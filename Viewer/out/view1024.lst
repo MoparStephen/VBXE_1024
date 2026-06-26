@@ -1582,14 +1582,14 @@ Source: bcbs.asm
    522 				; Step $08 - Load VBXE PAL Palette so we can restore it on exit
    523 					org LOAD_ADDRESS + $300
    524 3300			.proc Load_Palette2
-   525 3300-3649> A9 80			lda	#$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
+   525 3300-364E> A9 80			lda	#$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
    526 3302 8D 5F D6			sta VBXE_MA_BSEL
    527
    528 				; Print Load_Palette_Message - line 3 (y = $79)
    529 3305 A0 79			ldy #$79
    530 3307 A2 00			ldx #$00
    531 3309			Print_Load_Palette2_Message_L1
-   532 3309 BD 2A 33			lda Load_Palette2_Message,x
+   532 3309 BD 2F 33			lda Load_Palette2_Message,x
    533 330C 91 88			sta (Ptr_Lo),y
    534 330E E8				inx
    535 330F C8				iny
@@ -1611,19 +1611,22 @@ Source: bcbs.asm
    551
    552 3326 20 FF 31			jsr Wait_For_Key_Exit
    553
-   554 3329 60				rts									; Return controll to loader
-   555
-   556 332A			Load_Palette2_Message
-   557 332A 2C 6F 61 64 69 6E + 	.sb 'Loading vbxe_pal.pal            '
-   558 334A			Palette
-   559 334A 00 00 00 11 11 11 + 	ins 'vbxe_pal.pal'
-   560
-   561 				.endp
-   562 02E2-02E3> 00 33			ini Load_Palette2
+   554 3329 A9 FF			lda #$FF
+   555 332B 8D FC 02			sta CH
+   556
+   557 332E 60				rts									; Return controll to loader
+   558
+   559 332F			Load_Palette2_Message
+   560 332F 2C 6F 61 64 69 6E + 	.sb 'Loading vbxe_pal.pal            '
+   561 334F			Palette
+   562 334F 00 00 00 11 11 11 + 	ins 'vbxe_pal.pal'
    563
-   564 					org VBXE_WINDOW + $500				; Load data directly into VBXE RAM
-   565 2500			Palette2
-   566 2500-27FF> 00 00 00 07 + 	ins 'vbxe_ntsc.pal'
+   564 				.endp
+   565 02E2-02E3> 00 33			ini Load_Palette2
+   566
+   567 					org VBXE_WINDOW + $500				; Load data directly into VBXE RAM
+   568 2500			Palette2
+   569 2500-27FF> 00 00 00 07 + 	ins 'vbxe_ntsc.pal'
    131
    132 					org LOAD_ADDRESS + $300				; Libraries live above
    133
@@ -1676,7 +1679,7 @@ Source: bcbs.asm
    180 				; Wait For VSync (locks to the refresh rate, PAL=50Hz, NTSC=60Hz)  Thanks tebe
    181 				;-----------------------------------------------------------------------------
    182 3327			Wait_For_Sync							; Hold until VCOUNT == 0
-   183 3327-34DB> 2C 0B D4		bit	VCOUNT
+   183 3327-34F3> 2C 0B D4		bit	VCOUNT
    184 332A 30 FB			bmi *-3
    185 332C 2C 0B D4			bit	VCOUNT
    186 332F 10 FB			bpl *-3
@@ -1745,7 +1748,7 @@ Source: bcbs.asm
    249 337B A9 80			lda	#MEMAC_GLOBAL_ENABLE
    250 337D 8D 5F D6			sta	VBXE_MA_BSEL
    251 3380 18				clc
-   252 3381 A9 1C			lda #<Palettes
+   252 3381 A9 34			lda #<Palettes
    253 3383 6D 8A 04			adc File_Index
    254 3386 8D 33 31			sta FileNamePtr
    255 3389 A9 34			lda #>Palettes
@@ -1789,7 +1792,7 @@ Source: bcbs.asm
    293 33D0 A9 80			lda	#MEMAC_GLOBAL_ENABLE
    294 33D2 8D 5F D6			sta	VBXE_MA_BSEL
    295 33D5 18				clc
-   296 33D6 A9 5C			lda #<Colour
+   296 33D6 A9 74			lda #<Colour
    297 33D8 6D 8A 04			adc File_Index
    298 33DB 8D 33 31			sta FileNamePtr
    299 33DE A9 34			lda #>Colour
@@ -1805,7 +1808,7 @@ Source: bcbs.asm
    309 33EF A9 80			lda	#MEMAC_GLOBAL_ENABLE
    310 33F1 8D 5F D6			sta	VBXE_MA_BSEL
    311 33F4 18				clc
-   312 33F5 A9 9C			lda #<Image
+   312 33F5 A9 B4			lda #<Image
    313 33F7 6D 8A 04			adc File_Index
    314 33FA 8D 33 31			sta FileNamePtr
    315 33FD A9 34			lda #>Image
@@ -1828,34 +1831,48 @@ Source: bcbs.asm
    332 				; If present, the next 3 lines will allow a "jump to exit" on a specific key press
    333 3411 AD FC 02			lda CH
    334 3414 C9 2F			cmp #$2F							; Press Q to quit
-   335 3416 F0 01			beq	Exit
-   336 3418 60				rts									; Else return to caller
-   337 3419			Exit
-   338 3419 4C D2 31			jmp	Cleanup_Exit					; Clean up and exit (accounts for any long branch issues)
-   339
-   340 				;-----------------------------------------------------------------------------
-   341 				; Subroutines END
-   342 				;-----------------------------------------------------------------------------
-   343
-   344 				;-----------------------------------------------------------------------------
-   345 				; Data Tables go here
-   346 				;-----------------------------------------------------------------------------
-   347 341C			Palettes								; Each entry must be $10 bytes!
-   348 341C 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.PAL',$00,$00,$00,$00,$00
-   349 342C 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.PAL',$00,$00,$00,$00,$00
-   350 343C 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.PAL',$00,$00,$00,$00,$00
-   351 344C 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.PAL',$00,$00,$00,$00,$00
-   352 345C			Colour									; Each entry must be $10 bytes!
-   353 345C 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.MAP',$00,$00,$00,$00,$00
-   354 346C 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.MAP',$00,$00,$00,$00,$00
-   355 347C 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.MAP',$00,$00,$00,$00,$00
-   356 348C 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.MAP',$00,$00,$00,$00,$00
-   357 349C			Image									; Each entry must be $10 bytes!
-   358 349C 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.RAW',$00,$00,$00,$00,$00
-   359 34AC 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.RAW',$00,$00,$00,$00,$00
-   360 34BC 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.RAW',$00,$00,$00,$00,$00
-   361 34CC 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.RAW',$00,$00,$00,$00,$00
-   362 					
-   363 				;-----------------------------------------------------------------------------
-   364 				; 
-   365 				;-----------------------------------------------------------------------------
+   335 3416 F0 19			beq	Exit
+   336 3418			Check_Space
+   337 3418 C9 21			cmp #$21							; Space
+   338 341A F0 03			beq Handle_Space
+   339 341C 4C 2B 34			jmp Read_Key_Done
+   340
+   341 341F			Handle_Space
+   342 341F EE 00 06			inc $600
+   343 3422 EE 00 06			inc $600
+   344 3425 AD 00 06			lda $600
+   345 3428 8D C8 02			sta COLOR4
+   346
+   347 342B			Read_Key_Done
+   348 342B A9 FF			lda #$FF
+   349 342D 8D FC 02			sta CH								; Clear last key pressed
+   350 3430 60				rts									; Else return to caller
+   351 3431			Exit
+   352 3431 4C D2 31			jmp	Cleanup_Exit					; Clean up and exit (accounts for any long branch issues)
+   353
+   354 				;-----------------------------------------------------------------------------
+   355 				; Subroutines END
+   356 				;-----------------------------------------------------------------------------
+   357
+   358 				;-----------------------------------------------------------------------------
+   359 				; Data Tables go here
+   360 				;-----------------------------------------------------------------------------
+   361 3434			Palettes								; Each entry must be $10 bytes!
+   362 3434 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.PAL',$00,$00,$00,$00,$00
+   363 3444 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.PAL',$00,$00,$00,$00,$00
+   364 3454 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.PAL',$00,$00,$00,$00,$00
+   365 3464 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.PAL',$00,$00,$00,$00,$00
+   366 3474			Colour									; Each entry must be $10 bytes!
+   367 3474 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.MAP',$00,$00,$00,$00,$00
+   368 3484 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.MAP',$00,$00,$00,$00,$00
+   369 3494 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.MAP',$00,$00,$00,$00,$00
+   370 34A4 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.MAP',$00,$00,$00,$00,$00
+   371 34B4			Image									; Each entry must be $10 bytes!
+   372 34B4 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.RAW',$00,$00,$00,$00,$00
+   373 34C4 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.RAW',$00,$00,$00,$00,$00
+   374 34D4 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.RAW',$00,$00,$00,$00,$00
+   375 34E4 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.RAW',$00,$00,$00,$00,$00
+   376 					
+   377 				;-----------------------------------------------------------------------------
+   378 				; 
+   379 				;-----------------------------------------------------------------------------

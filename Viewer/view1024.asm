@@ -333,6 +333,20 @@ Handle_Keys
 	lda CH
 	cmp #$2F							; Press Q to quit
 	beq	Exit
+Check_Space
+	cmp #$21							; Space
+	beq Handle_Space
+	jmp Read_Key_Done
+
+Handle_Space
+	inc $600
+	inc $600
+	lda $600
+	sta COLOR4
+
+Read_Key_Done
+	lda #$FF
+	sta CH								; Clear last key pressed
 	rts									; Else return to caller
 Exit
 	jmp	Cleanup_Exit					; Clean up and exit (accounts for any long branch issues)

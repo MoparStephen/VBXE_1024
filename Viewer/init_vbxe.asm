@@ -551,6 +551,9 @@ Print_Load_Palette2_Message_L1
 
 	jsr Wait_For_Key_Exit
 
+	lda #$FF
+	sta CH
+
 	rts									; Return controll to loader
 
 Load_Palette2_Message
