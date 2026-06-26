@@ -89,7 +89,7 @@ Requires Python 3 with `numpy` and `Pillow` (`pip install numpy pillow`).
 | `--max-colors`| off     | Shorthand for `--color-bias 1.0`.                              |
 | `--coherence L` | 1.5 | Spatial smoothing of the attribute map (higher = fewer block artifacts). |
 | `--optimize` / `--no-optimize` | on | Reduce cross-palette duplication in the fidelity strategy. |
-| `--dither ALGO` | none | Error-diffusion dither during colour reduction (breaks gradient banding): `none floyd atkinson jjn stucki sierra burkes`. |
+| `--dither ALGO` | none | Dither during reduction to break banding. Error-diffusion: `floyd atkinson jjn stucki sierra burkes`; ordered: `bayer2 bayer4 bayer8 blue`. |
 | `--dither-strength 0..1` | 1.0 | Fraction of error diffused (lower = subtler). |
 | `--seed N`    | `0`     | RNG seed for the k-means seeding in Phase B.                   |
 | `--quiet`     | off     | Suppress the stdout report (files still written).             |
@@ -143,24 +143,34 @@ the 1020-colour budget, so the median-cut reduction snaps them into visible
 reduction*, spreading each pixel's quantization error to its neighbours so the
 gradient becomes fine texture instead of bands.
 
-Available kernels: `floyd` (Floyd–Steinberg, the classic), `atkinson` (diffuses
-only ¾ of the error — cleanest/least noisy on limited palettes, good default to
-try first), `jjn` (Jarvis-Judice-Ninke), `stucki`, `sierra`, `burkes`.
-`--dither-strength` (0–1) scales how much error is diffused for a subtler effect.
+Two families are available:
+
+- **Error-diffusion** — `floyd` (classic), `atkinson` (gentlest), `jjn`, `stucki`,
+  `sierra`, `burkes`. Smooth and organic, but can leave faint random colour
+  speckle, and because it concentrates error into some cells, occasionally
+  produces a stray recoloured pixel after packing. Sequential, so slower (~3s).
+- **Ordered** — `bayer2/4/8` (fast, deterministic, but show a regular grid
+  texture) and **`blue`** (blue-noise via void-and-cluster). Vectorized and fast.
+
+**`blue` is the recommended choice for smooth sources.** Blue-noise spreads its
+perturbations evenly, so it breaks banding with a fine, even grain that has
+neither Bayer's grid pattern nor error-diffusion's random speckle — and because
+every 8×1 cell receives a balanced set of colours, it survives the palette
+packing best (fewest stray pixels, and it retained the most output colours in
+testing). The mask is generated once and cached, so bulk runs stay fast.
 
 ```
-python palettize4.py plasma.png --out build --dither atkinson
+python palettize4.py plasma.png --out build --dither blue
 ```
 
-Dithering happens before the palette packing, so the result is still subject to
-the 8×1-pixel cell constraint — but because the dither's two bracketing colours
-are local neighbours, they almost always land in the same cell palette and
-survive. In testing on a full-screen plasma it removed the banding while only
-raising recoloured pixels from ~2.9% to ~3.5%. A few isolated cells can still
-pick up a stray recoloured pixel where the dithered colours don't all fit one
-palette; raising `--color-bias` (more colours available) or using `atkinson`
-(less noise) minimizes those. Requires `scipy` (`pip install scipy`); only needed
-when `--dither` is used.
+`--dither-strength` scales the effect: for error-diffusion it's the fraction of
+error diffused; for ordered/blue it scales the perturbation amplitude (1.0 is a
+good default, higher breaks wider bands at the cost of more visible grain).
+
+Dithering happens before palette packing, so the result is still subject to the
+8×1 cell constraint — but the dither's bracketing colours are local neighbours
+that almost always share a cell palette and survive. Requires `scipy`
+(`pip install scipy`); only needed when `--dither` is used.
 
 ---
 

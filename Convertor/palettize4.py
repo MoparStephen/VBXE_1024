@@ -194,25 +194,81 @@ DITHER_KERNELS = {
                  (-2, 1, 2/32), (-1, 1, 4/32), (0, 1, 8/32), (1, 1, 4/32), (2, 1, 2/32)],
 }
 
+def _bayer(n):
+    if n == 1:
+        return np.zeros((1, 1))
+    m = _bayer(n // 2)
+    return np.block([[4 * m, 4 * m + 2], [4 * m + 3, 4 * m + 1]])
+
+def _bayer_threshold(n):
+    return (_bayer(n) + 0.5) / (n * n) - 0.5          # in [-0.5, 0.5)
+
+_BLUE_CACHE = {}
+def _blue_threshold(size=64):
+    """Tileable blue-noise threshold mask via void-and-cluster (cached on disk)."""
+    if size in _BLUE_CACHE:
+        return _BLUE_CACHE[size]
+    import tempfile
+    path = os.path.join(tempfile.gettempdir(), f"palettize4_blue{size}.npy")
+    if os.path.exists(path):
+        m = np.load(path); _BLUE_CACHE[size] = m; return m
+    from scipy.ndimage import gaussian_filter
+    rng = np.random.default_rng(0); n = size * size
+    pat = np.zeros((size, size), bool)
+    pat.flat[rng.choice(n, n // 10, replace=False)] = True
+    filt = lambda p: gaussian_filter(p.astype(float), 1.5, mode="wrap")
+    while True:
+        e = filt(pat); e[~pat] = -1
+        cy, cx = np.unravel_index(e.argmax(), e.shape); pat[cy, cx] = False
+        e = filt(pat); e[pat] = 1e9
+        vy, vx = np.unravel_index(e.argmin(), e.shape); pat[vy, vx] = True
+        if (cy, cx) == (vy, vx):
+            break
+    rank = np.zeros((size, size), int); ones = int(pat.sum())
+    work = pat.copy()
+    for r in range(ones - 1, -1, -1):
+        e = filt(work); e[~work] = -1
+        y, x = np.unravel_index(e.argmax(), e.shape); work[y, x] = False; rank[y, x] = r
+    work = pat.copy()
+    for r in range(ones, n):
+        e = filt(work); e[work] = 1e9
+        y, x = np.unravel_index(e.argmin(), e.shape); work[y, x] = True; rank[y, x] = r
+    m = (rank + 0.5) / n - 0.5
+    try: np.save(path, m)
+    except OSError: pass
+    _BLUE_CACHE[size] = m
+    return m
+
+ORDERED = {"bayer2": lambda: _bayer_threshold(2), "bayer4": lambda: _bayer_threshold(4),
+           "bayer8": lambda: _bayer_threshold(8), "blue": lambda: _blue_threshold(64)}
+
 def dither_to_palette(arr, pal, algo, strength=1.0):
-    """Error-diffusion quantize arr (HxWx3 uint8) to the colours in `pal`,
-    spreading each pixel's quantization error to neighbours so smooth gradients
-    become fine texture instead of bands. Requires scipy for fast nearest-colour
-    lookup."""
+    """Quantize arr (HxWx3 uint8) to the colours in `pal`, dithering to break
+    gradient banding. Error-diffusion kernels (floyd/atkinson/...) spread each
+    pixel's error to neighbours; ordered masks (bayer*/blue) perturb each pixel by
+    a fixed threshold pattern. Requires scipy for nearest-colour lookup."""
     try:
         from scipy.spatial import cKDTree
     except ImportError:
         sys.exit("--dither needs scipy: pip install scipy")
-    kernel = DITHER_KERNELS[algo]
     tree = cKDTree(pal.astype(np.float64))
     H, W, _ = arr.shape
+    if algo in ORDERED:                                # ordered / blue-noise
+        mask = ORDERED[algo]()
+        mh, mw = mask.shape
+        gap = tree.query(pal.astype(np.float64), k=2)[0][:, 1].mean()  # palette spacing
+        amp = gap * 1.5 * strength
+        ty, tx = np.indices((H, W))
+        pert = arr.astype(np.float64) + (mask[ty % mh, tx % mw] * amp)[..., None]
+        j = tree.query(pert.reshape(-1, 3))[1]
+        return pal[j].reshape(H, W, 3).astype(np.uint8)
+    kernel = DITHER_KERNELS[algo]                       # error diffusion
     work = arr.astype(np.float64)
     out = np.empty((H, W), np.int64)
     for y in range(H):
         for x in range(W):
             old = work[y, x]
-            j = int(tree.query(old)[1])
-            out[y, x] = j
+            j = int(tree.query(old)[1]); out[y, x] = j
             err = (old - pal[j]) * strength
             for dx, dy, wt in kernel:
                 xx, yy = x + dx, y + dy
@@ -350,8 +406,9 @@ def main():
     ap.add_argument("--coherence", type=float, default=1.5, metavar="L",
                     help="spatial smoothing of the attribute map (higher = neighbouring cells share a palette more, fewer block artifacts; 0 = off). Used by --color-bias > 0.")
     ap.add_argument("--dither", default="none",
-                    choices=["none", "floyd", "jjn", "stucki", "atkinson", "sierra", "burkes"],
-                    help="error-diffusion dithering during colour reduction, to break gradient banding (default none)")
+                    choices=["none", "floyd", "atkinson", "jjn", "stucki", "sierra", "burkes",
+                             "bayer2", "bayer4", "bayer8", "blue"],
+                    help="dithering during colour reduction to break gradient banding. Error-diffusion: floyd atkinson jjn stucki sierra burkes. Ordered: bayer2 bayer4 bayer8 blue (default none)")
     ap.add_argument("--dither-strength", type=float, default=1.0, metavar="0..1",
                     help="fraction of quantization error to diffuse (default 1.0; lower = subtler dither)")
     ap.add_argument("--quiet", action="store_true", help="suppress the human-readable report on stdout (files still written)")
