@@ -53,6 +53,7 @@
 .var DOSINIL_OLD		.byte = $487	; Save the DOSINI Pointer
 .var DOSINIH_OLD		.byte = $488	; Save the DOSINI Pointer
 .var Video_Flag			.byte = $489	; PAL = 0, NTSC = 1
+.var File_Index			.byte = $48A	; Index into arrays of filenames
 
 ;-----------------------------------------------------------------------------
 ; Defines go here
@@ -242,15 +243,24 @@ Restore_Palette0_Done
 
 ;-----------------------------------------------------------------------------
 ; Load_Image
+; File_Index must be set before calling this!  No range checking is done!
 ;-----------------------------------------------------------------------------
 Load_Image
 ; Load the 4 Palettes - use VBXE RAM so we don't waste main RAM
 ; Palette loading is a fire & forget
+	lda #$00
+	sta File_Index
 
 ; Load the Palettes
 	lda	#MEMAC_GLOBAL_ENABLE
 	sta	VBXE_MA_BSEL
-	mwa	#Palettes FileNamePtr
+	clc
+	lda #<Palettes
+	adc File_Index
+	sta FileNamePtr
+	lda #>Palettes
+	adc #$00
+	sta FileNamePtr + $01
 	lda	#$21
 	sta	BankIndex						; Load Colour Map data under $21000
 	jsr	LoadData
@@ -285,11 +295,16 @@ Load_Image
 	lda #$03							; Set Palette 3
 	jsr VBXE_SetPalette2
 
-
 ; Load the Attribute Colour Map
 	lda	#MEMAC_GLOBAL_ENABLE
 	sta	VBXE_MA_BSEL
-	mwa	#Colour FileNamePtr
+	clc
+	lda #<Colour
+	adc File_Index
+	sta FileNamePtr
+	lda #>Colour
+	adc #$00
+	sta FileNamePtr + $01
 	lda	#$14
 	sta	BankIndex						; Load Colour Map data under $14000
 	jsr	LoadData
@@ -299,7 +314,13 @@ Load_Image
 ; Load the Image
 	lda	#MEMAC_GLOBAL_ENABLE
 	sta	VBXE_MA_BSEL
-	mwa	#Image FileNamePtr
+	clc
+	lda #<Image
+	adc File_Index
+	sta FileNamePtr
+	lda #>Image
+	adc #$00
+	sta FileNamePtr + $01
 	lda	#$01
 	sta	BankIndex						; Load Colour Map data under $01000
 	jsr	LoadData
@@ -318,11 +339,20 @@ Load_Image_Done
 ; Data Tables go here
 ;-----------------------------------------------------------------------------
 Palettes								; Each entry must be $10 bytes!
-	dta c'D2:PALETTES.PAL',$9B
+	dta c'D2:IMG1.PAL',$00,$00,$00,$00
+	dta c'D2:IMG2.PAL',$00,$00,$00,$00
+	dta c'D2:IMG3.PAL',$00,$00,$00,$00
+	dta c'D2:IMG4.PAL',$00,$00,$00,$00
 Colour									; Each entry must be $10 bytes!
-	dta c'D2:ATTRIB.MAP',$9B,$00,$00
+	dta c'D2:IMG1.MAP',$00,$00,$00,$00
+	dta c'D2:IMG2.MAP',$00,$00,$00,$00
+	dta c'D2:IMG3.MAP',$00,$00,$00,$00
+	dta c'D2:IMG4.MAP',$00,$00,$00,$00
 Image									; Each entry must be $10 bytes!
-	dta c'D2:IMAGE.RAW',$9B,$00,$00,$00
+	dta c'D2:IMG1.RAW',$00,$00,$00,$00
+	dta c'D2:IMG2.RAW',$00,$00,$00,$00
+	dta c'D2:IMG3.RAW',$00,$00,$00,$00
+	dta c'D2:IMG4.RAW',$00,$00,$00,$00
 	
 ;-----------------------------------------------------------------------------
 ; 
