@@ -8,18 +8,19 @@ Source: view1024.asm
      6 				; Load Address = 
      7 				; Run Address = 
      8 				; VBXE:
-     9 				;    XDL           = $00000 - $00014
-    10 				;    BCBs          = $00100 - $001FF
-    11 				;    NTSC_Palette  = $00200 - $004FF (Used to restore Palette 0 on program exit)
-    12 				;    PAL_Palette   = $00500 - $006FF (Used to restore Palette 0 on program exit)
-    13 				;    VRAM          = $01000 - $13BFF (Video Ram)
-    14 				;    CRAM_Buffer   = $14000 - $1657F (Compressed palette bytes)
-    15 				;    CRAM          = $17000 - $205FF (Colour Ram)
-    16
-    17 				;-----------------------------------------------------------------------------
-    18 				;  HARDWARE EQUATES
-    19 				;-----------------------------------------------------------------------------
-    20 				    icl 'equates.asm'
+     9 				;    XDL             = $00000 - $00014
+    10 				;    BCBs            = $00100 - $001FF
+    11 				;    NTSC_Palette    = $00200 - $004FF (Used to restore Palette 0 on program exit)
+    12 				;    PAL_Palette     = $00500 - $006FF (Used to restore Palette 0 on program exit)
+    13 				;    VRAM            = $01000 - $13BFF (Video Ram)
+    14 				;    CRAM_Buffer     = $14000 - $1657F (Compressed palette bytes)
+    15 				;    CRAM            = $17000 - $205FF (Colour Ram)
+    16 				;    Palette_Buffers = $21000 - $21FFF (Temp 4kB buffer for loading palettes)
+    17
+    18 				;-----------------------------------------------------------------------------
+    19 				;  HARDWARE EQUATES
+    20 				;-----------------------------------------------------------------------------
+    21 				    icl 'equates.asm'
 Source: equates.asm
      1 				; OS Vectors
      2 = 0000			LINZBS      equ $00         ; Word
@@ -365,91 +366,91 @@ Source: equates.asm
    341 = E471			BLKBDV      equ $E471       ; Memo Pad Vector
    342 = E474			WARMSV      equ $E474       ; Warm Reset Vector
    343 = E477			COLDSV      equ $E477       ; Cold Reset Vector
-    21
-    22 				;-----------------------------------------------------------------------------
-    23 				; Structure Declarations
-    24 				;-----------------------------------------------------------------------------
-    25
-    26 				;-----------------------------------------------------------------------------
-    27 				; Variables go here
-    28 				;-----------------------------------------------------------------------------
-    29 				; Page 0 user data ($80 to $FF with some reserved for OS)
-    30 				.zpvar Reg1				.byte			; Multi-Use Variables
-    31 				.zpvar Reg2				.byte			; Multi-Use Variables
-    32 				.zpvar Reg3				.byte			; Multi-Use Variables
-    33 				.zpvar Reg4				.byte			; Multi-Use Variables
-    34 				.zpvar Reg5				.byte			; Multi-Use Variables
-    35 				.zpvar Reg6				.byte			; Multi-Use Variables
-    36 				.zpvar Reg7				.byte			; Multi-Use Variables
-    37 				.zpvar Reg8				.byte			; Multi-Use Variables
-    38 				.zpvar Ptr_Lo			.byte			; Lo byte of pointer
-    39 				.zpvar Ptr_Hi			.byte			; Hi byte of pointer
-    40
-    41 				; Non Page-0 Variables
-    42 				;	$480 to $4FF free
-    43 				;	$600 to $6FF free
-    44 				; When using PMG the 1st $300 bytes are always free
-    45 				.var SDMCTL_OLD			.byte = $480	; Save DMA
-    46 				.var CRSINH_OLD			.byte = $481	; Save CRSINH (Mouse Pointer)
-    47 				.var LMARGIN_OLD		.byte = $482	; Save LMARGIN
-    48 				.var COLOR2_OLD			.byte = $483	; Save COLOR2
-    49 				.var SP_REG_OLD			.byte = $484	; Save the Stack Pointer
-    50 				.var SDLSTL_OLD			.byte = $485	; Save the Display List Pointer
-    51 				.var SDLSTH_OLD			.byte = $486	; Save the Display List Pointer
-    52 				.var DOSINIL_OLD		.byte = $487	; Save the DOSINI Pointer
-    53 				.var DOSINIH_OLD		.byte = $488	; Save the DOSINI Pointer
-    54 				.var Video_Flag			.byte = $489	; PAL = 0, NTSC = 1
-    55
-    56 				;-----------------------------------------------------------------------------
-    57 				; Defines go here
-    58 				;-----------------------------------------------------------------------------
-    59 = FFFF0001		.def	__VBXE_AUTO__
-    60 = 2000			.def	VBXE_WINDOW						= $2000
-    61 = 1000			.def	VBXE_WINDOW_SIZE_4k				= $1000
-    62 = 2000			.def	VBXE_WINDOW_SIZE_8k				= $2000
-    63 = 3000			.def	LOAD_ADDRESS					= VBXE_WINDOW + VBXE_WINDOW_SIZE_4k
-    64
-    65 				; BCB field byte offsets
-    66 = 0000			.def	Src_Adr0						= $00
-    67 = 0001			.def	Src_Adr1						= $01
-    68 = 0002			.def	Src_Adr2						= $02
-    69 = 0006			.def	Dest_Adr0						= $06
-    70 = 0007			.def	Dest_Adr1						= $07
-    71 = 0008			.def	Dest_Adr2						= $08
-    72 = 0014			.def	Blt_Ctrl						= $14
-    73
-    74 				; Temp debug stuff
-    75 = 0010			.def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
-    76 = 0010			.def	V_1								= $10	; 0 (Screen code used for Version in loading screen)
-    77 = 0014			.def	V_2								= $14	; 4 (Screen code used for Version in loading screen)
-    78 = 0000			.def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
-    79
-    80 				;-----------------------------------------------------------------------------
-    81 				; VBXE Helpers
-    82 				;-----------------------------------------------------------------------------
-    83 = 0080			REG1
-    83 = 0081			REG2
-    83 = 0082			REG3
-    83 = 0083			REG4
-    83 = 0084			REG5
-    83 = 0085			REG6
-    83 = 0086			REG7
-    83 = 0087			REG8
-    83 = 0088			PTR_LO
-    83 = 0089			PTR_HI
-    83 = 0480			SDMCTL_OLD
-    83 = 0481			CRSINH_OLD
-    83 = 0482			LMARGIN_OLD
-    83 = 0483			COLOR2_OLD
-    83 = 0484			SP_REG_OLD
-    83 = 0485			SDLSTL_OLD
-    83 = 0486			SDLSTH_OLD
-    83 = 0487			DOSINIL_OLD
-    83 = 0488			DOSINIH_OLD
-    83 = 0489			VIDEO_FLAG
-    83 					org LOAD_ADDRESS
-    84 				.pages 3								; DO NOT go past $3300
-    85 					icl	'fileio.lib'
+    22
+    23 				;-----------------------------------------------------------------------------
+    24 				; Structure Declarations
+    25 				;-----------------------------------------------------------------------------
+    26
+    27 				;-----------------------------------------------------------------------------
+    28 				; Variables go here
+    29 				;-----------------------------------------------------------------------------
+    30 				; Page 0 user data ($80 to $FF with some reserved for OS)
+    31 				.zpvar Reg1				.byte			; Multi-Use Variables
+    32 				.zpvar Reg2				.byte			; Multi-Use Variables
+    33 				.zpvar Reg3				.byte			; Multi-Use Variables
+    34 				.zpvar Reg4				.byte			; Multi-Use Variables
+    35 				.zpvar Reg5				.byte			; Multi-Use Variables
+    36 				.zpvar Reg6				.byte			; Multi-Use Variables
+    37 				.zpvar Reg7				.byte			; Multi-Use Variables
+    38 				.zpvar Reg8				.byte			; Multi-Use Variables
+    39 				.zpvar Ptr_Lo			.byte			; Lo byte of pointer
+    40 				.zpvar Ptr_Hi			.byte			; Hi byte of pointer
+    41
+    42 				; Non Page-0 Variables
+    43 				;	$480 to $4FF free
+    44 				;	$600 to $6FF free
+    45 				; When using PMG the 1st $300 bytes are always free
+    46 				.var SDMCTL_OLD			.byte = $480	; Save DMA
+    47 				.var CRSINH_OLD			.byte = $481	; Save CRSINH (Mouse Pointer)
+    48 				.var LMARGIN_OLD		.byte = $482	; Save LMARGIN
+    49 				.var COLOR2_OLD			.byte = $483	; Save COLOR2
+    50 				.var SP_REG_OLD			.byte = $484	; Save the Stack Pointer
+    51 				.var SDLSTL_OLD			.byte = $485	; Save the Display List Pointer
+    52 				.var SDLSTH_OLD			.byte = $486	; Save the Display List Pointer
+    53 				.var DOSINIL_OLD		.byte = $487	; Save the DOSINI Pointer
+    54 				.var DOSINIH_OLD		.byte = $488	; Save the DOSINI Pointer
+    55 				.var Video_Flag			.byte = $489	; PAL = 0, NTSC = 1
+    56
+    57 				;-----------------------------------------------------------------------------
+    58 				; Defines go here
+    59 				;-----------------------------------------------------------------------------
+    60 = FFFF0001		.def	__VBXE_AUTO__
+    61 = 2000			.def	VBXE_WINDOW						= $2000
+    62 = 1000			.def	VBXE_WINDOW_SIZE_4k				= $1000
+    63 = 2000			.def	VBXE_WINDOW_SIZE_8k				= $2000
+    64 = 3000			.def	LOAD_ADDRESS					= VBXE_WINDOW + VBXE_WINDOW_SIZE_4k
+    65
+    66 				; BCB field byte offsets
+    67 = 0000			.def	Src_Adr0						= $00
+    68 = 0001			.def	Src_Adr1						= $01
+    69 = 0002			.def	Src_Adr2						= $02
+    70 = 0006			.def	Dest_Adr0						= $06
+    71 = 0007			.def	Dest_Adr1						= $07
+    72 = 0008			.def	Dest_Adr2						= $08
+    73 = 0014			.def	Blt_Ctrl						= $14
+    74
+    75 				; Temp debug stuff
+    76 = 0010			.def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
+    77 = 0010			.def	V_1								= $10	; 0 (Screen code used for Version in loading screen)
+    78 = 0014			.def	V_2								= $14	; 4 (Screen code used for Version in loading screen)
+    79 = 0000			.def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
+    80
+    81 				;-----------------------------------------------------------------------------
+    82 				; VBXE Helpers
+    83 				;-----------------------------------------------------------------------------
+    84 = 0080			REG1
+    84 = 0081			REG2
+    84 = 0082			REG3
+    84 = 0083			REG4
+    84 = 0084			REG5
+    84 = 0085			REG6
+    84 = 0086			REG7
+    84 = 0087			REG8
+    84 = 0088			PTR_LO
+    84 = 0089			PTR_HI
+    84 = 0480			SDMCTL_OLD
+    84 = 0481			CRSINH_OLD
+    84 = 0482			LMARGIN_OLD
+    84 = 0483			COLOR2_OLD
+    84 = 0484			SP_REG_OLD
+    84 = 0485			SDLSTL_OLD
+    84 = 0486			SDLSTH_OLD
+    84 = 0487			DOSINIL_OLD
+    84 = 0488			DOSINIH_OLD
+    84 = 0489			VIDEO_FLAG
+    84 					org LOAD_ADDRESS
+    85 				.pages 3								; DO NOT go past $3300
+    86 					icl	'fileio.lib'
 Source: fileio.lib
      1 				;basic CIO commands (ICCOM)
      2 = 0003			CIO_open		equ 3	;OPEN command for IOCB channell
@@ -706,7 +707,7 @@ Source: fileio.lib
    231 = 3135 00		FILENAMELNG
    231 = 3136 00 00		TEXTPTR
    231 = 3138 00		LOADSTATUS
-    86 3139				icl	'vbxe_min.asm'					; Use my VBXE_SetPalette2 to load linear palete
+    87 3139				icl	'vbxe_min.asm'					; Use my VBXE_SetPalette2 to load linear palete
 Source: vbxe_min.asm
      1
      2 				.if .not .def __VBXE_AUTO__ .and .not .def __VBXE_D700__	; default case - vbxe at $d640
@@ -964,48 +965,48 @@ Source: vbxe_min.asm
    230 = 008F			VBXEBASE
    230 = 0091			Y_REGISTER
    230 = 31D0 00 00		PAL_PTR
-    87
-    88 				;-----------------------------------------------------------------------------
-    89 				; Clean up and exit
-    90 				;-----------------------------------------------------------------------------
-    91 31D2			Cleanup_Exit
-    92 31D2 A9 00			lda #$00
-    93 31D4 8D 2F 02			sta SDMCTL
-    94
-    95 31D7 20 81 33			jsr Restore_Palette0
-    96
-    97 31DA A9 00			lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
-    98 31DC 8D 5F D6			sta VBXE_MA_BSEL
-    99 31DF 8D 40 D6			sta VBXE_VIDEO_CONTROL				; Disable XDL
-   100
-   101 31E2 AD 82 04			lda LMARGIN_OLD
-   102 31E5 85 52			sta LMARGIN							; Restore LMARGIN
-   103
-   104 31E7 AD 87 04			lda DOSINIL_OLD
-   105 31EA 85 0C			sta DOSINI
-   106 31EC AD 88 04			lda DOSINIH_OLD
-   107 31EF 85 0D			sta DOSINI + 1						; Restore DOSINI
-   108
-   109 31F1 A9 FF			lda #$FF
-   110 31F3 8D FC 02			sta CH								; Clear last key pressed
-   111
-   112 31F6 AD 80 04			lda SDMCTL_OLD
-   113 31F9 8D 2F 02			sta SDMCTL							; Restore SDMCTL
-   114
-   115 31FC 6C 0A 00			jmp	(DOSVEC)						; Return to DOS
-   116
-   117 31FF			Wait_For_Key_Exit
-   118 31FF A9 FF			lda #$FF
-   119 3201 8D FC 02			sta CH								; Clear last key pressed
-   120 3204			Wait_For_Key_Exit_L1
-   121 3204 AD FC 02			lda CH
-   122 3207 C9 FF			cmp #$FF
-   123 3209 F0 F9			beq Wait_For_Key_Exit_L1			; Wait for Key Press
-   124 320B 60				rts									; Exit on  Key Press
-   125 320C			.endpg
-   126
-   127 				; Multi-stage loader & program initialization code begins here
-   128 320C				icl 'init_vbxe.asm'
+    88
+    89 				;-----------------------------------------------------------------------------
+    90 				; Clean up and exit
+    91 				;-----------------------------------------------------------------------------
+    92 31D2			Cleanup_Exit
+    93 31D2 A9 00			lda #$00
+    94 31D4 8D 2F 02			sta SDMCTL
+    95
+    96 31D7 20 55 33			jsr Restore_Palette0
+    97
+    98 31DA A9 00			lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
+    99 31DC 8D 5F D6			sta VBXE_MA_BSEL
+   100 31DF 8D 40 D6			sta VBXE_VIDEO_CONTROL				; Disable XDL
+   101
+   102 31E2 AD 82 04			lda LMARGIN_OLD
+   103 31E5 85 52			sta LMARGIN							; Restore LMARGIN
+   104
+   105 31E7 AD 87 04			lda DOSINIL_OLD
+   106 31EA 85 0C			sta DOSINI
+   107 31EC AD 88 04			lda DOSINIH_OLD
+   108 31EF 85 0D			sta DOSINI + 1						; Restore DOSINI
+   109
+   110 31F1 A9 FF			lda #$FF
+   111 31F3 8D FC 02			sta CH								; Clear last key pressed
+   112
+   113 31F6 AD 80 04			lda SDMCTL_OLD
+   114 31F9 8D 2F 02			sta SDMCTL							; Restore SDMCTL
+   115
+   116 31FC 6C 0A 00			jmp	(DOSVEC)						; Return to DOS
+   117
+   118 31FF			Wait_For_Key_Exit
+   119 31FF A9 FF			lda #$FF
+   120 3201 8D FC 02			sta CH								; Clear last key pressed
+   121 3204			Wait_For_Key_Exit_L1
+   122 3204 AD FC 02			lda CH
+   123 3207 C9 FF			cmp #$FF
+   124 3209 F0 F9			beq Wait_For_Key_Exit_L1			; Wait for Key Press
+   125 320B 60				rts									; Exit on  Key Press
+   126 320C			.endpg
+   127
+   128 				; Multi-stage loader & program initialization code begins here
+   129 320C				icl 'init_vbxe.asm'
 Source: init_vbxe.asm
      1 				;-----------------------------------------------------------------------------
      2 				; Initialization
@@ -1621,143 +1622,203 @@ Source: bcbs.asm
    564 					org VBXE_WINDOW + $500				; Load data directly into VBXE RAM
    565 2500			Palette2
    566 2500-27FF> 00 00 00 07 + 	ins 'vbxe_ntsc.pal'
-   129
-   130 					org LOAD_ADDRESS + $300				; Libraries live above
-   131
-   132 				;-----------------------------------------------------------------------------
-   133 				; Main loop
-   134 				;-----------------------------------------------------------------------------
-   135 3300			start
-   136 				; Initialization code can go here
-   137
-   138 3300-334D> A9 00			lda	#0								; Setup VBXE for displaying picture data
-   139 3302 8D 41 D6			sta	VBXE_XDL_ADR0					; But don't show the overlay just yet!
-   140 3305 8D 43 D6			sta	VBXE_XDL_ADR2
-   141 3308 8D 42 D6			sta	VBXE_XDL_ADR1
-   142
-   143 330B A9 00			lda	#$00
-   144 					;sta SDMCTL							; Turn ANTIC DMA off
-   145
-   146 330D A9 03			lda	#%00000011						; XDL,XCOLOR Enabled and transparent color index 0
-   147 330F 8D 40 D6			sta	VBXE_VIDEO_CONTROL
-   148 3312 20 4E 33			jsr Wait_For_Sync
-   149
-   150 				; Load the Attribute Colour Map
-   151 3315 A9 80			lda	#MEMAC_GLOBAL_ENABLE
-   152 3317 8D 5F D6			sta	VBXE_MA_BSEL
-   153 331A A9 A9 8D 33 31 A9 + 	mwa	#Colour FileNamePtr
-   154 3324 A9 14			lda	#$14
-   155 3326 85 8A			sta	BankIndex						; Load Colour Map data under $14000
-   156 3328 20 AA 30			jsr	LoadData
-   157
-   158 332B 20 63 33			jsr Setup_Cmap1						; Expand the data out to $17000
-   159
-   160 				; Load the Image
-   161 332E A9 80			lda	#MEMAC_GLOBAL_ENABLE
-   162 3330 8D 5F D6			sta	VBXE_MA_BSEL
-   163 3333 A9 B6 8D 33 31 A9 + 	mwa	#Image FileNamePtr
-   164 333D A9 01			lda	#$01
-   165 333F 85 8A			sta	BankIndex						; Load Colour Map data under $01000
-   166 3341 20 AA 30			jsr	LoadData
-   167
-   168 3344			main
-   169 				; All done - now loop forever
-   170 3344 A9 00			lda #$00
-   171 3346 85 4D			sta ATRACT							; Disable Attract Mode
+   130
+   131 					org LOAD_ADDRESS + $300				; Libraries live above
+   132
+   133 				;-----------------------------------------------------------------------------
+   134 				; Main loop
+   135 				;-----------------------------------------------------------------------------
+   136 3300			start
+   137 				; Initialization code can go here
+   138
+   139 3300-3321> A9 00			lda	#0								; Setup VBXE for displaying picture data
+   140 3302 8D 41 D6			sta	VBXE_XDL_ADR0					; But don't show the overlay just yet!
+   141 3305 8D 43 D6			sta	VBXE_XDL_ADR2
+   142 3308 8D 42 D6			sta	VBXE_XDL_ADR1
+   143
+   144 330B A9 00			lda	#$00
+   145 					;sta SDMCTL							; Turn ANTIC DMA off
+   146
+   147 330D A9 03			lda	#%00000011						; XDL,XCOLOR Enabled and transparent color index 0
+   148 330F 8D 40 D6			sta	VBXE_VIDEO_CONTROL
+   149 3312 20 22 33			jsr Wait_For_Sync
+   150 					
+   151 3315 20 7D 33			jsr Load_Image
+   152
+   153 3318			main
+   154 				; For now pressing space will advance to the next image
+   155
+   156 				; TODO: Process keys & load image BEGIN
+   157 				; TODO: Process keys & load image END
+   158
+   159 				; All done - now loop forever
+   160 3318 A9 00			lda #$00
+   161 331A 85 4D			sta ATRACT							; Disable Attract Mode
+   162
+   163 331C 20 22 33			jsr Wait_For_Sync					; Wait for VSYNC, Q quits
+   164 331F 4C 18 33			jmp main
+   165
+   166 				; Set RUN Vector
+   167 02E0-02E1> 00 33			run start
+   168
+   169 				;-----------------------------------------------------------------------------
+   170 				; END OF CODE
+   171 				;-----------------------------------------------------------------------------
    172
-   173 3348 20 4E 33			jsr Wait_For_Sync					; Wait for VSYNC, Q quits
-   174 334B 4C 44 33			jmp main
-   175
-   176 				; Set RUN Vector
-   177 02E0-02E1> 00 33			run start
-   178
-   179
-   180 				;-----------------------------------------------------------------------------
-   181 				; END OF CODE
-   182 				;-----------------------------------------------------------------------------
-   183
-   184 				;-----------------------------------------------------------------------------
-   185 				; Subroutines BEGIN
-   186 				;-----------------------------------------------------------------------------
-   187 				;-----------------------------------------------------------------------------
-   188 				; Wait For VSync (locks to the refresh rate, PAL=50Hz, NTSC=60Hz)  Thanks tebe
-   189 				;-----------------------------------------------------------------------------
-   190 334E			Wait_For_Sync							; Hold until VCOUNT == 0
-   191 334E-33C1> 2C 0B D4		bit	VCOUNT
-   192 3351 30 FB			bmi *-3
-   193 3353 2C 0B D4			bit	VCOUNT
-   194 3356 10 FB			bpl *-3
-   195 				; If present, the next 3 lines will allow a "jump to exit" on a specific key press
-   196 3358 AD FC 02			lda CH
-   197 335B C9 2F			cmp #$2F							; Press Q to quit
-   198 335D F0 01			beq	Exit
-   199 335F 60				rts									; Else return to caller
-   200 3360			Exit
-   201 3360 4C D2 31			jmp	Cleanup_Exit					; Clean up and exit (accounts for any long branch issues)
-   202
-   203 				;-----------------------------------------------------------------------------
-   204 				; Setup_Cmap1 - Sets byte 4 for all cmap entries via blitter
-   205 				;-----------------------------------------------------------------------------
-   206 3363			Setup_Cmap1
-   207 3363 A9 15			lda	#BLT_SETUP_CMAP_1-BLT_CLEAR
-   208 3365 8D 50 D6			sta	VBXE_BL_ADR0					; Setup the blitter for memory fill operation
-   209 3368 A9 00			lda	#0
-   210 336A 8D 52 D6			sta	VBXE_BL_ADR2					; See the description of BCB at the end of this
-   211 336D A9 01			lda	#$01							; Source
-   212 336F 8D 51 D6			sta	VBXE_BL_ADR1
-   213 3372 A9 00			lda	#0
-   214 3374			Setup_Cmap1_L1
-   215 3374 AD 53 D6			lda	VBXE_BLITTER_BUSY
-   216 3377 C9 00			cmp	#0
-   217 3379 D0 F9			bne	Setup_Cmap1_L1					; Wait for blitter to finish
-   218 337B A9 01			lda	#1
-   219 337D 8D 53 D6			sta	VBXE_BLITTER_START				; Start the blit
-   220 3380 60				rts
-   221
-   222 				;-----------------------------------------------------------------------------
-   223 				; Restores VBXE Palette 0 based on NTSC/PAL test
-   224 				;-----------------------------------------------------------------------------
-   225 3381			Restore_Palette0
-   226 3381 A9 80			lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
-   227 3383 8D 5F D6			sta VBXE_MA_BSEL
-   228
-   229 3386 AD 89 04			lda Video_Flag						; 0 = PAL, 1 = NTSC
-   230 3389 D0 0B			bne Restore_Palette0_Setup_NTSC
-   231 338B			Restore_Palette0_Setup_PAL
-   232 338B A9 00			lda <(VBXE_WINDOW + $0500)
-   233 338D 85 91			sta Y_Register
-   234 338F A9 25			lda >(VBXE_WINDOW + $0500)			; PAL_Palette = $00500 - $006FF
-   235 3391 85 92			sta Y_Register + $01
-   236 3393 4C 9E 33			jmp Restore_Palette0_SetPalette
-   237
-   238 3396			Restore_Palette0_Setup_NTSC
-   239 3396 A9 00			lda <(VBXE_WINDOW + $0200)
-   240 3398 85 91			sta Y_Register
-   241 339A A9 22			lda >(VBXE_WINDOW + $0200)			; NTSC_Palette = $00200 - $004FF
-   242 339C 85 92			sta Y_Register + $01
-   243
-   244 339E			Restore_Palette0_SetPalette
-   245 339E A9 00			lda #$00							; Set Palette 0
-   246 33A0 20 6C 31			jsr VBXE_SetPalette2
-   247
-   248 33A3			Restore_Palette0_Done
-   249 33A3 A9 00			lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
-   250 33A5 8D 5F D6			sta VBXE_MA_BSEL
-   251
-   252 33A8 60				rts
-   253
-   254 				;-----------------------------------------------------------------------------
-   255 				; Subroutines END
-   256 				;-----------------------------------------------------------------------------
+   173 				;-----------------------------------------------------------------------------
+   174 				; Subroutines BEGIN
+   175 				;-----------------------------------------------------------------------------
+   176 				;-----------------------------------------------------------------------------
+   177 				; Wait For VSync (locks to the refresh rate, PAL=50Hz, NTSC=60Hz)  Thanks tebe
+   178 				;-----------------------------------------------------------------------------
+   179 3322			Wait_For_Sync							; Hold until VCOUNT == 0
+   180 3322-3430> 2C 0B D4		bit	VCOUNT
+   181 3325 30 FB			bmi *-3
+   182 3327 2C 0B D4			bit	VCOUNT
+   183 332A 10 FB			bpl *-3
+   184 				; If present, the next 3 lines will allow a "jump to exit" on a specific key press
+   185 332C AD FC 02			lda CH
+   186 332F C9 2F			cmp #$2F							; Press Q to quit
+   187 3331 F0 01			beq	Exit
+   188 3333 60				rts									; Else return to caller
+   189 3334			Exit
+   190 3334 4C D2 31			jmp	Cleanup_Exit					; Clean up and exit (accounts for any long branch issues)
+   191
+   192 				;-----------------------------------------------------------------------------
+   193 				; Setup_Cmap1 - Sets byte 4 for all cmap entries via blitter
+   194 				;-----------------------------------------------------------------------------
+   195 3337			Setup_Cmap1
+   196 3337 A9 15			lda	#BLT_SETUP_CMAP_1-BLT_CLEAR
+   197 3339 8D 50 D6			sta	VBXE_BL_ADR0					; Setup the blitter for memory fill operation
+   198 333C A9 00			lda	#0
+   199 333E 8D 52 D6			sta	VBXE_BL_ADR2					; See the description of BCB at the end of this
+   200 3341 A9 01			lda	#$01							; Source
+   201 3343 8D 51 D6			sta	VBXE_BL_ADR1
+   202 3346 A9 00			lda	#0
+   203 3348			Setup_Cmap1_L1
+   204 3348 AD 53 D6			lda	VBXE_BLITTER_BUSY
+   205 334B C9 00			cmp	#0
+   206 334D D0 F9			bne	Setup_Cmap1_L1					; Wait for blitter to finish
+   207 334F A9 01			lda	#1
+   208 3351 8D 53 D6			sta	VBXE_BLITTER_START				; Start the blit
+   209 3354 60				rts
+   210
+   211 				;-----------------------------------------------------------------------------
+   212 				; Restores VBXE Palette 0 based on NTSC/PAL test
+   213 				;-----------------------------------------------------------------------------
+   214 3355			Restore_Palette0
+   215 3355 A9 80			lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
+   216 3357 8D 5F D6			sta VBXE_MA_BSEL
+   217
+   218 335A AD 89 04			lda Video_Flag						; 0 = PAL, 1 = NTSC
+   219 335D D0 0B			bne Restore_Palette0_Setup_NTSC
+   220 335F			Restore_Palette0_Setup_PAL
+   221 335F A9 00			lda <(VBXE_WINDOW + $0500)
+   222 3361 85 91			sta Y_Register
+   223 3363 A9 25			lda >(VBXE_WINDOW + $0500)			; PAL_Palette = $00500 - $006FF
+   224 3365 85 92			sta Y_Register + $01
+   225 3367 4C 72 33			jmp Restore_Palette0_SetPalette
+   226
+   227 336A			Restore_Palette0_Setup_NTSC
+   228 336A A9 00			lda <(VBXE_WINDOW + $0200)
+   229 336C 85 91			sta Y_Register
+   230 336E A9 22			lda >(VBXE_WINDOW + $0200)			; NTSC_Palette = $00200 - $004FF
+   231 3370 85 92			sta Y_Register + $01
+   232
+   233 3372			Restore_Palette0_SetPalette
+   234 3372 A9 00			lda #$00							; Set Palette 0
+   235 3374 20 6C 31			jsr VBXE_SetPalette2
+   236
+   237 3377			Restore_Palette0_Done
+   238 3377 A9 00			lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
+   239 3379 8D 5F D6			sta VBXE_MA_BSEL
+   240
+   241 337C 60				rts
+   242
+   243 				;-----------------------------------------------------------------------------
+   244 				; Load_Image
+   245 				;-----------------------------------------------------------------------------
+   246 337D			Load_Image
+   247 				; Load the 4 Palettes - use VBXE RAM so we don't waste main RAM
+   248 				; Palette loading is a fire & forget
+   249
+   250 				; Load the Palettes
+   251 337D A9 80			lda	#MEMAC_GLOBAL_ENABLE
+   252 337F 8D 5F D6			sta	VBXE_MA_BSEL
+   253 3382 A9 01 8D 33 31 A9 + 	mwa	#Palettes FileNamePtr
+   254 338C A9 21			lda	#$21
+   255 338E 85 8A			sta	BankIndex						; Load Colour Map data under $21000
+   256 3390 20 AA 30			jsr	LoadData
    257
-   258 				;-----------------------------------------------------------------------------
-   259 				; Data Tables go here
-   260 				;-----------------------------------------------------------------------------
-   261 33A9			Colour
-   262 33A9 44 32 3A 41 54 54 + 	dta c'D2:ATTRIB.MAP'
-   263 33B6			Image
-   264 33B6 44 32 3A 49 4D 41 + 	dta c'D2:IMAGE.RAW'
-   265 					
-   266 				;-----------------------------------------------------------------------------
-   267 				; 
-   268 				;-----------------------------------------------------------------------------
+   258 3393 A9 A1			lda	#$21 | MEMAC_GLOBAL_ENABLE		; Bank $21 VBXE Window Enabled
+   259 3395 8D 5F D6			sta	VBXE_MA_BSEL
+   260 3398 A9 00			lda <(VBXE_WINDOW + $0000)
+   261 339A 85 91			sta Y_Register
+   262 339C A9 20			lda >(VBXE_WINDOW + $0000)
+   263 339E 85 92			sta Y_Register + $01
+   264 33A0 A9 00			lda #$00							; Set Palette 0
+   265 33A2 20 6C 31			jsr VBXE_SetPalette2
+   266
+   267 33A5 A9 00			lda <(VBXE_WINDOW + $0300)
+   268 33A7 85 91			sta Y_Register
+   269 33A9 A9 23			lda >(VBXE_WINDOW + $0300)
+   270 33AB 85 92			sta Y_Register + $01
+   271 33AD A9 01			lda #$01							; Set Palette 1
+   272 33AF 20 6C 31			jsr VBXE_SetPalette2
+   273
+   274 33B2 A9 00			lda <(VBXE_WINDOW + $0600)
+   275 33B4 85 91			sta Y_Register
+   276 33B6 A9 26			lda >(VBXE_WINDOW + $0600)
+   277 33B8 85 92			sta Y_Register + $01
+   278 33BA A9 02			lda #$02							; Set Palette 2
+   279 33BC 20 6C 31			jsr VBXE_SetPalette2
+   280
+   281 33BF A9 00			lda <(VBXE_WINDOW + $0900)
+   282 33C1 85 91			sta Y_Register
+   283 33C3 A9 29			lda >(VBXE_WINDOW + $0900)
+   284 33C5 85 92			sta Y_Register + $01
+   285 33C7 A9 03			lda #$03							; Set Palette 3
+   286 33C9 20 6C 31			jsr VBXE_SetPalette2
+   287
+   288
+   289 				; Load the Attribute Colour Map
+   290 33CC A9 80			lda	#MEMAC_GLOBAL_ENABLE
+   291 33CE 8D 5F D6			sta	VBXE_MA_BSEL
+   292 33D1 A9 11 8D 33 31 A9 + 	mwa	#Colour FileNamePtr
+   293 33DB A9 14			lda	#$14
+   294 33DD 85 8A			sta	BankIndex						; Load Colour Map data under $14000
+   295 33DF 20 AA 30			jsr	LoadData
+   296
+   297 33E2 20 37 33			jsr Setup_Cmap1						; Expand the data out to $17000
+   298
+   299 				; Load the Image
+   300 33E5 A9 80			lda	#MEMAC_GLOBAL_ENABLE
+   301 33E7 8D 5F D6			sta	VBXE_MA_BSEL
+   302 33EA A9 21 8D 33 31 A9 + 	mwa	#Image FileNamePtr
+   303 33F4 A9 01			lda	#$01
+   304 33F6 85 8A			sta	BankIndex						; Load Colour Map data under $01000
+   305 33F8 20 AA 30			jsr	LoadData
+   306 					
+   307 33FB			Load_Image_Done
+   308 33FB A9 00			lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
+   309 33FD 8D 5F D6			sta VBXE_MA_BSEL
+   310
+   311 3400 60				rts
+   312
+   313 				;-----------------------------------------------------------------------------
+   314 				; Subroutines END
+   315 				;-----------------------------------------------------------------------------
+   316
+   317 				;-----------------------------------------------------------------------------
+   318 				; Data Tables go here
+   319 				;-----------------------------------------------------------------------------
+   320 3401			Palettes								; Each entry must be $10 bytes!
+   321 3401 44 32 3A 50 41 4C + 	dta c'D2:PALETTES.PAL',$9B
+   322 3411			Colour									; Each entry must be $10 bytes!
+   323 3411 44 32 3A 41 54 54 + 	dta c'D2:ATTRIB.MAP',$9B,$00,$00
+   324 3421			Image									; Each entry must be $10 bytes!
+   325 3421 44 32 3A 49 4D 41 + 	dta c'D2:IMAGE.RAW',$9B,$00,$00,$00
+   326 					
+   327 				;-----------------------------------------------------------------------------
+   328 				; 
+   329 				;-----------------------------------------------------------------------------

@@ -6,13 +6,14 @@
 ; Load Address = 
 ; Run Address = 
 ; VBXE:
-;    XDL           = $00000 - $00014
-;    BCBs          = $00100 - $001FF
-;    NTSC_Palette  = $00200 - $004FF (Used to restore Palette 0 on program exit)
-;    PAL_Palette   = $00500 - $006FF (Used to restore Palette 0 on program exit)
-;    VRAM          = $01000 - $13BFF (Video Ram)
-;    CRAM_Buffer   = $14000 - $1657F (Compressed palette bytes)
-;    CRAM          = $17000 - $205FF (Colour Ram)
+;    XDL             = $00000 - $00014
+;    BCBs            = $00100 - $001FF
+;    NTSC_Palette    = $00200 - $004FF (Used to restore Palette 0 on program exit)
+;    PAL_Palette     = $00500 - $006FF (Used to restore Palette 0 on program exit)
+;    VRAM            = $01000 - $13BFF (Video Ram)
+;    CRAM_Buffer     = $14000 - $1657F (Compressed palette bytes)
+;    CRAM            = $17000 - $205FF (Colour Ram)
+;    Palette_Buffers = $21000 - $21FFF (Temp 4kB buffer for loading palettes)
 
 ;-----------------------------------------------------------------------------
 ;  HARDWARE EQUATES
@@ -146,26 +147,15 @@ start
 	lda	#%00000011						; XDL,XCOLOR Enabled and transparent color index 0
 	sta	VBXE_VIDEO_CONTROL
 	jsr Wait_For_Sync
-
-; Load the Attribute Colour Map
-	lda	#MEMAC_GLOBAL_ENABLE
-	sta	VBXE_MA_BSEL
-	mwa	#Colour FileNamePtr
-	lda	#$14
-	sta	BankIndex						; Load Colour Map data under $14000
-	jsr	LoadData
-
-	jsr Setup_Cmap1						; Expand the data out to $17000
-
-; Load the Image
-	lda	#MEMAC_GLOBAL_ENABLE
-	sta	VBXE_MA_BSEL
-	mwa	#Image FileNamePtr
-	lda	#$01
-	sta	BankIndex						; Load Colour Map data under $01000
-	jsr	LoadData
+	
+	jsr Load_Image
 
 main
+; For now pressing space will advance to the next image
+
+; TODO: Process keys & load image BEGIN
+; TODO: Process keys & load image END
+
 ; All done - now loop forever
 	lda #$00
 	sta ATRACT							; Disable Attract Mode
@@ -175,7 +165,6 @@ main
 
 ; Set RUN Vector
 	run start
-
 
 ;-----------------------------------------------------------------------------
 ; END OF CODE
@@ -252,16 +241,88 @@ Restore_Palette0_Done
 	rts
 
 ;-----------------------------------------------------------------------------
+; Load_Image
+;-----------------------------------------------------------------------------
+Load_Image
+; Load the 4 Palettes - use VBXE RAM so we don't waste main RAM
+; Palette loading is a fire & forget
+
+; Load the Palettes
+	lda	#MEMAC_GLOBAL_ENABLE
+	sta	VBXE_MA_BSEL
+	mwa	#Palettes FileNamePtr
+	lda	#$21
+	sta	BankIndex						; Load Colour Map data under $21000
+	jsr	LoadData
+
+	lda	#$21 | MEMAC_GLOBAL_ENABLE		; Bank $21 VBXE Window Enabled
+	sta	VBXE_MA_BSEL
+	lda <(VBXE_WINDOW + $0000)
+	sta Y_Register
+	lda >(VBXE_WINDOW + $0000)
+	sta Y_Register + $01
+	lda #$00							; Set Palette 0
+	jsr VBXE_SetPalette2
+
+	lda <(VBXE_WINDOW + $0300)
+	sta Y_Register
+	lda >(VBXE_WINDOW + $0300)
+	sta Y_Register + $01
+	lda #$01							; Set Palette 1
+	jsr VBXE_SetPalette2
+
+	lda <(VBXE_WINDOW + $0600)
+	sta Y_Register
+	lda >(VBXE_WINDOW + $0600)
+	sta Y_Register + $01
+	lda #$02							; Set Palette 2
+	jsr VBXE_SetPalette2
+
+	lda <(VBXE_WINDOW + $0900)
+	sta Y_Register
+	lda >(VBXE_WINDOW + $0900)
+	sta Y_Register + $01
+	lda #$03							; Set Palette 3
+	jsr VBXE_SetPalette2
+
+
+; Load the Attribute Colour Map
+	lda	#MEMAC_GLOBAL_ENABLE
+	sta	VBXE_MA_BSEL
+	mwa	#Colour FileNamePtr
+	lda	#$14
+	sta	BankIndex						; Load Colour Map data under $14000
+	jsr	LoadData
+
+	jsr Setup_Cmap1						; Expand the data out to $17000
+
+; Load the Image
+	lda	#MEMAC_GLOBAL_ENABLE
+	sta	VBXE_MA_BSEL
+	mwa	#Image FileNamePtr
+	lda	#$01
+	sta	BankIndex						; Load Colour Map data under $01000
+	jsr	LoadData
+	
+Load_Image_Done
+	lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
+	sta VBXE_MA_BSEL
+
+	rts
+
+;-----------------------------------------------------------------------------
 ; Subroutines END
 ;-----------------------------------------------------------------------------
 
 ;-----------------------------------------------------------------------------
 ; Data Tables go here
 ;-----------------------------------------------------------------------------
-Colour
-	dta c'D2:ATTRIB.MAP'
-Image
-	dta c'D2:IMAGE.RAW'
+Palettes								; Each entry must be $10 bytes!
+	dta c'D2:PALETTES.PAL',$9B
+Colour									; Each entry must be $10 bytes!
+	dta c'D2:ATTRIB.MAP',$9B,$00,$00
+Image									; Each entry must be $10 bytes!
+	dta c'D2:IMAGE.RAW',$9B,$00,$00,$00
 	
 ;-----------------------------------------------------------------------------
 ; 
