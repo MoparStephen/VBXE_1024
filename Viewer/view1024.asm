@@ -149,21 +149,17 @@ start
 	sta	VBXE_VIDEO_CONTROL
 	jsr Wait_For_Sync
 	
-	lda #$30
-	sta File_Index						; Must be a multiple of $10
+	lda #$00
+	sta File_Index						; Start at index 0
+	tax
 	jsr Load_Image
 
 main
-; For now pressing space will advance to the next image
-
-; TODO: Process keys & load image BEGIN
-; TODO: Process keys & load image END
-
 ; All done - now loop forever
 	lda #$00
 	sta ATRACT							; Disable Attract Mode
 
-	jsr Wait_For_Sync					; Wait for VSYNC, Q quits
+	jsr Wait_For_Sync					; Wait for VSYNC - this calls keyboard handler
 	jmp main
 
 ; Set RUN Vector
@@ -339,10 +335,7 @@ Check_Space
 	jmp Read_Key_Done
 
 Handle_Space
-	inc $600
-	inc $600
-	lda $600
-	sta COLOR4
+	jsr Increment_Image					; Display the next image
 
 Read_Key_Done
 	lda #$FF
@@ -350,6 +343,22 @@ Read_Key_Done
 	rts									; Else return to caller
 Exit
 	jmp	Cleanup_Exit					; Clean up and exit (accounts for any long branch issues)
+
+;-----------------------------------------------------------------------------
+; Increment_Image
+;-----------------------------------------------------------------------------
+Increment_Image
+	clc
+	lda File_Index
+	adc #$10
+	cmp #$40					; Past index 3?
+	bcc Increment_Image_Valid
+	lda #$00					; Wrap to index 0
+Increment_Image_Valid
+	sta File_Index
+	tax
+	jsr Load_Image
+	rts
 
 ;-----------------------------------------------------------------------------
 ; Subroutines END
