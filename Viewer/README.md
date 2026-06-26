@@ -1,2 +1,2 @@
-# Empty_Template_Multi
-Empty Template - multi stage load exe
+# VBXE 1024 Colour Image Viewer
+Slideshow viewer for new format 1024 colour images
