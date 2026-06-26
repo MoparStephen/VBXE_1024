@@ -241,6 +241,7 @@ Written into the `--out` directory:
 | `palette1.pal`  | 768 bytes            | same                                                         |
 | `palette2.pal`  | 768 bytes            | same                                                         |
 | `palette3.pal`  | 768 bytes            | same                                                         |
+| `palettes.pal`  | 4 × 768 = 3072 bytes | all palettes concatenated, palette-major (palette 0 first).  |
 | `attrib.map`    | cells × height bytes | One byte per cell: palette id (0–3) **× 16** → `0,16,32,48`. Sequential row-major. |
 | `preview.png`   | —                    | Reconstruction as the hardware would display it.            |
 | `palettes.png`  | —                    | Swatch sheet of all palettes (visual reference).            |
