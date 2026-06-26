@@ -1,3 +1,4 @@
+.def	NUM_DOTS						= $06
 ;-----------------------------------------------------------------------------
 ; Initialization
 ;-----------------------------------------------------------------------------
@@ -279,14 +280,12 @@ Print_VBXE_Detected_L1
 ; Update Progress bar - line 5 (y = $CB + (4 * increment #))
 	ldy Reg1
 	lda #$54							; Screen RAM code for Ctrl+T
+	ldx #NUM_DOTS						; Number of dots to write
+Progress_Bar_Loop
 	sta (Ptr_Lo),y
 	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
+	dex
+	bne Progress_Bar_Loop
 	sty Reg1							; Save pointer for progress bar updates
 
 	; jsr Wait_For_Key_Exit
@@ -320,14 +319,12 @@ Print_Clearing_Message_L1
 ; Update Progress bar - line 5 (y = $CB + (4 * increment #))
 	ldy Reg1
 	lda #$54							; Screen RAM code for Ctrl+T
+	ldx #NUM_DOTS						; Number of dots to write
+Progress_Bar_Loop
 	sta (Ptr_Lo),y
 	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
+	dex
+	bne Progress_Bar_Loop
 	sty Reg1							; Save pointer for progress bar updates
 
 	; jsr Wait_For_Key_Exit
@@ -405,14 +402,12 @@ Print_Load_XDL_Message_L1
 ; Update Progress bar - line 5 (y = $CB + (4 * increment #))
 	ldy Reg1
 	lda #$54							; Screen RAM code for Ctrl+T
+	ldx #NUM_DOTS						; Number of dots to write
+Progress_Bar_Loop
 	sta (Ptr_Lo),y
 	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
+	dex
+	bne Progress_Bar_Loop
 	sty Reg1							; Save pointer for progress bar updates
 
 	; jsr Wait_For_Key_Exit
@@ -450,14 +445,12 @@ Print_Load_BCB_Message_L1
 ; Update Progress bar - line 5 (y = $CB + (4 * increment #))
 	ldy Reg1
 	lda #$54							; Screen RAM code for Ctrl+T
+	ldx #NUM_DOTS						; Number of dots to write
+Progress_Bar_Loop
 	sta (Ptr_Lo),y
 	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
+	dex
+	bne Progress_Bar_Loop
 	sty Reg1							; Save pointer for progress bar updates
 
 	; jsr Wait_For_Key_Exit
@@ -495,14 +488,12 @@ Print_Load_Palette1_Message_L1
 ; Update Progress bar - line 5 (y = $CB + (4 * increment #))
 	ldy Reg1
 	lda #$54							; Screen RAM code for Ctrl+T
+	ldx #NUM_DOTS						; Number of dots to write
+Progress_Bar_Loop
 	sta (Ptr_Lo),y
 	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
+	dex
+	bne Progress_Bar_Loop
 	sty Reg1							; Save pointer for progress bar updates
 
 	; jsr Wait_For_Key_Exit
@@ -539,17 +530,15 @@ Print_Load_Palette2_Message_L1
 ; Update Progress bar - line 5 (y = $CB + (4 * increment #))
 	ldy Reg1
 	lda #$54							; Screen RAM code for Ctrl+T
+	ldx #NUM_DOTS						; Number of dots to write
+Progress_Bar_Loop
 	sta (Ptr_Lo),y
 	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
-	sta (Ptr_Lo),y
-	iny
+	dex
+	bne Progress_Bar_Loop
 	sty Reg1							; Save pointer for progress bar updates
 
-	jsr Wait_For_Key_Exit
+	; jsr Wait_For_Key_Exit
 
 	lda #$FF
 	sta CH
@@ -567,3 +556,30 @@ Palette
 	org VBXE_WINDOW + $500				; Load data directly into VBXE RAM
 Palette2
 	ins 'vbxe_ntsc.pal'
+
+; Step $09 - Print instructions
+	org LOAD_ADDRESS + $300
+.proc Wait_Start
+; Print Load_Palette_Message - line 3 (y = $79)
+	ldy #$79
+	ldx #$00
+Wait_Start_L1
+	lda Wait_Start_Message,x
+	sta (Ptr_Lo),y
+	inx
+	iny
+	cpx #$26							; Copy $26 characters
+	bne Wait_Start_L1
+
+	jsr Wait_For_Key_Exit
+
+	lda #$FF
+	sta CH
+
+	rts									; Return controll to loader
+
+Wait_Start_Message
+	.sb '  Space to cycle images or Q to Quit  '
+
+.endp
+	ini Wait_Start
