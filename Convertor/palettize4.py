@@ -25,21 +25,22 @@ Strategy
   any over-full palette by substituting its rarest colours with their nearest
   perceptual neighbour. Error is reported.
 
-Outputs (into --out dir)
+Outputs (into --out dir; {name} defaults to the input filename without extension,
+or --name)
 ------------------------
-  image.raw      width * height bytes (8-bit pixel index, row-major)
-  palette0.pal   256 entries * (R,G,B) = 768 bytes  (one file per palette)
-  palette1.pal     ...
-  palette2.pal
-  palette3.pal
-  palettes.pal   all palettes concatenated, palette-major (NP*256*3 bytes)
-  attrib.map     one byte per cell, palette id (0-3) * 16 -> 0,16,32,48; row-major
-  preview.png    reconstruction as the hardware would show it
-  palettes.png   swatch sheet of the palettes
-  report.txt     statistics and any quality warnings
+  {name}.raw     width * height bytes (8-bit pixel index, row-major)
+  {name}0.pal    256 entries * (R,G,B) = 768 bytes  (one file per palette)
+  {name}1.pal      ...
+  {name}2.pal
+  {name}3.pal
+  {name}.pal     all palettes concatenated, palette-major (NP*256*3 bytes)
+  {name}.map     one byte per cell, palette id (0-3) * 16 -> 0,16,32,48; row-major
+  {name}_preview.png   reconstruction as the hardware would show it
+  {name}_palettes.png  swatch sheet of the palettes
+  {name}_report.txt    statistics and any quality warnings
 """
 
-import argparse, os, sys
+import argparse, os, sys, json
 import numpy as np
 from PIL import Image
 
@@ -279,6 +280,8 @@ def main():
     ap = argparse.ArgumentParser(description="Pack an image into 4x256 palettes with 8-pixel cell overrides.")
     ap.add_argument("input", help="input image (PNG/anything PIL reads)")
     ap.add_argument("--out", default="out", help="output directory")
+    ap.add_argument("--name", default=None,
+                    help="base name for the .map/.raw/.pal output files (default: input filename without extension)")
     ap.add_argument("--cell", type=int, default=8, help="pixels per palette-override cell (default 8)")
     ap.add_argument("--palettes", type=int, default=4, help="number of palettes (default 4)")
     ap.add_argument("--slots", type=int, default=256, help="entries per palette (default 256)")
@@ -301,6 +304,8 @@ def main():
                     help="reduce cross-palette duplication via local search so more colours survive (fidelity strategy; default on)")
     ap.add_argument("--coherence", type=float, default=1.5, metavar="L",
                     help="spatial smoothing of the attribute map (higher = neighbouring cells share a palette more, fewer block artifacts; 0 = off). Used by --color-bias > 0.")
+    ap.add_argument("--quiet", action="store_true", help="suppress the human-readable report on stdout (files still written)")
+    ap.add_argument("--json", action="store_true", help="print machine-readable stats as JSON to stdout (implies --quiet for the text report)")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
@@ -583,17 +588,18 @@ def main():
     out_rgb[transparent] = pal_rgb[0, 0]
 
     # ---- write files --------------------------------------------------------
-    # image.raw : one byte per pixel, row-major
-    out_idx.tofile(os.path.join(args.out, "image.raw"))
-    # palette#.pal : 256 entries x (R,G,B) = 768 bytes each
+    base = args.name if args.name else os.path.splitext(os.path.basename(args.input))[0]
+    # {base}.raw : one byte per pixel, row-major
+    out_idx.tofile(os.path.join(args.out, base + ".raw"))
+    # {base}#.pal : 256 entries x (R,G,B) = 768 bytes each
     for b in range(NP):
-        pal_rgb[b].astype(np.uint8).tofile(os.path.join(args.out, f"palette{b}.pal"))
-    # palettes.pal : all palettes concatenated (palette-major), NP*256*3 bytes
-    pal_rgb.astype(np.uint8).tofile(os.path.join(args.out, "palettes.pal"))
-    # attrib.map : one byte per cell, palette id (0-3) << 4  ->  0,16,32,48
-    (cell_pal * 16).astype(np.uint8).tofile(os.path.join(args.out, "attrib.map"))
+        pal_rgb[b].astype(np.uint8).tofile(os.path.join(args.out, f"{base}{b}.pal"))
+    # {base}.pal : all palettes concatenated (palette-major), NP*256*3 bytes
+    pal_rgb.astype(np.uint8).tofile(os.path.join(args.out, base + ".pal"))
+    # {base}.map : one byte per cell, palette id (0-3) << 4  ->  0,16,32,48
+    (cell_pal * 16).astype(np.uint8).tofile(os.path.join(args.out, base + ".map"))
     # human-facing previews
-    Image.fromarray(out_rgb, "RGB").save(os.path.join(args.out, "preview.png"))
+    Image.fromarray(out_rgb, "RGB").save(os.path.join(args.out, base + "_preview.png"))
 
     # palette swatch sheet
     sw = 12
@@ -601,7 +607,7 @@ def main():
     for b in range(NP):
         for s in range(args.slots):
             sheet[b*sw:(b+1)*sw, s*sw:(s+1)*sw] = pal_rgb[b, s]
-    Image.fromarray(sheet, "RGB").save(os.path.join(args.out, "palettes.png"))
+    Image.fromarray(sheet, "RGB").save(os.path.join(args.out, base + "_palettes.png"))
 
     # ---- report -------------------------------------------------------------
     total_px = H * W
@@ -648,17 +654,65 @@ def main():
     total_entries = sum(len(final_colors[b]) for b in range(NP))
     duplicated = total_entries - len(all_pal_colors)
     lines.append("per-palette colour usage:")
+    per_palette = []
     for b in range(NP):
         uniq_b = sum(1 for c in final_colors[b] if pal_count[c] == 1)
+        per_palette.append({"colours": len(final_colors[b]), "unique_to_palette": uniq_b})
         lines.append(f"  palette {b}: {len(final_colors[b]):4d} / {cap} colours"
                      f"  ({uniq_b:4d} unique to this palette)")
     lines.append(f"  duplicated across palettes: {duplicated} "
                  f"entr{'y' if duplicated == 1 else 'ies'} "
                  f"({len(all_pal_colors)} distinct colours in all palettes)")
     report = "\n".join(lines)
-    with open(os.path.join(args.out, "report.txt"), "w") as f:
+    with open(os.path.join(args.out, base + "_report.txt"), "w") as f:
         f.write(report + "\n")
-    print(report)
+
+    # ---- machine-readable stats (sidecar JSON, always written) -------------
+    eff_bias = 1.0 if args.max_colors else max(0.0, min(1.0, args.color_bias))
+    stats = {
+        "input": args.input,
+        "name": base,
+        "out_dir": args.out,
+        "width": W, "height": H, "pixels": total_px,
+        "cell_width": cell_w, "cells_per_line": cells_per_line,
+        "cells": cells_per_line * H,
+        "palettes": NP, "slots": args.slots, "usable_per_palette": cap,
+        "reserve0": bool(args.reserve0),
+        "resized": bool(args.resize),
+        "resize": args.resize, "filter": args.filter if args.resize else None,
+        "fit": args.fit if args.resize else None,
+        "prequantized": bool(prequant),
+        "master_colours": int(N),
+        "output_colours": int(unique_out),
+        "components": int(ncomp), "largest_component": int(max_comp),
+        "transparent_pixels": int(transparent.sum()),
+        "lossless": bool(lossless),
+        "strategy": strategy,
+        "color_bias": eff_bias, "coherence": float(args.coherence),
+        "recoloured_pixels": int(sub_pixels),
+        "recoloured_pct": (100.0 * sub_pixels / total_px) if total_px else 0.0,
+        "mean_oklab_error": (sub_err_sum / sub_pixels) if sub_pixels else 0.0,
+        "duplicated_across_palettes": int(duplicated),
+        "distinct_in_all_palettes": int(len(all_pal_colors)),
+        "per_palette": per_palette,
+        "files": {
+            "raw": base + ".raw",
+            "map": base + ".map",
+            "palettes_combined": base + ".pal",
+            "palettes": [f"{base}{b}.pal" for b in range(NP)],
+            "preview": base + "_preview.png",
+            "palettes_png": base + "_palettes.png",
+            "report": base + "_report.txt",
+            "stats": base + "_stats.json",
+        },
+    }
+    with open(os.path.join(args.out, base + "_stats.json"), "w") as f:
+        json.dump(stats, f, indent=2)
+
+    if args.json:
+        print(json.dumps(stats))
+    elif not args.quiet:
+        print(report)
 
 
 if __name__ == "__main__":

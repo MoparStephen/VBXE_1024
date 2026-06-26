@@ -53,7 +53,7 @@ to cell-level assignment:
 - for any palette that still overflows 256, substitute its **rarest** colours
   with their nearest perceptual neighbour already in that palette.
 
-Substitution error is measured and written to `report.txt`.
+Substitution error is measured and written to `{name}_report.txt`.
 
 ### Feasibility note
 At *exactly* 1024 distinct colours there is zero slack (4×256 − 1024 = 0):
@@ -75,6 +75,7 @@ Requires Python 3 with `numpy` and `Pillow` (`pip install numpy pillow`).
 | Option        | Default | Meaning                                                        |
 |---------------|---------|----------------------------------------------------------------|
 | `--out DIR`   | `out`   | Output directory.                                              |
+| `--name BASE` | input stem | Base name for the `.map`/`.raw`/`.pal` files (default: input filename without extension). |
 | `--cell N`    | `8`     | Pixels per attribute cell.                                     |
 | `--palettes N`| `4`     | Number of palettes.                                            |
 | `--slots N`   | `256`   | Entries per palette.                                           |
@@ -89,6 +90,8 @@ Requires Python 3 with `numpy` and `Pillow` (`pip install numpy pillow`).
 | `--coherence L` | 1.5 | Spatial smoothing of the attribute map (higher = fewer block artifacts). |
 | `--optimize` / `--no-optimize` | on | Reduce cross-palette duplication in the fidelity strategy. |
 | `--seed N`    | `0`     | RNG seed for the k-means seeding in Phase B.                   |
+| `--quiet`     | off     | Suppress the stdout report (files still written).             |
+| `--json`      | off     | Print machine-readable stats as JSON to stdout (implies quiet text). |
 
 If the source has more than `palettes × slots` unique colours it is first
 reduced with a weighted median-cut quantizer.
@@ -124,7 +127,7 @@ Caveats:
   noise across smooth regions (skin tones, gradients), inflating the unique-colour
   count and pushing portraits deeper into the lossy Phase B. If you have the image
   as PNG/TIFF/BMP, feed that instead of a re-saved JPEG. JPEG still works — just
-  check the substitution percentage in `report.txt`.
+  check the substitution percentage in `{name}_report.txt`.
 - **First frame only.** Animated GIFs and multi-page TIFFs are read as their
   first frame. Video and vector formats are not supported.
 
@@ -232,34 +235,44 @@ python3 palettize4.py sprite.png --out build --resize 320x240 --filter nearest
 
 ## Output files
 
-Written into the `--out` directory:
+Written into the `--out` directory. `{name}` is set by `--name`, or defaults to
+the input filename without its extension (e.g. `dragon.png` → `dragon`):
 
 | File            | Size                 | Format                                                       |
 |-----------------|----------------------|--------------------------------------------------------------|
-| `image.raw`     | width × height bytes | One 8-bit palette index per pixel, **row-major**.            |
-| `palette0.pal`  | 768 bytes            | 256 entries, each an **R, G, B** byte triplet.               |
-| `palette1.pal`  | 768 bytes            | same                                                         |
-| `palette2.pal`  | 768 bytes            | same                                                         |
-| `palette3.pal`  | 768 bytes            | same                                                         |
-| `palettes.pal`  | 4 × 768 = 3072 bytes | all palettes concatenated, palette-major (palette 0 first).  |
-| `attrib.map`    | cells × height bytes | One byte per cell: palette id (0–3) **× 16** → `0,16,32,48`. Sequential row-major. |
-| `preview.png`   | —                    | Reconstruction as the hardware would display it.            |
-| `palettes.png`  | —                    | Swatch sheet of all palettes (visual reference).            |
-| `report.txt`    | —                    | Stats: components, lossless/lossy, substitution error, etc. |
+| `{name}.raw`    | width × height bytes | One 8-bit palette index per pixel, **row-major**.            |
+| `{name}0.pal`   | 768 bytes            | 256 entries, each an **R, G, B** byte triplet.               |
+| `{name}1.pal`   | 768 bytes            | same                                                         |
+| `{name}2.pal`   | 768 bytes            | same                                                         |
+| `{name}3.pal`   | 768 bytes            | same                                                         |
+| `{name}.pal`    | 4 × 768 = 3072 bytes | all palettes concatenated, palette-major (palette 0 first).  |
+| `{name}.map`    | cells × height bytes | One byte per cell: palette id (0–3) **× 16** → `0,16,32,48`. Sequential row-major. |
+| `{name}_preview.png` | —                    | Reconstruction as the hardware would display it.            |
+| `{name}_palettes.png` | —                    | Swatch sheet of all palettes (visual reference).            |
+| `{name}_report.txt` | —                    | Stats: components, lossless/lossy, substitution error, etc. |
+| `{name}_stats.json` | —                    | The same stats, machine-readable (for tools / a GUI).       |
 
-`preview.png`, `palettes.png`, and `report.txt` are references for inspection
+`{name}_preview.png`, `{name}_palettes.png`, and `{name}_report.txt` are references for inspection
 and are not part of the data the hardware consumes.
 
+### Scripting / batch use
+For driving the converter from a GUI or batch script, use `--quiet` to silence the
+text report and read `{name}_stats.json` (always written) for results, or use
+`--json` to print the same stats object to stdout. Keys include `output_colours`,
+`master_colours`, `recoloured_pixels`, `recoloured_pct`, `mean_oklab_error`,
+`strategy`, `color_bias`, `coherence`, `duplicated_across_palettes`, `lossless`,
+`per_palette`, and a `files` map of every output filename produced.
+
 ### Index / scan ordering details
-- **`image.raw`** is laid out one full scanline at a time, left to right, top to
+- **`{name}.raw`** is laid out one full scanline at a time, left to right, top to
   bottom.
-- **`attrib.map`** matches that order: all of scanline 0's cells (left to
+- **`{name}.map`** matches that order: all of scanline 0's cells (left to
   right), then scanline 1's, and so on. Each byte holds the palette id (0–3)
   shifted into the high nibble, i.e. multiplied by 16, giving `0,16,32,48`
   (so the palette number sits in bits 4–7). Cells-per-line is
   `ceil(width / cell_width)`; if the width is not a multiple of the cell width,
   the last cell of each line simply covers the remaining pixels.
-- **`palette#.pal`** stores three straight 8-bit bytes per entry in R, G, B
+- **`{name}#.pal`** stores three straight 8-bit bytes per entry in R, G, B
   order. If your palette hardware expects a packed form (e.g. 12-bit `0RGB` or
   15-bit BGR) the writer needs a small change.
 
@@ -277,9 +290,9 @@ For each pixel `(x, y)`:
 
 ```
 cell     = x / cell_width
-palette  = attrib.map[y * cells_per_line + cell] / 16    # high nibble -> 0..3
-index    = image.raw[y * width + x]
-colour   = palette#{palette}.pal[index * 3 .. index * 3 + 2]   # R, G, B
+palette  = {name}.map[y * cells_per_line + cell] / 16    # high nibble -> 0..3
+index    = {name}.raw[y * width + x]
+colour   = {name}{palette}.pal[index * 3 .. index * 3 + 2]   # R, G, B
 ```
 
 ---
@@ -287,8 +300,8 @@ colour   = palette#{palette}.pal[index * 3 .. index * 3 + 2]   # R, G, B
 ## Correctness
 
 The pipeline is verified by an independent round-trip: rebuilding the image
-purely from `image.raw` + the four `.pal` files + `attrib.map` reproduces
-`preview.png` pixel-for-pixel. Test cases:
+purely from `{name}.raw` + the four `{name}#.pal` files + `{name}.map` reproduces
+`{name}_preview.png` pixel-for-pixel. Test cases:
 
 - A "blocky" image with four clean 250-colour regions packs **losslessly**
   (Phase A; each palette 250/256; infinite PSNR).
@@ -303,7 +316,7 @@ purely from `image.raw` + the four `.pal` files + `attrib.map` reproduces
 
 These are deliberately left as defaults until verified:
 
-1. **Attribute-map scan order** — currently row-major matching `image.raw`. If
+1. **Attribute-map scan order** — currently row-major matching `{name}.raw`. If
    the display walks attributes column-major or per-tile, the writer must
    follow that pattern.
 2. **Palette entry format** — currently three full 8-bit RGB bytes (768 bytes
