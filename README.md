@@ -89,6 +89,8 @@ Requires Python 3 with `numpy` and `Pillow` (`pip install numpy pillow`).
 | `--max-colors`| off     | Shorthand for `--color-bias 1.0`.                              |
 | `--coherence L` | 1.5 | Spatial smoothing of the attribute map (higher = fewer block artifacts). |
 | `--optimize` / `--no-optimize` | on | Reduce cross-palette duplication in the fidelity strategy. |
+| `--dither ALGO` | none | Error-diffusion dither during colour reduction (breaks gradient banding): `none floyd atkinson jjn stucki sierra burkes`. |
+| `--dither-strength 0..1` | 1.0 | Fraction of error diffused (lower = subtler). |
 | `--seed N`    | `0`     | RNG seed for the k-means seeding in Phase B.                   |
 | `--quiet`     | off     | Suppress the stdout report (files still written).             |
 | `--json`      | off     | Print machine-readable stats as JSON to stdout (implies quiet text). |
@@ -130,6 +132,35 @@ Caveats:
   check the substitution percentage in `{name}_report.txt`.
 - **First frame only.** Animated GIFs and multi-page TIFFs are read as their
   first frame. Video and vector formats are not supported.
+
+---
+
+## Dithering (gradient banding)
+
+Smooth-gradient sources (plasmas, skies, soft shading) have far more colours than
+the 1020-colour budget, so the median-cut reduction snaps them into visible
+**bands** (contour rings). `--dither` applies error-diffusion *during that
+reduction*, spreading each pixel's quantization error to its neighbours so the
+gradient becomes fine texture instead of bands.
+
+Available kernels: `floyd` (Floyd–Steinberg, the classic), `atkinson` (diffuses
+only ¾ of the error — cleanest/least noisy on limited palettes, good default to
+try first), `jjn` (Jarvis-Judice-Ninke), `stucki`, `sierra`, `burkes`.
+`--dither-strength` (0–1) scales how much error is diffused for a subtler effect.
+
+```
+python palettize4.py plasma.png --out build --dither atkinson
+```
+
+Dithering happens before the palette packing, so the result is still subject to
+the 8×1-pixel cell constraint — but because the dither's two bracketing colours
+are local neighbours, they almost always land in the same cell palette and
+survive. In testing on a full-screen plasma it removed the banding while only
+raising recoloured pixels from ~2.9% to ~3.5%. A few isolated cells can still
+pick up a stray recoloured pixel where the dithered colours don't all fit one
+palette; raising `--color-bias` (more colours available) or using `atkinson`
+(less noise) minimizes those. Requires `scipy` (`pip install scipy`); only needed
+when `--dither` is used.
 
 ---
 

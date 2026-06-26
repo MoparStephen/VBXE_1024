@@ -177,6 +177,51 @@ def kmeans(X, k, iters=40, seed=0):
 
 
 # ----------------------------------------------------------------------------
+# error-diffusion dithering kernels: (dx, dy, weight) with weights summing to 1
+DITHER_KERNELS = {
+    "floyd":    [(1, 0, 7/16), (-1, 1, 3/16), (0, 1, 5/16), (1, 1, 1/16)],
+    "jjn":      [(1, 0, 7/48), (2, 0, 5/48),
+                 (-2, 1, 3/48), (-1, 1, 5/48), (0, 1, 7/48), (1, 1, 5/48), (2, 1, 3/48),
+                 (-2, 2, 1/48), (-1, 2, 3/48), (0, 2, 5/48), (1, 2, 3/48), (2, 2, 1/48)],
+    "stucki":   [(1, 0, 8/42), (2, 0, 4/42),
+                 (-2, 1, 2/42), (-1, 1, 4/42), (0, 1, 8/42), (1, 1, 4/42), (2, 1, 2/42),
+                 (-2, 2, 1/42), (-1, 2, 2/42), (0, 2, 4/42), (1, 2, 2/42), (2, 2, 1/42)],
+    "atkinson": [(1, 0, 1/8), (2, 0, 1/8), (-1, 1, 1/8), (0, 1, 1/8), (1, 1, 1/8), (0, 2, 1/8)],
+    "sierra":   [(1, 0, 5/32), (2, 0, 3/32),
+                 (-2, 1, 2/32), (-1, 1, 4/32), (0, 1, 5/32), (1, 1, 4/32), (2, 1, 2/32),
+                 (-1, 2, 2/32), (0, 2, 3/32), (1, 2, 2/32)],
+    "burkes":   [(1, 0, 8/32), (2, 0, 4/32),
+                 (-2, 1, 2/32), (-1, 1, 4/32), (0, 1, 8/32), (1, 1, 4/32), (2, 1, 2/32)],
+}
+
+def dither_to_palette(arr, pal, algo, strength=1.0):
+    """Error-diffusion quantize arr (HxWx3 uint8) to the colours in `pal`,
+    spreading each pixel's quantization error to neighbours so smooth gradients
+    become fine texture instead of bands. Requires scipy for fast nearest-colour
+    lookup."""
+    try:
+        from scipy.spatial import cKDTree
+    except ImportError:
+        sys.exit("--dither needs scipy: pip install scipy")
+    kernel = DITHER_KERNELS[algo]
+    tree = cKDTree(pal.astype(np.float64))
+    H, W, _ = arr.shape
+    work = arr.astype(np.float64)
+    out = np.empty((H, W), np.int64)
+    for y in range(H):
+        for x in range(W):
+            old = work[y, x]
+            j = int(tree.query(old)[1])
+            out[y, x] = j
+            err = (old - pal[j]) * strength
+            for dx, dy, wt in kernel:
+                xx, yy = x + dx, y + dy
+                if 0 <= xx < W and 0 <= yy < H:
+                    work[yy, xx] += err * wt
+    return pal[out].astype(np.uint8)
+
+
+# ----------------------------------------------------------------------------
 def median_cut(colors, counts, target):
     """Weighted median-cut down to `target` representative colours.
     Returns (palette[target,3] uint8, mapping[len(colors)] -> palette idx)."""
@@ -304,6 +349,11 @@ def main():
                     help="reduce cross-palette duplication via local search so more colours survive (fidelity strategy; default on)")
     ap.add_argument("--coherence", type=float, default=1.5, metavar="L",
                     help="spatial smoothing of the attribute map (higher = neighbouring cells share a palette more, fewer block artifacts; 0 = off). Used by --color-bias > 0.")
+    ap.add_argument("--dither", default="none",
+                    choices=["none", "floyd", "jjn", "stucki", "atkinson", "sierra", "burkes"],
+                    help="error-diffusion dithering during colour reduction, to break gradient banding (default none)")
+    ap.add_argument("--dither-strength", type=float, default=1.0, metavar="0..1",
+                    help="fraction of quantization error to diffuse (default 1.0; lower = subtler dither)")
     ap.add_argument("--quiet", action="store_true", help="suppress the human-readable report on stdout (files still written)")
     ap.add_argument("--json", action="store_true", help="print machine-readable stats as JSON to stdout (implies --quiet for the text report)")
     ap.add_argument("--seed", type=int, default=0)
@@ -336,7 +386,10 @@ def main():
         prequant = True
         tgt = min(target, NP * cap)
         pal, mapping = median_cut(uniq, ucounts, tgt)
-        arr = pal[mapping[inv0]].reshape(H, W, 3)
+        if args.dither != "none":
+            arr = dither_to_palette(arr, pal, args.dither, args.dither_strength)
+        else:
+            arr = pal[mapping[inv0]].reshape(H, W, 3)
 
     flat = arr.reshape(-1, 3)
     colors, inv = np.unique(flat, axis=0, return_inverse=True)
