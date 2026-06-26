@@ -33,4 +33,21 @@ BLT_SETUP_CMAP_1
 	dta $00								; Collision mask
 	dta $00								; Zoom
 	dta $00								; Pattern feature
-	dta $00								; Control: MODE=0 (copy), NEXT=0 (last BCB)
+	dta $00								; Control: MODE=0 (copy), NEXT=0 (last BCB); Clear 496kB (leave bottom 16kB for the SVBXE.SYS driver)
+
+; Clears the screen RAM and CMAP data ($01000 - $21FFF or 128kB)
+BLT_CLEAR_SCREEN
+	dta $00,$00,$00						; Source address
+	dta $00,$00							; Source step y
+	dta $00								; Source step x
+	dta $00,$10,$00						; Destination address
+	dta $00,$04							; Destination step y (1024 bytes) - NOTE: this equals 128 * zoom factor of 8
+	dta $01								; Destination step x (1 byte) - NOTE: this equals 1 * zoom factor of 8
+	dta $7F,$00							; Width-1  (127)	128 * 8 bytes wide
+	dta $0F								; Height-1 (15)		 16 * 8 bytes high
+	dta $00								; And mask (And mask equal to 0 so clear)
+	dta $00								; Xor mask (will be filled with xor mask)
+	dta $00								; Collision and mask
+	dta $77								; Zoom (BLT_ZOOMY = 7, BLT_ZOOMX = 7 so 8Y*8X)
+	dta $00								; Pattern feature
+	dta $00								; Control (Mode 0 with NEXT bit Cleared)

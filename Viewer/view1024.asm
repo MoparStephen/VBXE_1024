@@ -76,7 +76,7 @@
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $10	; 0 (Screen code used for Version in loading screen)
-.def	V_2								= $15	; 5 (Screen code used for Version in loading screen)
+.def	V_2								= $16	; 6 (Screen code used for Version in loading screen)
 .def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
@@ -192,14 +192,33 @@ Setup_Cmap1
 	lda	#BLT_SETUP_CMAP_1-BLT_CLEAR
 	sta	VBXE_BL_ADR0					; Setup the blitter for memory fill operation
 	lda	#0
-	sta	VBXE_BL_ADR2					; See the description of BCB at the end of this
-	lda	#$01							; Source
+	sta	VBXE_BL_ADR2
+	lda	#$01
 	sta	VBXE_BL_ADR1
 	lda	#0
 Setup_Cmap1_L1
 	lda	VBXE_BLITTER_BUSY
 	cmp	#0
 	bne	Setup_Cmap1_L1					; Wait for blitter to finish
+	lda	#1
+	sta	VBXE_BLITTER_START				; Start the blit
+	rts
+
+;-----------------------------------------------------------------------------
+; Clear_Screen - Clears a contiguous 128kB block of VBXE RAM
+;-----------------------------------------------------------------------------
+Clear_Screen
+	lda	#BLT_CLEAR_SCREEN-BLT_CLEAR
+	sta	VBXE_BL_ADR0					; Setup the blitter for memory fill operation
+	lda	#0
+	sta	VBXE_BL_ADR2
+	lda	#$01
+	sta	VBXE_BL_ADR1
+	lda	#0
+Clear_Screen_L1
+	lda	VBXE_BLITTER_BUSY
+	cmp	#0
+	bne	Clear_Screen_L1					; Wait for blitter to finish
 	lda	#1
 	sta	VBXE_BLITTER_START				; Start the blit
 	rts
@@ -335,6 +354,7 @@ Check_Space
 	jmp Read_Key_Done
 
 Handle_Space
+	jsr Clear_Screen					; Clear the VBXE RAM
 	jsr Increment_Image					; Display the next image
 
 Read_Key_Done
