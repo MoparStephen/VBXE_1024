@@ -76,7 +76,7 @@
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $10	; 0 (Screen code used for Version in loading screen)
-.def	V_2								= $14	; 4 (Screen code used for Version in loading screen)
+.def	V_2								= $15	; 5 (Screen code used for Version in loading screen)
 .def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
@@ -149,6 +149,8 @@ start
 	sta	VBXE_VIDEO_CONTROL
 	jsr Wait_For_Sync
 	
+	lda #$30
+	sta File_Index						; Must be a multiple of $10
 	jsr Load_Image
 
 main
@@ -182,13 +184,10 @@ Wait_For_Sync							; Hold until VCOUNT == 0
 	bmi *-3
 	bit	VCOUNT
 	bpl *-3
-; If present, the next 3 lines will allow a "jump to exit" on a specific key press
-	lda CH
-	cmp #$2F							; Press Q to quit
-	beq	Exit
+
+	jsr Handle_Keys						; Take care of user input
+
 	rts									; Else return to caller
-Exit
-	jmp	Cleanup_Exit					; Clean up and exit (accounts for any long branch issues)
 
 ;-----------------------------------------------------------------------------
 ; Setup_Cmap1 - Sets byte 4 for all cmap entries via blitter
@@ -246,11 +245,6 @@ Restore_Palette0_Done
 ; File_Index must be set before calling this!  No range checking is done!
 ;-----------------------------------------------------------------------------
 Load_Image
-; Load the 4 Palettes - use VBXE RAM so we don't waste main RAM
-; Palette loading is a fire & forget
-	lda #$00
-	sta File_Index
-
 ; Load the Palettes
 	lda	#MEMAC_GLOBAL_ENABLE
 	sta	VBXE_MA_BSEL
@@ -332,6 +326,18 @@ Load_Image_Done
 	rts
 
 ;-----------------------------------------------------------------------------
+; Handle_Keys
+;-----------------------------------------------------------------------------
+Handle_Keys
+; If present, the next 3 lines will allow a "jump to exit" on a specific key press
+	lda CH
+	cmp #$2F							; Press Q to quit
+	beq	Exit
+	rts									; Else return to caller
+Exit
+	jmp	Cleanup_Exit					; Clean up and exit (accounts for any long branch issues)
+
+;-----------------------------------------------------------------------------
 ; Subroutines END
 ;-----------------------------------------------------------------------------
 
@@ -339,20 +345,20 @@ Load_Image_Done
 ; Data Tables go here
 ;-----------------------------------------------------------------------------
 Palettes								; Each entry must be $10 bytes!
-	dta c'D2:IMG1.PAL',$00,$00,$00,$00
-	dta c'D2:IMG2.PAL',$00,$00,$00,$00
-	dta c'D2:IMG3.PAL',$00,$00,$00,$00
-	dta c'D2:IMG4.PAL',$00,$00,$00,$00
+	dta c'D2:IMG1.PAL',$00,$00,$00,$00,$00
+	dta c'D2:IMG2.PAL',$00,$00,$00,$00,$00
+	dta c'D2:IMG3.PAL',$00,$00,$00,$00,$00
+	dta c'D2:IMG4.PAL',$00,$00,$00,$00,$00
 Colour									; Each entry must be $10 bytes!
-	dta c'D2:IMG1.MAP',$00,$00,$00,$00
-	dta c'D2:IMG2.MAP',$00,$00,$00,$00
-	dta c'D2:IMG3.MAP',$00,$00,$00,$00
-	dta c'D2:IMG4.MAP',$00,$00,$00,$00
+	dta c'D2:IMG1.MAP',$00,$00,$00,$00,$00
+	dta c'D2:IMG2.MAP',$00,$00,$00,$00,$00
+	dta c'D2:IMG3.MAP',$00,$00,$00,$00,$00
+	dta c'D2:IMG4.MAP',$00,$00,$00,$00,$00
 Image									; Each entry must be $10 bytes!
-	dta c'D2:IMG1.RAW',$00,$00,$00,$00
-	dta c'D2:IMG2.RAW',$00,$00,$00,$00
-	dta c'D2:IMG3.RAW',$00,$00,$00,$00
-	dta c'D2:IMG4.RAW',$00,$00,$00,$00
+	dta c'D2:IMG1.RAW',$00,$00,$00,$00,$00
+	dta c'D2:IMG2.RAW',$00,$00,$00,$00,$00
+	dta c'D2:IMG3.RAW',$00,$00,$00,$00,$00
+	dta c'D2:IMG4.RAW',$00,$00,$00,$00,$00
 	
 ;-----------------------------------------------------------------------------
 ; 

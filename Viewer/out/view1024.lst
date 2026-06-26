@@ -423,7 +423,7 @@ Source: equates.asm
     76 				; Temp debug stuff
     77 = 0010			.def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
     78 = 0010			.def	V_1								= $10	; 0 (Screen code used for Version in loading screen)
-    79 = 0014			.def	V_2								= $14	; 4 (Screen code used for Version in loading screen)
+    79 = 0015			.def	V_2								= $15	; 5 (Screen code used for Version in loading screen)
     80 = 0000			.def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
     81
     82 				;-----------------------------------------------------------------------------
@@ -975,7 +975,7 @@ Source: vbxe_min.asm
     94 31D2 A9 00			lda #$00
     95 31D4 8D 2F 02			sta SDMCTL
     96
-    97 31D7 20 55 33			jsr Restore_Palette0
+    97 31D7 20 53 33			jsr Restore_Palette0
     98
     99 31DA A9 00			lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
    100 31DC 8D 5F D6			sta VBXE_MA_BSEL
@@ -1633,7 +1633,7 @@ Source: bcbs.asm
    137 3300			start
    138 				; Initialization code can go here
    139
-   140 3300-3321> A9 00			lda	#0								; Setup VBXE for displaying picture data
+   140 3300-3326> A9 00			lda	#0								; Setup VBXE for displaying picture data
    141 3302 8D 41 D6			sta	VBXE_XDL_ADR0					; But don't show the overlay just yet!
    142 3305 8D 43 D6			sta	VBXE_XDL_ADR2
    143 3308 8D 42 D6			sta	VBXE_XDL_ADR1
@@ -1643,213 +1643,219 @@ Source: bcbs.asm
    147
    148 330D A9 03			lda	#%00000011						; XDL,XCOLOR Enabled and transparent color index 0
    149 330F 8D 40 D6			sta	VBXE_VIDEO_CONTROL
-   150 3312 20 22 33			jsr Wait_For_Sync
+   150 3312 20 27 33			jsr Wait_For_Sync
    151 					
-   152 3315 20 7D 33			jsr Load_Image
-   153
-   154 3318			main
-   155 				; For now pressing space will advance to the next image
-   156
-   157 				; TODO: Process keys & load image BEGIN
-   158 				; TODO: Process keys & load image END
-   159
-   160 				; All done - now loop forever
-   161 3318 A9 00			lda #$00
-   162 331A 85 4D			sta ATRACT							; Disable Attract Mode
-   163
-   164 331C 20 22 33			jsr Wait_For_Sync					; Wait for VSYNC, Q quits
-   165 331F 4C 18 33			jmp main
-   166
-   167 				; Set RUN Vector
-   168 02E0-02E1> 00 33			run start
-   169
-   170 				;-----------------------------------------------------------------------------
-   171 				; END OF CODE
+   152 3315 A9 30			lda #$30
+   153 3317 8D 8A 04			sta File_Index						; Must be a multiple of $10
+   154 331A 20 7B 33			jsr Load_Image
+   155
+   156 331D			main
+   157 				; For now pressing space will advance to the next image
+   158
+   159 				; TODO: Process keys & load image BEGIN
+   160 				; TODO: Process keys & load image END
+   161
+   162 				; All done - now loop forever
+   163 331D A9 00			lda #$00
+   164 331F 85 4D			sta ATRACT							; Disable Attract Mode
+   165
+   166 3321 20 27 33			jsr Wait_For_Sync					; Wait for VSYNC, Q quits
+   167 3324 4C 1D 33			jmp main
+   168
+   169 				; Set RUN Vector
+   170 02E0-02E1> 00 33			run start
+   171
    172 				;-----------------------------------------------------------------------------
-   173
+   173 				; END OF CODE
    174 				;-----------------------------------------------------------------------------
-   175 				; Subroutines BEGIN
+   175
    176 				;-----------------------------------------------------------------------------
-   177 				;-----------------------------------------------------------------------------
-   178 				; Wait For VSync (locks to the refresh rate, PAL=50Hz, NTSC=60Hz)  Thanks tebe
+   177 				; Subroutines BEGIN
+   178 				;-----------------------------------------------------------------------------
    179 				;-----------------------------------------------------------------------------
-   180 3322			Wait_For_Sync							; Hold until VCOUNT == 0
-   181 3322-34CB> 2C 0B D4		bit	VCOUNT
-   182 3325 30 FB			bmi *-3
-   183 3327 2C 0B D4			bit	VCOUNT
-   184 332A 10 FB			bpl *-3
-   185 				; If present, the next 3 lines will allow a "jump to exit" on a specific key press
-   186 332C AD FC 02			lda CH
-   187 332F C9 2F			cmp #$2F							; Press Q to quit
-   188 3331 F0 01			beq	Exit
-   189 3333 60				rts									; Else return to caller
-   190 3334			Exit
-   191 3334 4C D2 31			jmp	Cleanup_Exit					; Clean up and exit (accounts for any long branch issues)
-   192
-   193 				;-----------------------------------------------------------------------------
-   194 				; Setup_Cmap1 - Sets byte 4 for all cmap entries via blitter
-   195 				;-----------------------------------------------------------------------------
-   196 3337			Setup_Cmap1
-   197 3337 A9 15			lda	#BLT_SETUP_CMAP_1-BLT_CLEAR
-   198 3339 8D 50 D6			sta	VBXE_BL_ADR0					; Setup the blitter for memory fill operation
-   199 333C A9 00			lda	#0
-   200 333E 8D 52 D6			sta	VBXE_BL_ADR2					; See the description of BCB at the end of this
-   201 3341 A9 01			lda	#$01							; Source
-   202 3343 8D 51 D6			sta	VBXE_BL_ADR1
-   203 3346 A9 00			lda	#0
-   204 3348			Setup_Cmap1_L1
-   205 3348 AD 53 D6			lda	VBXE_BLITTER_BUSY
-   206 334B C9 00			cmp	#0
-   207 334D D0 F9			bne	Setup_Cmap1_L1					; Wait for blitter to finish
-   208 334F A9 01			lda	#1
-   209 3351 8D 53 D6			sta	VBXE_BLITTER_START				; Start the blit
-   210 3354 60				rts
-   211
-   212 				;-----------------------------------------------------------------------------
-   213 				; Restores VBXE Palette 0 based on NTSC/PAL test
-   214 				;-----------------------------------------------------------------------------
-   215 3355			Restore_Palette0
-   216 3355 A9 80			lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
-   217 3357 8D 5F D6			sta VBXE_MA_BSEL
-   218
-   219 335A AD 89 04			lda Video_Flag						; 0 = PAL, 1 = NTSC
-   220 335D D0 0B			bne Restore_Palette0_Setup_NTSC
-   221 335F			Restore_Palette0_Setup_PAL
-   222 335F A9 00			lda <(VBXE_WINDOW + $0500)
-   223 3361 85 91			sta Y_Register
-   224 3363 A9 25			lda >(VBXE_WINDOW + $0500)			; PAL_Palette = $00500 - $006FF
-   225 3365 85 92			sta Y_Register + $01
-   226 3367 4C 72 33			jmp Restore_Palette0_SetPalette
-   227
-   228 336A			Restore_Palette0_Setup_NTSC
-   229 336A A9 00			lda <(VBXE_WINDOW + $0200)
-   230 336C 85 91			sta Y_Register
-   231 336E A9 22			lda >(VBXE_WINDOW + $0200)			; NTSC_Palette = $00200 - $004FF
-   232 3370 85 92			sta Y_Register + $01
-   233
-   234 3372			Restore_Palette0_SetPalette
-   235 3372 A9 00			lda #$00							; Set Palette 0
-   236 3374 20 6C 31			jsr VBXE_SetPalette2
-   237
-   238 3377			Restore_Palette0_Done
-   239 3377 A9 00			lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
-   240 3379 8D 5F D6			sta VBXE_MA_BSEL
-   241
-   242 337C 60				rts
-   243
-   244 				;-----------------------------------------------------------------------------
-   245 				; Load_Image
-   246 				; File_Index must be set before calling this!  No range checking is done!
-   247 				;-----------------------------------------------------------------------------
-   248 337D			Load_Image
-   249 				; Load the 4 Palettes - use VBXE RAM so we don't waste main RAM
-   250 				; Palette loading is a fire & forget
-   251 337D A9 00			lda #$00
-   252 337F 8D 8A 04			sta File_Index
-   253
-   254 				; Load the Palettes
-   255 3382 A9 80			lda	#MEMAC_GLOBAL_ENABLE
-   256 3384 8D 5F D6			sta	VBXE_MA_BSEL
-   257 3387 18				clc
-   258 3388 A9 18			lda #<Palettes
-   259 338A 6D 8A 04			adc File_Index
-   260 338D 8D 33 31			sta FileNamePtr
-   261 3390 A9 34			lda #>Palettes
-   262 3392 69 00			adc #$00
-   263 3394 8D 34 31			sta FileNamePtr + $01
-   264 3397 A9 21			lda	#$21
-   265 3399 85 8A			sta	BankIndex						; Load Colour Map data under $21000
-   266 339B 20 AA 30			jsr	LoadData
-   267
-   268 339E A9 A1			lda	#$21 | MEMAC_GLOBAL_ENABLE		; Bank $21 VBXE Window Enabled
-   269 33A0 8D 5F D6			sta	VBXE_MA_BSEL
-   270 33A3 A9 00			lda <(VBXE_WINDOW + $0000)
-   271 33A5 85 91			sta Y_Register
-   272 33A7 A9 20			lda >(VBXE_WINDOW + $0000)
-   273 33A9 85 92			sta Y_Register + $01
-   274 33AB A9 00			lda #$00							; Set Palette 0
-   275 33AD 20 6C 31			jsr VBXE_SetPalette2
-   276
-   277 33B0 A9 00			lda <(VBXE_WINDOW + $0300)
-   278 33B2 85 91			sta Y_Register
-   279 33B4 A9 23			lda >(VBXE_WINDOW + $0300)
-   280 33B6 85 92			sta Y_Register + $01
-   281 33B8 A9 01			lda #$01							; Set Palette 1
-   282 33BA 20 6C 31			jsr VBXE_SetPalette2
-   283
-   284 33BD A9 00			lda <(VBXE_WINDOW + $0600)
-   285 33BF 85 91			sta Y_Register
-   286 33C1 A9 26			lda >(VBXE_WINDOW + $0600)
-   287 33C3 85 92			sta Y_Register + $01
-   288 33C5 A9 02			lda #$02							; Set Palette 2
-   289 33C7 20 6C 31			jsr VBXE_SetPalette2
-   290
-   291 33CA A9 00			lda <(VBXE_WINDOW + $0900)
-   292 33CC 85 91			sta Y_Register
-   293 33CE A9 29			lda >(VBXE_WINDOW + $0900)
-   294 33D0 85 92			sta Y_Register + $01
-   295 33D2 A9 03			lda #$03							; Set Palette 3
-   296 33D4 20 6C 31			jsr VBXE_SetPalette2
-   297
-   298 				; Load the Attribute Colour Map
-   299 33D7 A9 80			lda	#MEMAC_GLOBAL_ENABLE
-   300 33D9 8D 5F D6			sta	VBXE_MA_BSEL
-   301 33DC 18				clc
-   302 33DD A9 54			lda #<Colour
-   303 33DF 6D 8A 04			adc File_Index
-   304 33E2 8D 33 31			sta FileNamePtr
-   305 33E5 A9 34			lda #>Colour
-   306 33E7 69 00			adc #$00
-   307 33E9 8D 34 31			sta FileNamePtr + $01
-   308 33EC A9 14			lda	#$14
-   309 33EE 85 8A			sta	BankIndex						; Load Colour Map data under $14000
-   310 33F0 20 AA 30			jsr	LoadData
-   311
-   312 33F3 20 37 33			jsr Setup_Cmap1						; Expand the data out to $17000
-   313
-   314 				; Load the Image
-   315 33F6 A9 80			lda	#MEMAC_GLOBAL_ENABLE
-   316 33F8 8D 5F D6			sta	VBXE_MA_BSEL
-   317 33FB 18				clc
-   318 33FC A9 90			lda #<Image
-   319 33FE 6D 8A 04			adc File_Index
-   320 3401 8D 33 31			sta FileNamePtr
-   321 3404 A9 34			lda #>Image
-   322 3406 69 00			adc #$00
-   323 3408 8D 34 31			sta FileNamePtr + $01
-   324 340B A9 01			lda	#$01
-   325 340D 85 8A			sta	BankIndex						; Load Colour Map data under $01000
-   326 340F 20 AA 30			jsr	LoadData
-   327 					
-   328 3412			Load_Image_Done
-   329 3412 A9 00			lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
-   330 3414 8D 5F D6			sta VBXE_MA_BSEL
-   331
-   332 3417 60				rts
-   333
-   334 				;-----------------------------------------------------------------------------
-   335 				; Subroutines END
-   336 				;-----------------------------------------------------------------------------
-   337
-   338 				;-----------------------------------------------------------------------------
-   339 				; Data Tables go here
+   180 				; Wait For VSync (locks to the refresh rate, PAL=50Hz, NTSC=60Hz)  Thanks tebe
+   181 				;-----------------------------------------------------------------------------
+   182 3327			Wait_For_Sync							; Hold until VCOUNT == 0
+   183 3327-34DB> 2C 0B D4		bit	VCOUNT
+   184 332A 30 FB			bmi *-3
+   185 332C 2C 0B D4			bit	VCOUNT
+   186 332F 10 FB			bpl *-3
+   187
+   188 3331 20 11 34			jsr Handle_Keys						; Take care of user input
+   189
+   190 3334 60				rts									; Else return to caller
+   191
+   192 				;-----------------------------------------------------------------------------
+   193 				; Setup_Cmap1 - Sets byte 4 for all cmap entries via blitter
+   194 				;-----------------------------------------------------------------------------
+   195 3335			Setup_Cmap1
+   196 3335 A9 15			lda	#BLT_SETUP_CMAP_1-BLT_CLEAR
+   197 3337 8D 50 D6			sta	VBXE_BL_ADR0					; Setup the blitter for memory fill operation
+   198 333A A9 00			lda	#0
+   199 333C 8D 52 D6			sta	VBXE_BL_ADR2					; See the description of BCB at the end of this
+   200 333F A9 01			lda	#$01							; Source
+   201 3341 8D 51 D6			sta	VBXE_BL_ADR1
+   202 3344 A9 00			lda	#0
+   203 3346			Setup_Cmap1_L1
+   204 3346 AD 53 D6			lda	VBXE_BLITTER_BUSY
+   205 3349 C9 00			cmp	#0
+   206 334B D0 F9			bne	Setup_Cmap1_L1					; Wait for blitter to finish
+   207 334D A9 01			lda	#1
+   208 334F 8D 53 D6			sta	VBXE_BLITTER_START				; Start the blit
+   209 3352 60				rts
+   210
+   211 				;-----------------------------------------------------------------------------
+   212 				; Restores VBXE Palette 0 based on NTSC/PAL test
+   213 				;-----------------------------------------------------------------------------
+   214 3353			Restore_Palette0
+   215 3353 A9 80			lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
+   216 3355 8D 5F D6			sta VBXE_MA_BSEL
+   217
+   218 3358 AD 89 04			lda Video_Flag						; 0 = PAL, 1 = NTSC
+   219 335B D0 0B			bne Restore_Palette0_Setup_NTSC
+   220 335D			Restore_Palette0_Setup_PAL
+   221 335D A9 00			lda <(VBXE_WINDOW + $0500)
+   222 335F 85 91			sta Y_Register
+   223 3361 A9 25			lda >(VBXE_WINDOW + $0500)			; PAL_Palette = $00500 - $006FF
+   224 3363 85 92			sta Y_Register + $01
+   225 3365 4C 70 33			jmp Restore_Palette0_SetPalette
+   226
+   227 3368			Restore_Palette0_Setup_NTSC
+   228 3368 A9 00			lda <(VBXE_WINDOW + $0200)
+   229 336A 85 91			sta Y_Register
+   230 336C A9 22			lda >(VBXE_WINDOW + $0200)			; NTSC_Palette = $00200 - $004FF
+   231 336E 85 92			sta Y_Register + $01
+   232
+   233 3370			Restore_Palette0_SetPalette
+   234 3370 A9 00			lda #$00							; Set Palette 0
+   235 3372 20 6C 31			jsr VBXE_SetPalette2
+   236
+   237 3375			Restore_Palette0_Done
+   238 3375 A9 00			lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
+   239 3377 8D 5F D6			sta VBXE_MA_BSEL
+   240
+   241 337A 60				rts
+   242
+   243 				;-----------------------------------------------------------------------------
+   244 				; Load_Image
+   245 				; File_Index must be set before calling this!  No range checking is done!
+   246 				;-----------------------------------------------------------------------------
+   247 337B			Load_Image
+   248 				; Load the Palettes
+   249 337B A9 80			lda	#MEMAC_GLOBAL_ENABLE
+   250 337D 8D 5F D6			sta	VBXE_MA_BSEL
+   251 3380 18				clc
+   252 3381 A9 1C			lda #<Palettes
+   253 3383 6D 8A 04			adc File_Index
+   254 3386 8D 33 31			sta FileNamePtr
+   255 3389 A9 34			lda #>Palettes
+   256 338B 69 00			adc #$00
+   257 338D 8D 34 31			sta FileNamePtr + $01
+   258 3390 A9 21			lda	#$21
+   259 3392 85 8A			sta	BankIndex						; Load Colour Map data under $21000
+   260 3394 20 AA 30			jsr	LoadData
+   261
+   262 3397 A9 A1			lda	#$21 | MEMAC_GLOBAL_ENABLE		; Bank $21 VBXE Window Enabled
+   263 3399 8D 5F D6			sta	VBXE_MA_BSEL
+   264 339C A9 00			lda <(VBXE_WINDOW + $0000)
+   265 339E 85 91			sta Y_Register
+   266 33A0 A9 20			lda >(VBXE_WINDOW + $0000)
+   267 33A2 85 92			sta Y_Register + $01
+   268 33A4 A9 00			lda #$00							; Set Palette 0
+   269 33A6 20 6C 31			jsr VBXE_SetPalette2
+   270
+   271 33A9 A9 00			lda <(VBXE_WINDOW + $0300)
+   272 33AB 85 91			sta Y_Register
+   273 33AD A9 23			lda >(VBXE_WINDOW + $0300)
+   274 33AF 85 92			sta Y_Register + $01
+   275 33B1 A9 01			lda #$01							; Set Palette 1
+   276 33B3 20 6C 31			jsr VBXE_SetPalette2
+   277
+   278 33B6 A9 00			lda <(VBXE_WINDOW + $0600)
+   279 33B8 85 91			sta Y_Register
+   280 33BA A9 26			lda >(VBXE_WINDOW + $0600)
+   281 33BC 85 92			sta Y_Register + $01
+   282 33BE A9 02			lda #$02							; Set Palette 2
+   283 33C0 20 6C 31			jsr VBXE_SetPalette2
+   284
+   285 33C3 A9 00			lda <(VBXE_WINDOW + $0900)
+   286 33C5 85 91			sta Y_Register
+   287 33C7 A9 29			lda >(VBXE_WINDOW + $0900)
+   288 33C9 85 92			sta Y_Register + $01
+   289 33CB A9 03			lda #$03							; Set Palette 3
+   290 33CD 20 6C 31			jsr VBXE_SetPalette2
+   291
+   292 				; Load the Attribute Colour Map
+   293 33D0 A9 80			lda	#MEMAC_GLOBAL_ENABLE
+   294 33D2 8D 5F D6			sta	VBXE_MA_BSEL
+   295 33D5 18				clc
+   296 33D6 A9 5C			lda #<Colour
+   297 33D8 6D 8A 04			adc File_Index
+   298 33DB 8D 33 31			sta FileNamePtr
+   299 33DE A9 34			lda #>Colour
+   300 33E0 69 00			adc #$00
+   301 33E2 8D 34 31			sta FileNamePtr + $01
+   302 33E5 A9 14			lda	#$14
+   303 33E7 85 8A			sta	BankIndex						; Load Colour Map data under $14000
+   304 33E9 20 AA 30			jsr	LoadData
+   305
+   306 33EC 20 35 33			jsr Setup_Cmap1						; Expand the data out to $17000
+   307
+   308 				; Load the Image
+   309 33EF A9 80			lda	#MEMAC_GLOBAL_ENABLE
+   310 33F1 8D 5F D6			sta	VBXE_MA_BSEL
+   311 33F4 18				clc
+   312 33F5 A9 9C			lda #<Image
+   313 33F7 6D 8A 04			adc File_Index
+   314 33FA 8D 33 31			sta FileNamePtr
+   315 33FD A9 34			lda #>Image
+   316 33FF 69 00			adc #$00
+   317 3401 8D 34 31			sta FileNamePtr + $01
+   318 3404 A9 01			lda	#$01
+   319 3406 85 8A			sta	BankIndex						; Load Colour Map data under $01000
+   320 3408 20 AA 30			jsr	LoadData
+   321 					
+   322 340B			Load_Image_Done
+   323 340B A9 00			lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
+   324 340D 8D 5F D6			sta VBXE_MA_BSEL
+   325
+   326 3410 60				rts
+   327
+   328 				;-----------------------------------------------------------------------------
+   329 				; Handle_Keys
+   330 				;-----------------------------------------------------------------------------
+   331 3411			Handle_Keys
+   332 				; If present, the next 3 lines will allow a "jump to exit" on a specific key press
+   333 3411 AD FC 02			lda CH
+   334 3414 C9 2F			cmp #$2F							; Press Q to quit
+   335 3416 F0 01			beq	Exit
+   336 3418 60				rts									; Else return to caller
+   337 3419			Exit
+   338 3419 4C D2 31			jmp	Cleanup_Exit					; Clean up and exit (accounts for any long branch issues)
+   339
    340 				;-----------------------------------------------------------------------------
-   341 3418			Palettes								; Each entry must be $10 bytes!
-   342 3418 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.PAL',$00,$00,$00,$00
-   343 3427 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.PAL',$00,$00,$00,$00
-   344 3436 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.PAL',$00,$00,$00,$00
-   345 3445 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.PAL',$00,$00,$00,$00
-   346 3454			Colour									; Each entry must be $10 bytes!
-   347 3454 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.MAP',$00,$00,$00,$00
-   348 3463 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.MAP',$00,$00,$00,$00
-   349 3472 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.MAP',$00,$00,$00,$00
-   350 3481 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.MAP',$00,$00,$00,$00
-   351 3490			Image									; Each entry must be $10 bytes!
-   352 3490 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.RAW',$00,$00,$00,$00
-   353 349F 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.RAW',$00,$00,$00,$00
-   354 34AE 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.RAW',$00,$00,$00,$00
-   355 34BD 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.RAW',$00,$00,$00,$00
-   356 					
-   357 				;-----------------------------------------------------------------------------
-   358 				; 
-   359 				;-----------------------------------------------------------------------------
+   341 				; Subroutines END
+   342 				;-----------------------------------------------------------------------------
+   343
+   344 				;-----------------------------------------------------------------------------
+   345 				; Data Tables go here
+   346 				;-----------------------------------------------------------------------------
+   347 341C			Palettes								; Each entry must be $10 bytes!
+   348 341C 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.PAL',$00,$00,$00,$00,$00
+   349 342C 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.PAL',$00,$00,$00,$00,$00
+   350 343C 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.PAL',$00,$00,$00,$00,$00
+   351 344C 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.PAL',$00,$00,$00,$00,$00
+   352 345C			Colour									; Each entry must be $10 bytes!
+   353 345C 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.MAP',$00,$00,$00,$00,$00
+   354 346C 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.MAP',$00,$00,$00,$00,$00
+   355 347C 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.MAP',$00,$00,$00,$00,$00
+   356 348C 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.MAP',$00,$00,$00,$00,$00
+   357 349C			Image									; Each entry must be $10 bytes!
+   358 349C 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.RAW',$00,$00,$00,$00,$00
+   359 34AC 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.RAW',$00,$00,$00,$00,$00
+   360 34BC 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.RAW',$00,$00,$00,$00,$00
+   361 34CC 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.RAW',$00,$00,$00,$00,$00
+   362 					
+   363 				;-----------------------------------------------------------------------------
+   364 				; 
+   365 				;-----------------------------------------------------------------------------
