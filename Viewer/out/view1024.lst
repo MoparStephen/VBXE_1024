@@ -1675,7 +1675,7 @@ Source: bcbs.asm
    176 				; Wait For VSync (locks to the refresh rate, PAL=50Hz, NTSC=60Hz)  Thanks tebe
    177 				;-----------------------------------------------------------------------------
    178 3328			Wait_For_Sync							; Hold until VCOUNT == 0
-   179 3328-34FF> 2C 0B D4		bit	VCOUNT
+   179 3328-361F> 2C 0B D4		bit	VCOUNT
    180 332B 30 FB			bmi *-3
    181 332D 2C 0B D4			bit	VCOUNT
    182 3330 10 FB			bpl *-3
@@ -1788,7 +1788,7 @@ Source: bcbs.asm
    289 33D1 A9 80			lda	#MEMAC_GLOBAL_ENABLE
    290 33D3 8D 5F D6			sta	VBXE_MA_BSEL
    291 33D6 18				clc
-   292 33D7 A9 80			lda #<Colour
+   292 33D7 A9 E0			lda #<Colour
    293 33D9 6D 8A 04			adc File_Index
    294 33DC 8D 33 31			sta FileNamePtr
    295 33DF A9 34			lda #>Colour
@@ -1804,10 +1804,10 @@ Source: bcbs.asm
    305 33F0 A9 80			lda	#MEMAC_GLOBAL_ENABLE
    306 33F2 8D 5F D6			sta	VBXE_MA_BSEL
    307 33F5 18				clc
-   308 33F6 A9 C0			lda #<Image
+   308 33F6 A9 80			lda #<Image
    309 33F8 6D 8A 04			adc File_Index
    310 33FB 8D 33 31			sta FileNamePtr
-   311 33FE A9 34			lda #>Image
+   311 33FE A9 35			lda #>Image
    312 3400 69 00			adc #$00
    313 3402 8D 34 31			sta FileNamePtr + $01
    314 3405 A9 01			lda	#$01
@@ -1850,9 +1850,9 @@ Source: bcbs.asm
    351 342C 18				clc
    352 342D AD 8A 04			lda File_Index
    353 3430 69 10			adc #$10
-   354 3432 C9 40			cmp #$40					; Past index 3?
+   354 3432 C9 80			cmp #$80							; Past index 7?
    355 3434 90 02			bcc Increment_Image_Valid
-   356 3436 A9 00			lda #$00					; Wrap to index 0
+   356 3436 A9 00			lda #$00							; Wrap to index 0
    357 3438			Increment_Image_Valid
    358 3438 8D 8A 04			sta File_Index
    359 343B AA				tax
@@ -1871,17 +1871,35 @@ Source: bcbs.asm
    372 3450 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.PAL',$00,$00,$00,$00,$00
    373 3460 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.PAL',$00,$00,$00,$00,$00
    374 3470 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.PAL',$00,$00,$00,$00,$00
-   375 3480			Colour									; Each entry must be $10 bytes!
-   376 3480 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.MAP',$00,$00,$00,$00,$00
-   377 3490 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.MAP',$00,$00,$00,$00,$00
-   378 34A0 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.MAP',$00,$00,$00,$00,$00
-   379 34B0 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.MAP',$00,$00,$00,$00,$00
-   380 34C0			Image									; Each entry must be $10 bytes!
-   381 34C0 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.RAW',$00,$00,$00,$00,$00
-   382 34D0 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.RAW',$00,$00,$00,$00,$00
-   383 34E0 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.RAW',$00,$00,$00,$00,$00
-   384 34F0 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.RAW',$00,$00,$00,$00,$00
-   385 					
-   386 				;-----------------------------------------------------------------------------
-   387 				; 
-   388 				;-----------------------------------------------------------------------------
+   375 3480 44 32 3A 49 4D 47 + 	dta c'D2:IMG5.PAL',$00,$00,$00,$00,$00
+   376 3490 44 32 3A 49 4D 47 + 	dta c'D2:IMG6.PAL',$00,$00,$00,$00,$00
+   377 34A0 44 32 3A 49 4D 47 + 	dta c'D2:IMG7.PAL',$00,$00,$00,$00,$00
+   378 34B0 44 32 3A 49 4D 47 + 	dta c'D2:IMG8.PAL',$00,$00,$00,$00,$00
+   379 34C0 44 32 3A 49 4D 47 + 	dta c'D2:IMG9.PAL',$00,$00,$00,$00,$00
+   380 34D0 44 32 3A 49 4D 47 + 	dta c'D2:IMGA.PAL',$00,$00,$00,$00,$00
+   381 34E0			Colour									; Each entry must be $10 bytes!
+   382 34E0 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.MAP',$00,$00,$00,$00,$00
+   383 34F0 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.MAP',$00,$00,$00,$00,$00
+   384 3500 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.MAP',$00,$00,$00,$00,$00
+   385 3510 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.MAP',$00,$00,$00,$00,$00
+   386 3520 44 32 3A 49 4D 47 + 	dta c'D2:IMG5.MAP',$00,$00,$00,$00,$00
+   387 3530 44 32 3A 49 4D 47 + 	dta c'D2:IMG6.MAP',$00,$00,$00,$00,$00
+   388 3540 44 32 3A 49 4D 47 + 	dta c'D2:IMG7.MAP',$00,$00,$00,$00,$00
+   389 3550 44 32 3A 49 4D 47 + 	dta c'D2:IMG8.MAP',$00,$00,$00,$00,$00
+   390 3560 44 32 3A 49 4D 47 + 	dta c'D2:IMG9.MAP',$00,$00,$00,$00,$00
+   391 3570 44 32 3A 49 4D 47 + 	dta c'D2:IMGA.MAP',$00,$00,$00,$00,$00
+   392 3580			Image									; Each entry must be $10 bytes!
+   393 3580 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.RAW',$00,$00,$00,$00,$00
+   394 3590 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.RAW',$00,$00,$00,$00,$00
+   395 35A0 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.RAW',$00,$00,$00,$00,$00
+   396 35B0 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.RAW',$00,$00,$00,$00,$00
+   397 35C0 44 32 3A 49 4D 47 + 	dta c'D2:IMG5.RAW',$00,$00,$00,$00,$00
+   398 35D0 44 32 3A 49 4D 47 + 	dta c'D2:IMG6.RAW',$00,$00,$00,$00,$00
+   399 35E0 44 32 3A 49 4D 47 + 	dta c'D2:IMG7.RAW',$00,$00,$00,$00,$00
+   400 35F0 44 32 3A 49 4D 47 + 	dta c'D2:IMG8.RAW',$00,$00,$00,$00,$00
+   401 3600 44 32 3A 49 4D 47 + 	dta c'D2:IMG9.RAW',$00,$00,$00,$00,$00
+   402 3610 44 32 3A 49 4D 47 + 	dta c'D2:IMGA.RAW',$00,$00,$00,$00,$00
+   403 					
+   404 				;-----------------------------------------------------------------------------
+   405 				; 
+   406 				;-----------------------------------------------------------------------------

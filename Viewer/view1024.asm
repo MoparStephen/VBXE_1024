@@ -351,9 +351,9 @@ Increment_Image
 	clc
 	lda File_Index
 	adc #$10
-	cmp #$40					; Past index 3?
+	cmp #$80							; Past index 7?
 	bcc Increment_Image_Valid
-	lda #$00					; Wrap to index 0
+	lda #$00							; Wrap to index 0
 Increment_Image_Valid
 	sta File_Index
 	tax
@@ -372,16 +372,34 @@ Palettes								; Each entry must be $10 bytes!
 	dta c'D2:IMG2.PAL',$00,$00,$00,$00,$00
 	dta c'D2:IMG3.PAL',$00,$00,$00,$00,$00
 	dta c'D2:IMG4.PAL',$00,$00,$00,$00,$00
+	dta c'D2:IMG5.PAL',$00,$00,$00,$00,$00
+	dta c'D2:IMG6.PAL',$00,$00,$00,$00,$00
+	dta c'D2:IMG7.PAL',$00,$00,$00,$00,$00
+	dta c'D2:IMG8.PAL',$00,$00,$00,$00,$00
+	dta c'D2:IMG9.PAL',$00,$00,$00,$00,$00
+	dta c'D2:IMGA.PAL',$00,$00,$00,$00,$00
 Colour									; Each entry must be $10 bytes!
 	dta c'D2:IMG1.MAP',$00,$00,$00,$00,$00
 	dta c'D2:IMG2.MAP',$00,$00,$00,$00,$00
 	dta c'D2:IMG3.MAP',$00,$00,$00,$00,$00
 	dta c'D2:IMG4.MAP',$00,$00,$00,$00,$00
+	dta c'D2:IMG5.MAP',$00,$00,$00,$00,$00
+	dta c'D2:IMG6.MAP',$00,$00,$00,$00,$00
+	dta c'D2:IMG7.MAP',$00,$00,$00,$00,$00
+	dta c'D2:IMG8.MAP',$00,$00,$00,$00,$00
+	dta c'D2:IMG9.MAP',$00,$00,$00,$00,$00
+	dta c'D2:IMGA.MAP',$00,$00,$00,$00,$00
 Image									; Each entry must be $10 bytes!
 	dta c'D2:IMG1.RAW',$00,$00,$00,$00,$00
 	dta c'D2:IMG2.RAW',$00,$00,$00,$00,$00
 	dta c'D2:IMG3.RAW',$00,$00,$00,$00,$00
 	dta c'D2:IMG4.RAW',$00,$00,$00,$00,$00
+	dta c'D2:IMG5.RAW',$00,$00,$00,$00,$00
+	dta c'D2:IMG6.RAW',$00,$00,$00,$00,$00
+	dta c'D2:IMG7.RAW',$00,$00,$00,$00,$00
+	dta c'D2:IMG8.RAW',$00,$00,$00,$00,$00
+	dta c'D2:IMG9.RAW',$00,$00,$00,$00,$00
+	dta c'D2:IMGA.RAW',$00,$00,$00,$00,$00
 	
 ;-----------------------------------------------------------------------------
 ; 
