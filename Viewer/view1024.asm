@@ -388,41 +388,41 @@ Increment_Image_Valid
 ; Data Tables go here
 ;-----------------------------------------------------------------------------
 Palettes								; Each entry must be $10 bytes!
-	dta c'D1:IMG1.PAL',$00,$00,$00,$00,$00
-	dta c'D1:IMG2.PAL',$00,$00,$00,$00,$00
-	dta c'D1:IMG3.PAL',$00,$00,$00,$00,$00
-	dta c'D1:IMG4.PAL',$00,$00,$00,$00,$00
-	dta c'D1:IMG5.PAL',$00,$00,$00,$00,$00
-	dta c'D1:IMG6.PAL',$00,$00,$00,$00,$00
-	dta c'D1:IMG7.PAL',$00,$00,$00,$00,$00
-	dta c'D1:IMG8.PAL',$00,$00,$00,$00,$00
-	dta c'D1:IMG9.PAL',$00,$00,$00,$00,$00
-	dta c'D1:IMGA.PAL',$00,$00,$00,$00,$00
-	dta c'D1:IMGB.PAL',$00,$00,$00,$00,$00
+	dta c'D:IMG1.PAL',$00,$00,$00,$00,$00
+	dta c'D:IMG2.PAL',$00,$00,$00,$00,$00
+	dta c'D:IMG3.PAL',$00,$00,$00,$00,$00
+	dta c'D:IMG4.PAL',$00,$00,$00,$00,$00
+	dta c'D:IMG5.PAL',$00,$00,$00,$00,$00
+	dta c'D:IMG6.PAL',$00,$00,$00,$00,$00
+	dta c'D:IMG7.PAL',$00,$00,$00,$00,$00
+	dta c'D:IMG8.PAL',$00,$00,$00,$00,$00
+	dta c'D:IMG9.PAL',$00,$00,$00,$00,$00
+	dta c'D:IMGA.PAL',$00,$00,$00,$00,$00
+	dta c'D:IMGB.PAL',$00,$00,$00,$00,$00
 Colour									; Each entry must be $10 bytes!
-	dta c'D1:IMG1.MAP',$00,$00,$00,$00,$00
-	dta c'D1:IMG2.MAP',$00,$00,$00,$00,$00
-	dta c'D1:IMG3.MAP',$00,$00,$00,$00,$00
-	dta c'D1:IMG4.MAP',$00,$00,$00,$00,$00
-	dta c'D1:IMG5.MAP',$00,$00,$00,$00,$00
-	dta c'D1:IMG6.MAP',$00,$00,$00,$00,$00
-	dta c'D1:IMG7.MAP',$00,$00,$00,$00,$00
-	dta c'D1:IMG8.MAP',$00,$00,$00,$00,$00
-	dta c'D1:IMG9.MAP',$00,$00,$00,$00,$00
-	dta c'D1:IMGA.MAP',$00,$00,$00,$00,$00
-	dta c'D1:IMGB.MAP',$00,$00,$00,$00,$00
+	dta c'D:IMG1.MAP',$00,$00,$00,$00,$00
+	dta c'D:IMG2.MAP',$00,$00,$00,$00,$00
+	dta c'D:IMG3.MAP',$00,$00,$00,$00,$00
+	dta c'D:IMG4.MAP',$00,$00,$00,$00,$00
+	dta c'D:IMG5.MAP',$00,$00,$00,$00,$00
+	dta c'D:IMG6.MAP',$00,$00,$00,$00,$00
+	dta c'D:IMG7.MAP',$00,$00,$00,$00,$00
+	dta c'D:IMG8.MAP',$00,$00,$00,$00,$00
+	dta c'D:IMG9.MAP',$00,$00,$00,$00,$00
+	dta c'D:IMGA.MAP',$00,$00,$00,$00,$00
+	dta c'D:IMGB.MAP',$00,$00,$00,$00,$00
 Image									; Each entry must be $10 bytes!
-	dta c'D1:IMG1.RAW',$00,$00,$00,$00,$00
-	dta c'D1:IMG2.RAW',$00,$00,$00,$00,$00
-	dta c'D1:IMG3.RAW',$00,$00,$00,$00,$00
-	dta c'D1:IMG4.RAW',$00,$00,$00,$00,$00
-	dta c'D1:IMG5.RAW',$00,$00,$00,$00,$00
-	dta c'D1:IMG6.RAW',$00,$00,$00,$00,$00
-	dta c'D1:IMG7.RAW',$00,$00,$00,$00,$00
-	dta c'D1:IMG8.RAW',$00,$00,$00,$00,$00
-	dta c'D1:IMG9.RAW',$00,$00,$00,$00,$00
-	dta c'D1:IMGA.RAW',$00,$00,$00,$00,$00
-	dta c'D1:IMGB.RAW',$00,$00,$00,$00,$00
+	dta c'D:IMG1.RAW',$00,$00,$00,$00,$00
+	dta c'D:IMG2.RAW',$00,$00,$00,$00,$00
+	dta c'D:IMG3.RAW',$00,$00,$00,$00,$00
+	dta c'D:IMG4.RAW',$00,$00,$00,$00,$00
+	dta c'D:IMG5.RAW',$00,$00,$00,$00,$00
+	dta c'D:IMG6.RAW',$00,$00,$00,$00,$00
+	dta c'D:IMG7.RAW',$00,$00,$00,$00,$00
+	dta c'D:IMG8.RAW',$00,$00,$00,$00,$00
+	dta c'D:IMG9.RAW',$00,$00,$00,$00,$00
+	dta c'D:IMGA.RAW',$00,$00,$00,$00,$00
+	dta c'D:IMGB.RAW',$00,$00,$00,$00,$00
 	
 ;-----------------------------------------------------------------------------
 ; 
