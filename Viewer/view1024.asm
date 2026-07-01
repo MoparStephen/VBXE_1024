@@ -77,7 +77,7 @@
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_2								= $17	; 7 (Screen code used for Version in loading screen)
-.def	V_3								= $61	; 61=a (Screen code used for Version in loading screen)
+.def	V_3								= $62	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
 ; VBXE Helpers
@@ -418,9 +418,25 @@ Increment_Image_Valid
 ;-----------------------------------------------------------------------------
 ; Set_Palette
 ;  X register contains Palette #
+;  XDL_Normal + $08 = the byte we need to change
+;  XDL OV PALETTE bits 5,4 need changed (00 to 11), bit 0 always needs on
 ;-----------------------------------------------------------------------------
 Set_Palette
 	jsr Disable_Colour_Map
+
+	lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
+	vbsta VBXE_MA_BSEL
+
+	txa									; A contains Palette #
+	asl
+	asl
+	asl
+	asl									; Put low-nybble in high-nybble
+	ora #$01							; Set bit 0
+	sta VBXE_WINDOW + $1D
+
+	lda #MEMAC_GLOBAL_DISABLE			; USE CPU address space
+	vbsta VBXE_MA_BSEL
 
 	rts
 

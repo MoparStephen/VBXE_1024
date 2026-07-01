@@ -424,7 +424,7 @@ Source: equates.asm
     77 = 0010			.def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
     78 = 0010			.def	V_1								= $10	; 0 (Screen code used for Version in loading screen)
     79 = 0017			.def	V_2								= $17	; 7 (Screen code used for Version in loading screen)
-    80 = 0061			.def	V_3								= $61	; 61=a (Screen code used for Version in loading screen)
+    80 = 0062			.def	V_3								= $62	; 61=a (Screen code used for Version in loading screen)
     81
     82 				;-----------------------------------------------------------------------------
     83 				; VBXE Helpers
@@ -1943,7 +1943,7 @@ Source: view1024.asm
    176 				; Wait For VSync (locks to the refresh rate, PAL=50Hz, NTSC=60Hz)  Thanks tebe
    177 				;-----------------------------------------------------------------------------
    178 3344			Wait_For_Sync							; Hold until VCOUNT == 0
-   179 3344-377A> 2C 0B D4		bit VCOUNT
+   179 3344-379C> 2C 0B D4		bit VCOUNT
    180 3347 30 FB			bmi *-3
    181 3349 2C 0B D4			bit VCOUNT
    182 334C 10 FB			bpl *-3
@@ -2119,7 +2119,7 @@ Macro: VBSTA [Source: vbxe_min.asm]
      7 = 3407			vbsta_adr	equ *-1
 Source: view1024.asm
    266 3408 18				clc
-   267 3409 A9 6B			lda #<Palettes
+   267 3409 A9 8D			lda #<Palettes
    268 340B 6D 8A 04			adc File_Index
    269 340E 8D 33 31			sta FileNamePtr
    270 3411 A9 35			lda #>Palettes
@@ -2179,7 +2179,7 @@ Macro: VBSTA [Source: vbxe_min.asm]
      7 = 346A			vbsta_adr	equ *-1
 Source: view1024.asm
    310 346B 18				clc
-   311 346C A9 1B			lda #<Colour
+   311 346C A9 3D			lda #<Colour
    312 346E 6D 8A 04			adc File_Index
    313 3471 8D 33 31			sta FileNamePtr
    314 3474 A9 36			lda #>Colour
@@ -2203,7 +2203,7 @@ Macro: VBSTA [Source: vbxe_min.asm]
      7 = 3490			vbsta_adr	equ *-1
 Source: view1024.asm
    326 3491 18				clc
-   327 3492 A9 CB			lda #<Image
+   327 3492 A9 ED			lda #<Image
    328 3494 6D 8A 04			adc File_Index
    329 3497 8D 33 31			sta FileNamePtr
    330 349A A9 36			lda #>Image
@@ -2276,7 +2276,7 @@ Source: view1024.asm
    389 34FD 4C 06 35			jmp Read_Key_Done
    390
    391 3500			Handle_4
-   392 3500 20 4A 35			jsr Enable_Colour_Map				; Enable Colour Map
+   392 3500 20 6C 35			jsr Enable_Colour_Map				; Enable Colour Map
    393 3503 4C 06 35			jmp Read_Key_Done
    394
    395 3506			Read_Key_Done
@@ -2305,127 +2305,159 @@ Source: view1024.asm
    418 				;-----------------------------------------------------------------------------
    419 				; Set_Palette
    420 				;  X register contains Palette #
-   421 				;-----------------------------------------------------------------------------
-   422 3523			Set_Palette
-   423 3523 20 27 35			jsr Disable_Colour_Map
-   424
-   425 3526 60				rts
+   421 				;  XDL_Normal + $08 = the byte we need to change
+   422 				;  XDL OV PALETTE bits 5,4 need changed (00 to 11), bit 0 always needs on
+   423 				;-----------------------------------------------------------------------------
+   424 3523			Set_Palette
+   425 3523 20 49 35			jsr Disable_Colour_Map
    426
-   427 				;-----------------------------------------------------------------------------
-   428 				; Disable_Colour_Map (Point XDL to XDL_Normal)
-   429 				;-----------------------------------------------------------------------------
-   430 3527			Disable_Colour_Map
-   431 3527 A9 00			lda #$00							; Setup VBXE for displaying picture data
-   432 3529				vbsta VBXE_XDL_ADR2
+   427 3526 A9 80			lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
+   428 3528				vbsta VBXE_MA_BSEL
 Macro: VBSTA [Source: vbxe_min.asm]
-     2 3529 48				pha
-     3 352A A5 90			lda VBXEBase+1
-     4 352C 8D 32 35			sta vbsta_adr
-     5 352F 68				pla
-     6 3530 8D 43 D6			sta.w VBXE_XDL_ADR2
-     7 = 3532			vbsta_adr	equ *-1
+     2 3528 48				pha
+     3 3529 A5 90			lda VBXEBase+1
+     4 352B 8D 31 35			sta vbsta_adr
+     5 352E 68				pla
+     6 352F 8D 5F D6			sta.w VBXE_MA_BSEL
+     7 = 3531			vbsta_adr	equ *-1
 Source: view1024.asm
-   433 3533				vbsta VBXE_XDL_ADR1
+   429
+   430 3532 8A				txa									; A contains Palette #
+   431 3533 0A				asl
+   432 3534 0A				asl
+   433 3535 0A				asl
+   434 3536 0A				asl									; Put low-nybble in high-nybble
+   435 3537 09 01			ora #$01							; Set bit 0
+   436 3539 8D 1D 20			sta VBXE_WINDOW + $1D
+   437
+   438 353C A9 00			lda #MEMAC_GLOBAL_DISABLE			; USE CPU address space
+   439 353E				vbsta VBXE_MA_BSEL
 Macro: VBSTA [Source: vbxe_min.asm]
-     2 3533 48				pha
-     3 3534 A5 90			lda VBXEBase+1
-     4 3536 8D 3C 35			sta vbsta_adr
-     5 3539 68				pla
-     6 353A 8D 42 D6			sta.w VBXE_XDL_ADR1
-     7 = 353C			vbsta_adr	equ *-1
+     2 353E 48				pha
+     3 353F A5 90			lda VBXEBase+1
+     4 3541 8D 47 35			sta vbsta_adr
+     5 3544 68				pla
+     6 3545 8D 5F D6			sta.w VBXE_MA_BSEL
+     7 = 3547			vbsta_adr	equ *-1
 Source: view1024.asm
-   434 353D A9 15			lda #$15
-   435 353F				vbsta VBXE_XDL_ADR0
+   440
+   441 3548 60				rts
+   442
+   443 				;-----------------------------------------------------------------------------
+   444 				; Disable_Colour_Map (Point XDL to XDL_Normal)
+   445 				;-----------------------------------------------------------------------------
+   446 3549			Disable_Colour_Map
+   447 3549 A9 00			lda #$00							; Setup VBXE for displaying picture data
+   448 354B				vbsta VBXE_XDL_ADR2
 Macro: VBSTA [Source: vbxe_min.asm]
-     2 353F 48				pha
-     3 3540 A5 90			lda VBXEBase+1
-     4 3542 8D 48 35			sta vbsta_adr
-     5 3545 68				pla
-     6 3546 8D 41 D6			sta.w VBXE_XDL_ADR0
-     7 = 3548			vbsta_adr	equ *-1
+     2 354B 48				pha
+     3 354C A5 90			lda VBXEBase+1
+     4 354E 8D 54 35			sta vbsta_adr
+     5 3551 68				pla
+     6 3552 8D 43 D6			sta.w VBXE_XDL_ADR2
+     7 = 3554			vbsta_adr	equ *-1
 Source: view1024.asm
-   436
-   437 3549 60				rts
-   438
-   439 				;-----------------------------------------------------------------------------
-   440 				; Enable_Colour_Map (Point XDL to XDL_Attribute)
-   441 				;-----------------------------------------------------------------------------
-   442 354A			Enable_Colour_Map
-   443 354A A9 00			lda #$00							; Setup VBXE for displaying picture data
-   444 354C				vbsta VBXE_XDL_ADR0
+   449 3555				vbsta VBXE_XDL_ADR1
 Macro: VBSTA [Source: vbxe_min.asm]
-     2 354C 48				pha
-     3 354D A5 90			lda VBXEBase+1
-     4 354F 8D 55 35			sta vbsta_adr
-     5 3552 68				pla
-     6 3553 8D 41 D6			sta.w VBXE_XDL_ADR0
-     7 = 3555			vbsta_adr	equ *-1
+     2 3555 48				pha
+     3 3556 A5 90			lda VBXEBase+1
+     4 3558 8D 5E 35			sta vbsta_adr
+     5 355B 68				pla
+     6 355C 8D 42 D6			sta.w VBXE_XDL_ADR1
+     7 = 355E			vbsta_adr	equ *-1
 Source: view1024.asm
-   445 3556				vbsta VBXE_XDL_ADR2
+   450 355F A9 15			lda #$15
+   451 3561				vbsta VBXE_XDL_ADR0
 Macro: VBSTA [Source: vbxe_min.asm]
-     2 3556 48				pha
-     3 3557 A5 90			lda VBXEBase+1
-     4 3559 8D 5F 35			sta vbsta_adr
-     5 355C 68				pla
-     6 355D 8D 43 D6			sta.w VBXE_XDL_ADR2
-     7 = 355F			vbsta_adr	equ *-1
+     2 3561 48				pha
+     3 3562 A5 90			lda VBXEBase+1
+     4 3564 8D 6A 35			sta vbsta_adr
+     5 3567 68				pla
+     6 3568 8D 41 D6			sta.w VBXE_XDL_ADR0
+     7 = 356A			vbsta_adr	equ *-1
 Source: view1024.asm
-   446 3560				vbsta VBXE_XDL_ADR1
+   452
+   453 356B 60				rts
+   454
+   455 				;-----------------------------------------------------------------------------
+   456 				; Enable_Colour_Map (Point XDL to XDL_Attribute)
+   457 				;-----------------------------------------------------------------------------
+   458 356C			Enable_Colour_Map
+   459 356C A9 00			lda #$00							; Setup VBXE for displaying picture data
+   460 356E				vbsta VBXE_XDL_ADR0
 Macro: VBSTA [Source: vbxe_min.asm]
-     2 3560 48				pha
-     3 3561 A5 90			lda VBXEBase+1
-     4 3563 8D 69 35			sta vbsta_adr
-     5 3566 68				pla
-     6 3567 8D 42 D6			sta.w VBXE_XDL_ADR1
-     7 = 3569			vbsta_adr	equ *-1
+     2 356E 48				pha
+     3 356F A5 90			lda VBXEBase+1
+     4 3571 8D 77 35			sta vbsta_adr
+     5 3574 68				pla
+     6 3575 8D 41 D6			sta.w VBXE_XDL_ADR0
+     7 = 3577			vbsta_adr	equ *-1
 Source: view1024.asm
-   447
-   448 356A 60				rts
-   449
-   450 				;-----------------------------------------------------------------------------
-   451 				; Subroutines END
-   452 				;-----------------------------------------------------------------------------
-   453
-   454 				;-----------------------------------------------------------------------------
-   455 				; Data Tables go here
-   456 				;-----------------------------------------------------------------------------
-   457 356B			Palettes								; Each entry must be $10 bytes!
-   458 356B 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.PAL',$00,$00,$00,$00,$00
-   459 357B 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.PAL',$00,$00,$00,$00,$00
-   460 358B 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.PAL',$00,$00,$00,$00,$00
-   461 359B 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.PAL',$00,$00,$00,$00,$00
-   462 35AB 44 32 3A 49 4D 47 + 	dta c'D2:IMG5.PAL',$00,$00,$00,$00,$00
-   463 35BB 44 32 3A 49 4D 47 + 	dta c'D2:IMG6.PAL',$00,$00,$00,$00,$00
-   464 35CB 44 32 3A 49 4D 47 + 	dta c'D2:IMG7.PAL',$00,$00,$00,$00,$00
-   465 35DB 44 32 3A 49 4D 47 + 	dta c'D2:IMG8.PAL',$00,$00,$00,$00,$00
-   466 35EB 44 32 3A 49 4D 47 + 	dta c'D2:IMG9.PAL',$00,$00,$00,$00,$00
-   467 35FB 44 32 3A 49 4D 47 + 	dta c'D2:IMGA.PAL',$00,$00,$00,$00,$00
-   468 360B 44 32 3A 49 4D 47 + 	dta c'D2:IMGB.PAL',$00,$00,$00,$00,$00
-   469 361B			Colour									; Each entry must be $10 bytes!
-   470 361B 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.MAP',$00,$00,$00,$00,$00
-   471 362B 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.MAP',$00,$00,$00,$00,$00
-   472 363B 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.MAP',$00,$00,$00,$00,$00
-   473 364B 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.MAP',$00,$00,$00,$00,$00
-   474 365B 44 32 3A 49 4D 47 + 	dta c'D2:IMG5.MAP',$00,$00,$00,$00,$00
-   475 366B 44 32 3A 49 4D 47 + 	dta c'D2:IMG6.MAP',$00,$00,$00,$00,$00
-   476 367B 44 32 3A 49 4D 47 + 	dta c'D2:IMG7.MAP',$00,$00,$00,$00,$00
-   477 368B 44 32 3A 49 4D 47 + 	dta c'D2:IMG8.MAP',$00,$00,$00,$00,$00
-   478 369B 44 32 3A 49 4D 47 + 	dta c'D2:IMG9.MAP',$00,$00,$00,$00,$00
-   479 36AB 44 32 3A 49 4D 47 + 	dta c'D2:IMGA.MAP',$00,$00,$00,$00,$00
-   480 36BB 44 32 3A 49 4D 47 + 	dta c'D2:IMGB.MAP',$00,$00,$00,$00,$00
-   481 36CB			Image									; Each entry must be $10 bytes!
-   482 36CB 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.RAW',$00,$00,$00,$00,$00
-   483 36DB 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.RAW',$00,$00,$00,$00,$00
-   484 36EB 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.RAW',$00,$00,$00,$00,$00
-   485 36FB 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.RAW',$00,$00,$00,$00,$00
-   486 370B 44 32 3A 49 4D 47 + 	dta c'D2:IMG5.RAW',$00,$00,$00,$00,$00
-   487 371B 44 32 3A 49 4D 47 + 	dta c'D2:IMG6.RAW',$00,$00,$00,$00,$00
-   488 372B 44 32 3A 49 4D 47 + 	dta c'D2:IMG7.RAW',$00,$00,$00,$00,$00
-   489 373B 44 32 3A 49 4D 47 + 	dta c'D2:IMG8.RAW',$00,$00,$00,$00,$00
-   490 374B 44 32 3A 49 4D 47 + 	dta c'D2:IMG9.RAW',$00,$00,$00,$00,$00
-   491 375B 44 32 3A 49 4D 47 + 	dta c'D2:IMGA.RAW',$00,$00,$00,$00,$00
-   492 376B 44 32 3A 49 4D 47 + 	dta c'D2:IMGB.RAW',$00,$00,$00,$00,$00
-   493 					
-   494 				;-----------------------------------------------------------------------------
-   495 				; 
-   496 				;-----------------------------------------------------------------------------
+   461 3578				vbsta VBXE_XDL_ADR2
+Macro: VBSTA [Source: vbxe_min.asm]
+     2 3578 48				pha
+     3 3579 A5 90			lda VBXEBase+1
+     4 357B 8D 81 35			sta vbsta_adr
+     5 357E 68				pla
+     6 357F 8D 43 D6			sta.w VBXE_XDL_ADR2
+     7 = 3581			vbsta_adr	equ *-1
+Source: view1024.asm
+   462 3582				vbsta VBXE_XDL_ADR1
+Macro: VBSTA [Source: vbxe_min.asm]
+     2 3582 48				pha
+     3 3583 A5 90			lda VBXEBase+1
+     4 3585 8D 8B 35			sta vbsta_adr
+     5 3588 68				pla
+     6 3589 8D 42 D6			sta.w VBXE_XDL_ADR1
+     7 = 358B			vbsta_adr	equ *-1
+Source: view1024.asm
+   463
+   464 358C 60				rts
+   465
+   466 				;-----------------------------------------------------------------------------
+   467 				; Subroutines END
+   468 				;-----------------------------------------------------------------------------
+   469
+   470 				;-----------------------------------------------------------------------------
+   471 				; Data Tables go here
+   472 				;-----------------------------------------------------------------------------
+   473 358D			Palettes								; Each entry must be $10 bytes!
+   474 358D 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.PAL',$00,$00,$00,$00,$00
+   475 359D 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.PAL',$00,$00,$00,$00,$00
+   476 35AD 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.PAL',$00,$00,$00,$00,$00
+   477 35BD 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.PAL',$00,$00,$00,$00,$00
+   478 35CD 44 32 3A 49 4D 47 + 	dta c'D2:IMG5.PAL',$00,$00,$00,$00,$00
+   479 35DD 44 32 3A 49 4D 47 + 	dta c'D2:IMG6.PAL',$00,$00,$00,$00,$00
+   480 35ED 44 32 3A 49 4D 47 + 	dta c'D2:IMG7.PAL',$00,$00,$00,$00,$00
+   481 35FD 44 32 3A 49 4D 47 + 	dta c'D2:IMG8.PAL',$00,$00,$00,$00,$00
+   482 360D 44 32 3A 49 4D 47 + 	dta c'D2:IMG9.PAL',$00,$00,$00,$00,$00
+   483 361D 44 32 3A 49 4D 47 + 	dta c'D2:IMGA.PAL',$00,$00,$00,$00,$00
+   484 362D 44 32 3A 49 4D 47 + 	dta c'D2:IMGB.PAL',$00,$00,$00,$00,$00
+   485 363D			Colour									; Each entry must be $10 bytes!
+   486 363D 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.MAP',$00,$00,$00,$00,$00
+   487 364D 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.MAP',$00,$00,$00,$00,$00
+   488 365D 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.MAP',$00,$00,$00,$00,$00
+   489 366D 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.MAP',$00,$00,$00,$00,$00
+   490 367D 44 32 3A 49 4D 47 + 	dta c'D2:IMG5.MAP',$00,$00,$00,$00,$00
+   491 368D 44 32 3A 49 4D 47 + 	dta c'D2:IMG6.MAP',$00,$00,$00,$00,$00
+   492 369D 44 32 3A 49 4D 47 + 	dta c'D2:IMG7.MAP',$00,$00,$00,$00,$00
+   493 36AD 44 32 3A 49 4D 47 + 	dta c'D2:IMG8.MAP',$00,$00,$00,$00,$00
+   494 36BD 44 32 3A 49 4D 47 + 	dta c'D2:IMG9.MAP',$00,$00,$00,$00,$00
+   495 36CD 44 32 3A 49 4D 47 + 	dta c'D2:IMGA.MAP',$00,$00,$00,$00,$00
+   496 36DD 44 32 3A 49 4D 47 + 	dta c'D2:IMGB.MAP',$00,$00,$00,$00,$00
+   497 36ED			Image									; Each entry must be $10 bytes!
+   498 36ED 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.RAW',$00,$00,$00,$00,$00
+   499 36FD 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.RAW',$00,$00,$00,$00,$00
+   500 370D 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.RAW',$00,$00,$00,$00,$00
+   501 371D 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.RAW',$00,$00,$00,$00,$00
+   502 372D 44 32 3A 49 4D 47 + 	dta c'D2:IMG5.RAW',$00,$00,$00,$00,$00
+   503 373D 44 32 3A 49 4D 47 + 	dta c'D2:IMG6.RAW',$00,$00,$00,$00,$00
+   504 374D 44 32 3A 49 4D 47 + 	dta c'D2:IMG7.RAW',$00,$00,$00,$00,$00
+   505 375D 44 32 3A 49 4D 47 + 	dta c'D2:IMG8.RAW',$00,$00,$00,$00,$00
+   506 376D 44 32 3A 49 4D 47 + 	dta c'D2:IMG9.RAW',$00,$00,$00,$00,$00
+   507 377D 44 32 3A 49 4D 47 + 	dta c'D2:IMGA.RAW',$00,$00,$00,$00,$00
+   508 378D 44 32 3A 49 4D 47 + 	dta c'D2:IMGB.RAW',$00,$00,$00,$00,$00
+   509 					
+   510 				;-----------------------------------------------------------------------------
+   511 				; 
+   512 				;-----------------------------------------------------------------------------
