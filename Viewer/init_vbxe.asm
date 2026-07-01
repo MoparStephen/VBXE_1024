@@ -43,7 +43,7 @@ Wait2
 	lda vcount
 	bne Wait2
 ; VCount = zero, but we've saved the largest possible in Y
-	cpy #$85 							; NTSC will never get this high
+	cpy #$85							; NTSC will never get this high
 	bcc NTSC_Detected
 
 PAL_Detected
@@ -162,15 +162,15 @@ Device
 	beq Ram_Ok
 
 	lda #$01							; Set BASICF for OS
-	sta BASICF							; so BASIC remains OFF after RESET
+	sta BASICF							; So BASIC remains OFF after RESET
 
 	lda PORTB							; Disable BASIC bit in PORTB for MMU
-	ora #$02							; by Setting bit 2
+	ora #$02							; By Setting bit 2
 	sta PORTB
 
 	lda $A000							; Check if BASIC ROM area is now RAM
 	inc $A000							; This will also catch SDX not launching
-	cmp $A000							; the app via X
+	cmp $A000							; The app via X
 	beq Ram_Not_Ok						; If not, perform print error and exit
 
 	lda #$0C							; 12 = CLOSE
@@ -194,7 +194,7 @@ Ram_Ok
 	; jsr Wait_For_Key_Exit
 	rts
 
-Ram_Not_Ok; Add your error handling here, there still is a ROM....
+Ram_Not_Ok								; Add your error handling here, there still is a ROM....
 	ldy #$42							; Dark Red
 	sty COLOR2							; Set playfield
 
@@ -237,7 +237,7 @@ RAM_Failure_Message_Line2
 	org LOAD_ADDRESS + $300
 .proc Detecting_VBXE
 	jsr VBXE_Detect						; VBXE core 1.07 and above detection TODO: This is apparently broken, fix it so D700 works (6/23/2026)
-	bcc VBXE_Found						; If found skip the code below
+	bcc VBXE_Found						; If found skip the code below.  X register contains High Nybble of VBXE address
 
 VBXE_Not_Found
 	ldy #$42							; Dark Red
@@ -258,14 +258,11 @@ Print_VBXE_NPresent_L1
 	jmp Cleanup_Exit					; Cleanup then return controll to DOS
 
 VBXE_Found
-	ldy #$36							; ASCII 6
-	cpx #$D6
+	cpx #$D6							; X register contains High Nybble of VBXE address
 	beq VBXE_Found_Done					; VBXE at D6
-	inc VBXE_Address+1					; VBXE at D7 so change text!
-	iny									; Now ASCII 7
+	inc VBXE_Address+2					; VBXE at D7 so change text!
 
 VBXE_Found_Done
-	sty Reg2							; Save for later so we can update the About Panel
 ; Print VBXE_Detected - line 3 (y = $79)
 	ldy #$79
 	ldx #$00
@@ -276,6 +273,17 @@ Print_VBXE_Detected_L1
 	iny
 	cpx #$21							; Copy $21 characters
 	bne Print_VBXE_Detected_L1
+
+; Print VBXE address - line 2 (y = $51)
+	ldy #$52
+	ldx #$01
+Print_VBXE_Address_L1
+	lda VBXE_Address,x
+	sta (Ptr_Lo),y
+	inx
+	iny
+	cpx #$05							; Copy $04 characters (we are counting from 1 this time)
+	bne Print_VBXE_Address_L1
 
 ; Update Progress bar - line 5 (y = $CB + (4 * increment #))
 	ldy Reg1
@@ -331,11 +339,11 @@ Progress_Bar_Loop
 
 ; Set the base address of MEMA window to VBXE_WINDOW
 ; Size to 4k and accesible only by CPU
-	lda	#>VBXE_WINDOW + 8
-	sta VBXE_MA_CTL
+	lda #>VBXE_WINDOW + 8
+	vbsta VBXE_MA_CTL
 
-	lda	#$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
-	sta VBXE_MA_BSEL
+	lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
+	vbsta VBXE_MA_BSEL
 
 	; Copy blit to VBXE memory
 	ldx #$14
@@ -343,16 +351,17 @@ Progress_Bar_Loop
 
 	; Kick blit
 	lda #$00
-	sta VBXE_BL_ADR0
-	sta VBXE_BL_ADR1
-	sta VBXE_BL_ADR2
-	mva #$01 VBXE_BLITTER_START
+	vbsta VBXE_BL_ADR0
+	vbsta VBXE_BL_ADR1
+	vbsta VBXE_BL_ADR2
+	lda #$01
+	vbsta VBXE_BLITTER_START			; Start the blit
 
 	; Wait for blit complete
-	lda:rne VBXE_BLITTER_BUSY
+	vblda:rne VBXE_BLITTER_BUSY
 
-	lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
-	sta VBXE_MA_BSEL
+	lda #MEMAC_GLOBAL_DISABLE			; USE CPU address space
+	vbsta VBXE_MA_BSEL
 
 	rts									; Return controll to loader
 
@@ -385,8 +394,8 @@ Clearing_Message
 ; Step $05 - Load the XDL
 	org LOAD_ADDRESS + $300
 .proc Load_XDL
-	lda	#$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
-	sta VBXE_MA_BSEL
+	lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
+	vbsta VBXE_MA_BSEL
 
 ; Print Load_XDL_Message - line 3 (y = $79)
 	ldy #$79
@@ -428,8 +437,8 @@ XDL_Length	equ *-XDL_START
 ; Step $06 - Load the BCBs
 	org LOAD_ADDRESS + $300
 .proc Load_BCB
-	lda	#$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
-	sta VBXE_MA_BSEL
+	lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
+	vbsta VBXE_MA_BSEL
 
 ; Print Load_BCB_Message - line 3 (y = $79)
 	ldy #$79
@@ -471,8 +480,8 @@ BLT_Length	equ *-BCB_START
 ; Step $07 - Load VBXE NTSC Palette so we can restore it on exit
 	org LOAD_ADDRESS + $300
 .proc Load_Palette1
-	lda	#$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
-	sta VBXE_MA_BSEL
+	lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
+	vbsta VBXE_MA_BSEL
 
 ; Print Load_Palette1_Message - line 3 (y = $79)
 	ldy #$79
@@ -513,8 +522,8 @@ Palette1
 ; Step $08 - Load VBXE PAL Palette so we can restore it on exit
 	org LOAD_ADDRESS + $300
 .proc Load_Palette2
-	lda	#$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
-	sta VBXE_MA_BSEL
+	lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
+	vbsta VBXE_MA_BSEL
 
 ; Print Load_Palette_Message - line 3 (y = $79)
 	ldy #$79

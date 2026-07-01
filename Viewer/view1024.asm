@@ -6,7 +6,7 @@
 ; Load Address = 
 ; Run Address = 
 ; VBXE:
-;    XDL             = $00000 - $00014
+;    XDLs            = $00000 - $00020
 ;    BCBs            = $00100 - $001FF
 ;    NTSC_Palette    = $00200 - $004FF (Used to restore Palette 0 on program exit)
 ;    PAL_Palette     = $00500 - $006FF (Used to restore Palette 0 on program exit)
@@ -76,7 +76,7 @@
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $10	; 0 (Screen code used for Version in loading screen)
-.def	V_2								= $16	; 6 (Screen code used for Version in loading screen)
+.def	V_2								= $17	; 7 (Screen code used for Version in loading screen)
 .def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
@@ -84,8 +84,8 @@
 ;-----------------------------------------------------------------------------
 	org LOAD_ADDRESS
 .pages 3								; DO NOT go past $3300
-	icl	'fileio.lib'
-	icl	'vbxe_min.asm'					; Use my VBXE_SetPalette2 to load linear palete
+	icl 'fileio.lib'
+	icl 'vbxe_min.asm'					; Use my VBXE_SetPalette2 to load linear palete
 
 ;-----------------------------------------------------------------------------
 ; Clean up and exit
@@ -96,9 +96,9 @@ Cleanup_Exit
 
 	jsr Restore_Palette0
 
-	lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
-	sta VBXE_MA_BSEL
-	sta VBXE_VIDEO_CONTROL				; Disable XDL
+	lda #MEMAC_GLOBAL_DISABLE			; USE CPU address space
+	vbsta VBXE_MA_BSEL
+	vbsta VBXE_VIDEO_CONTROL			; Disable XDL
 
 	lda LMARGIN_OLD
 	sta LMARGIN							; Restore LMARGIN
@@ -114,7 +114,7 @@ Cleanup_Exit
 	lda SDMCTL_OLD
 	sta SDMCTL							; Restore SDMCTL
 
-	jmp	(DOSVEC)						; Return to DOS
+	jmp (DOSVEC)						; Return to DOS
 
 Wait_For_Key_Exit
 	lda #$FF
@@ -137,16 +137,16 @@ Wait_For_Key_Exit_L1
 start
 ; Initialization code can go here
 
-	lda	#0								; Setup VBXE for displaying picture data
-	sta	VBXE_XDL_ADR0					; But don't show the overlay just yet!
-	sta	VBXE_XDL_ADR2
-	sta	VBXE_XDL_ADR1
+	lda #$00							; Setup VBXE for displaying picture data
+	vbsta VBXE_XDL_ADR0				; But don't show the overlay just yet!
+	vbsta VBXE_XDL_ADR2
+	vbsta VBXE_XDL_ADR1
 
-	lda	#$00
+	lda #$00
 	;sta SDMCTL							; Turn ANTIC DMA off
 
-	lda	#%00000011						; XDL,XCOLOR Enabled and transparent color index 0
-	sta	VBXE_VIDEO_CONTROL
+	lda #%00000011						; XDL,XCOLOR Enabled and transparent color index 0
+	vbsta VBXE_VIDEO_CONTROL
 	jsr Wait_For_Sync
 	
 	lda #$00
@@ -176,9 +176,9 @@ main
 ; Wait For VSync (locks to the refresh rate, PAL=50Hz, NTSC=60Hz)  Thanks tebe
 ;-----------------------------------------------------------------------------
 Wait_For_Sync							; Hold until VCOUNT == 0
-	bit	VCOUNT
+	bit VCOUNT
 	bmi *-3
-	bit	VCOUNT
+	bit VCOUNT
 	bpl *-3
 
 	jsr Handle_Keys						; Take care of user input
@@ -189,38 +189,38 @@ Wait_For_Sync							; Hold until VCOUNT == 0
 ; Setup_Cmap1 - Sets byte 4 for all cmap entries via blitter
 ;-----------------------------------------------------------------------------
 Setup_Cmap1
-	lda	#BLT_SETUP_CMAP_1-BLT_CLEAR
-	sta	VBXE_BL_ADR0					; Setup the blitter for memory fill operation
-	lda	#0
-	sta	VBXE_BL_ADR2
-	lda	#$01
-	sta	VBXE_BL_ADR1
-	lda	#0
+	lda #BLT_SETUP_CMAP_1-BLT_CLEAR
+	vbsta VBXE_BL_ADR0				; Setup the blitter for memory fill operation
+	lda #$00
+	vbsta VBXE_BL_ADR2
+	lda #$01
+	vbsta VBXE_BL_ADR1
+	lda #$00
 Setup_Cmap1_L1
-	lda	VBXE_BLITTER_BUSY
-	cmp	#0
-	bne	Setup_Cmap1_L1					; Wait for blitter to finish
-	lda	#1
-	sta	VBXE_BLITTER_START				; Start the blit
+	lda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Setup_Cmap1_L1					; Wait for blitter to finish
+	lda #$01
+	vbsta VBXE_BLITTER_START			; Start the blit
 	rts
 
 ;-----------------------------------------------------------------------------
 ; Clear_Screen - Clears a contiguous 128kB block of VBXE RAM
 ;-----------------------------------------------------------------------------
 Clear_Screen
-	lda	#BLT_CLEAR_SCREEN-BLT_CLEAR
-	sta	VBXE_BL_ADR0					; Setup the blitter for memory fill operation
-	lda	#0
-	sta	VBXE_BL_ADR2
-	lda	#$01
-	sta	VBXE_BL_ADR1
-	lda	#0
+	lda #BLT_CLEAR_SCREEN-BLT_CLEAR
+	vbsta VBXE_BL_ADR0				; Setup the blitter for memory fill operation
+	lda #$00
+	vbsta VBXE_BL_ADR2
+	lda #$01
+	vbsta VBXE_BL_ADR1
+	lda #$00
 Clear_Screen_L1
-	lda	VBXE_BLITTER_BUSY
-	cmp	#0
-	bne	Clear_Screen_L1					; Wait for blitter to finish
-	lda	#1
-	sta	VBXE_BLITTER_START				; Start the blit
+	lda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Clear_Screen_L1					; Wait for blitter to finish
+	lda #$01
+	vbsta VBXE_BLITTER_START			; Start the blit
 	rts
 
 ;-----------------------------------------------------------------------------
@@ -228,7 +228,7 @@ Clear_Screen_L1
 ;-----------------------------------------------------------------------------
 Restore_Palette0
 	lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
-	sta VBXE_MA_BSEL
+	vbsta VBXE_MA_BSEL
 
 	lda Video_Flag						; 0 = PAL, 1 = NTSC
 	bne Restore_Palette0_Setup_NTSC
@@ -250,8 +250,8 @@ Restore_Palette0_SetPalette
 	jsr VBXE_SetPalette2
 
 Restore_Palette0_Done
-	lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
-	sta VBXE_MA_BSEL
+	lda #MEMAC_GLOBAL_DISABLE			; USE CPU address space
+	vbsta VBXE_MA_BSEL
 
 	rts
 
@@ -261,8 +261,8 @@ Restore_Palette0_Done
 ;-----------------------------------------------------------------------------
 Load_Image
 ; Load the Palettes
-	lda	#MEMAC_GLOBAL_ENABLE
-	sta	VBXE_MA_BSEL
+	lda #MEMAC_GLOBAL_ENABLE
+	vbsta VBXE_MA_BSEL
 	clc
 	lda #<Palettes
 	adc File_Index
@@ -270,12 +270,12 @@ Load_Image
 	lda #>Palettes
 	adc #$00
 	sta FileNamePtr + $01
-	lda	#$21
-	sta	BankIndex						; Load Colour Map data under $21000
-	jsr	LoadData
+	lda #$21
+	sta BankIndex						; Load Colour Map data under $21000
+	jsr LoadData
 
-	lda	#$21 | MEMAC_GLOBAL_ENABLE		; Bank $21 VBXE Window Enabled
-	sta	VBXE_MA_BSEL
+	lda #$21 | MEMAC_GLOBAL_ENABLE		; Bank $21 VBXE Window Enabled
+	vbsta VBXE_MA_BSEL
 	lda <(VBXE_WINDOW + $0000)
 	sta Y_Register
 	lda >(VBXE_WINDOW + $0000)
@@ -305,8 +305,8 @@ Load_Image
 	jsr VBXE_SetPalette2
 
 ; Load the Attribute Colour Map
-	lda	#MEMAC_GLOBAL_ENABLE
-	sta	VBXE_MA_BSEL
+	lda #MEMAC_GLOBAL_ENABLE
+	vbsta VBXE_MA_BSEL
 	clc
 	lda #<Colour
 	adc File_Index
@@ -314,15 +314,15 @@ Load_Image
 	lda #>Colour
 	adc #$00
 	sta FileNamePtr + $01
-	lda	#$14
-	sta	BankIndex						; Load Colour Map data under $14000
-	jsr	LoadData
+	lda #$14
+	sta BankIndex						; Load Colour Map data under $14000
+	jsr LoadData
 
 	jsr Setup_Cmap1						; Expand the data out to $17000
 
 ; Load the Image
-	lda	#MEMAC_GLOBAL_ENABLE
-	sta	VBXE_MA_BSEL
+	lda #MEMAC_GLOBAL_ENABLE
+	vbsta VBXE_MA_BSEL
 	clc
 	lda #<Image
 	adc File_Index
@@ -330,13 +330,13 @@ Load_Image
 	lda #>Image
 	adc #$00
 	sta FileNamePtr + $01
-	lda	#$01
-	sta	BankIndex						; Load Colour Map data under $01000
-	jsr	LoadData
+	lda #$01
+	sta BankIndex						; Load Colour Map data under $01000
+	jsr LoadData
 	
 Load_Image_Done
-	lda	#MEMAC_GLOBAL_DISABLE			; USE CPU address space
-	sta VBXE_MA_BSEL
+	lda #MEMAC_GLOBAL_DISABLE			; USE CPU address space
+	vbsta VBXE_MA_BSEL
 
 	rts
 
@@ -347,22 +347,57 @@ Handle_Keys
 ; If present, the next 3 lines will allow a "jump to exit" on a specific key press
 	lda CH
 	cmp #$2F							; Press Q to quit
-	beq	Exit
-Check_Space
+	beq Exit
 	cmp #$21							; Space
 	beq Handle_Space
+	cmp #$32							; 0
+	beq Handle_0
+	cmp #$1F							; 1
+	beq Handle_1
+	cmp #$1E							; 2
+	beq Handle_2
+	cmp #$1A							; 3
+	beq Handle_3
+	cmp #$18							; 4
+	beq Handle_4
+Handle_Keys_Done						; No more keys to test
 	jmp Read_Key_Done
 
 Handle_Space
 	jsr Clear_Screen					; Clear the VBXE RAM
 	jsr Increment_Image					; Display the next image
+	jmp Read_Key_Done
+
+Handle_0
+	ldx #$00
+	jsr Set_Palette						; Disable Colour Map and set Palette to X register
+	jmp Read_Key_Done
+
+Handle_1
+	ldx #$01
+	jsr Set_Palette						; Disable Colour Map and set Palette to X register
+	jmp Read_Key_Done
+
+Handle_2
+	ldx #$02
+	jsr Set_Palette						; Disable Colour Map and set Palette to X register
+	jmp Read_Key_Done
+
+Handle_3
+	ldx #$03
+	jsr Set_Palette						; Disable Colour Map and set Palette to X register
+	jmp Read_Key_Done
+
+Handle_4
+	jsr Enable_Colour_Map				; Enable Colour Map
+	jmp Read_Key_Done
 
 Read_Key_Done
 	lda #$FF
 	sta CH								; Clear last key pressed
 	rts									; Else return to caller
 Exit
-	jmp	Cleanup_Exit					; Clean up and exit (accounts for any long branch issues)
+	jmp Cleanup_Exit					; Clean up and exit (accounts for any long branch issues)
 
 ;-----------------------------------------------------------------------------
 ; Increment_Image
@@ -381,6 +416,28 @@ Increment_Image_Valid
 	rts
 
 ;-----------------------------------------------------------------------------
+; Set_Palette
+;  X register contains Palette #
+;-----------------------------------------------------------------------------
+Set_Palette
+
+	rts
+
+;-----------------------------------------------------------------------------
+; Disable_Colour_Map
+;-----------------------------------------------------------------------------
+Disable_Colour_Map
+
+	rts
+
+;-----------------------------------------------------------------------------
+; Enable_Colour_Map
+;-----------------------------------------------------------------------------
+Enable_Colour_Map
+
+	rts
+
+;-----------------------------------------------------------------------------
 ; Subroutines END
 ;-----------------------------------------------------------------------------
 
@@ -388,41 +445,41 @@ Increment_Image_Valid
 ; Data Tables go here
 ;-----------------------------------------------------------------------------
 Palettes								; Each entry must be $10 bytes!
-	dta c'D:IMG1.PAL',$00,$00,$00,$00,$00
-	dta c'D:IMG2.PAL',$00,$00,$00,$00,$00
-	dta c'D:IMG3.PAL',$00,$00,$00,$00,$00
-	dta c'D:IMG4.PAL',$00,$00,$00,$00,$00
-	dta c'D:IMG5.PAL',$00,$00,$00,$00,$00
-	dta c'D:IMG6.PAL',$00,$00,$00,$00,$00
-	dta c'D:IMG7.PAL',$00,$00,$00,$00,$00
-	dta c'D:IMG8.PAL',$00,$00,$00,$00,$00
-	dta c'D:IMG9.PAL',$00,$00,$00,$00,$00
-	dta c'D:IMGA.PAL',$00,$00,$00,$00,$00
-	dta c'D:IMGB.PAL',$00,$00,$00,$00,$00
+	dta c'D2:IMG1.PAL',$00,$00,$00,$00,$00
+	dta c'D2:IMG2.PAL',$00,$00,$00,$00,$00
+	dta c'D2:IMG3.PAL',$00,$00,$00,$00,$00
+	dta c'D2:IMG4.PAL',$00,$00,$00,$00,$00
+	dta c'D2:IMG5.PAL',$00,$00,$00,$00,$00
+	dta c'D2:IMG6.PAL',$00,$00,$00,$00,$00
+	dta c'D2:IMG7.PAL',$00,$00,$00,$00,$00
+	dta c'D2:IMG8.PAL',$00,$00,$00,$00,$00
+	dta c'D2:IMG9.PAL',$00,$00,$00,$00,$00
+	dta c'D2:IMGA.PAL',$00,$00,$00,$00,$00
+	dta c'D2:IMGB.PAL',$00,$00,$00,$00,$00
 Colour									; Each entry must be $10 bytes!
-	dta c'D:IMG1.MAP',$00,$00,$00,$00,$00
-	dta c'D:IMG2.MAP',$00,$00,$00,$00,$00
-	dta c'D:IMG3.MAP',$00,$00,$00,$00,$00
-	dta c'D:IMG4.MAP',$00,$00,$00,$00,$00
-	dta c'D:IMG5.MAP',$00,$00,$00,$00,$00
-	dta c'D:IMG6.MAP',$00,$00,$00,$00,$00
-	dta c'D:IMG7.MAP',$00,$00,$00,$00,$00
-	dta c'D:IMG8.MAP',$00,$00,$00,$00,$00
-	dta c'D:IMG9.MAP',$00,$00,$00,$00,$00
-	dta c'D:IMGA.MAP',$00,$00,$00,$00,$00
-	dta c'D:IMGB.MAP',$00,$00,$00,$00,$00
+	dta c'D2:IMG1.MAP',$00,$00,$00,$00,$00
+	dta c'D2:IMG2.MAP',$00,$00,$00,$00,$00
+	dta c'D2:IMG3.MAP',$00,$00,$00,$00,$00
+	dta c'D2:IMG4.MAP',$00,$00,$00,$00,$00
+	dta c'D2:IMG5.MAP',$00,$00,$00,$00,$00
+	dta c'D2:IMG6.MAP',$00,$00,$00,$00,$00
+	dta c'D2:IMG7.MAP',$00,$00,$00,$00,$00
+	dta c'D2:IMG8.MAP',$00,$00,$00,$00,$00
+	dta c'D2:IMG9.MAP',$00,$00,$00,$00,$00
+	dta c'D2:IMGA.MAP',$00,$00,$00,$00,$00
+	dta c'D2:IMGB.MAP',$00,$00,$00,$00,$00
 Image									; Each entry must be $10 bytes!
-	dta c'D:IMG1.RAW',$00,$00,$00,$00,$00
-	dta c'D:IMG2.RAW',$00,$00,$00,$00,$00
-	dta c'D:IMG3.RAW',$00,$00,$00,$00,$00
-	dta c'D:IMG4.RAW',$00,$00,$00,$00,$00
-	dta c'D:IMG5.RAW',$00,$00,$00,$00,$00
-	dta c'D:IMG6.RAW',$00,$00,$00,$00,$00
-	dta c'D:IMG7.RAW',$00,$00,$00,$00,$00
-	dta c'D:IMG8.RAW',$00,$00,$00,$00,$00
-	dta c'D:IMG9.RAW',$00,$00,$00,$00,$00
-	dta c'D:IMGA.RAW',$00,$00,$00,$00,$00
-	dta c'D:IMGB.RAW',$00,$00,$00,$00,$00
+	dta c'D2:IMG1.RAW',$00,$00,$00,$00,$00
+	dta c'D2:IMG2.RAW',$00,$00,$00,$00,$00
+	dta c'D2:IMG3.RAW',$00,$00,$00,$00,$00
+	dta c'D2:IMG4.RAW',$00,$00,$00,$00,$00
+	dta c'D2:IMG5.RAW',$00,$00,$00,$00,$00
+	dta c'D2:IMG6.RAW',$00,$00,$00,$00,$00
+	dta c'D2:IMG7.RAW',$00,$00,$00,$00,$00
+	dta c'D2:IMG8.RAW',$00,$00,$00,$00,$00
+	dta c'D2:IMG9.RAW',$00,$00,$00,$00,$00
+	dta c'D2:IMGA.RAW',$00,$00,$00,$00,$00
+	dta c'D2:IMGB.RAW',$00,$00,$00,$00,$00
 	
 ;-----------------------------------------------------------------------------
 ; 
