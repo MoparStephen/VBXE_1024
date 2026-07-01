@@ -77,7 +77,7 @@
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_2								= $17	; 7 (Screen code used for Version in loading screen)
-.def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
+.def	V_3								= $61	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
 ; VBXE Helpers
@@ -138,7 +138,7 @@ start
 ; Initialization code can go here
 
 	lda #$00							; Setup VBXE for displaying picture data
-	vbsta VBXE_XDL_ADR0				; But don't show the overlay just yet!
+	vbsta VBXE_XDL_ADR0					; But don't show the overlay just yet!
 	vbsta VBXE_XDL_ADR2
 	vbsta VBXE_XDL_ADR1
 
@@ -190,7 +190,7 @@ Wait_For_Sync							; Hold until VCOUNT == 0
 ;-----------------------------------------------------------------------------
 Setup_Cmap1
 	lda #BLT_SETUP_CMAP_1-BLT_CLEAR
-	vbsta VBXE_BL_ADR0				; Setup the blitter for memory fill operation
+	vbsta VBXE_BL_ADR0					; Setup the blitter for memory fill operation
 	lda #$00
 	vbsta VBXE_BL_ADR2
 	lda #$01
@@ -209,7 +209,7 @@ Setup_Cmap1_L1
 ;-----------------------------------------------------------------------------
 Clear_Screen
 	lda #BLT_CLEAR_SCREEN-BLT_CLEAR
-	vbsta VBXE_BL_ADR0				; Setup the blitter for memory fill operation
+	vbsta VBXE_BL_ADR0					; Setup the blitter for memory fill operation
 	lda #$00
 	vbsta VBXE_BL_ADR2
 	lda #$01
@@ -420,20 +420,30 @@ Increment_Image_Valid
 ;  X register contains Palette #
 ;-----------------------------------------------------------------------------
 Set_Palette
+	jsr Disable_Colour_Map
 
 	rts
 
 ;-----------------------------------------------------------------------------
-; Disable_Colour_Map
+; Disable_Colour_Map (Point XDL to XDL_Normal)
 ;-----------------------------------------------------------------------------
 Disable_Colour_Map
+	lda #$00							; Setup VBXE for displaying picture data
+	vbsta VBXE_XDL_ADR2
+	vbsta VBXE_XDL_ADR1
+	lda #$15
+	vbsta VBXE_XDL_ADR0
 
 	rts
 
 ;-----------------------------------------------------------------------------
-; Enable_Colour_Map
+; Enable_Colour_Map (Point XDL to XDL_Attribute)
 ;-----------------------------------------------------------------------------
 Enable_Colour_Map
+	lda #$00							; Setup VBXE for displaying picture data
+	vbsta VBXE_XDL_ADR0
+	vbsta VBXE_XDL_ADR2
+	vbsta VBXE_XDL_ADR1
 
 	rts
 
