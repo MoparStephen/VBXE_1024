@@ -556,15 +556,13 @@ Progress_Bar_Loop
 
 Load_Palette2_Message
 	.sb 'Loading vbxe_pal.pal            '
-Palette
-	ins 'vbxe_pal.pal'
 
 .endp
 	ini Load_Palette2
 
 	org VBXE_WINDOW + $500				; Load data directly into VBXE RAM
 Palette2
-	ins 'vbxe_ntsc.pal'
+	ins 'vbxe_pal.pal'
 
 ; Step $09 - Print instructions
 	org LOAD_ADDRESS + $300

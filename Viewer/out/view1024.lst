@@ -423,8 +423,8 @@ Source: equates.asm
     76 				; Temp debug stuff
     77 = 0010			.def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
     78 = 0010			.def	V_1								= $10	; 0 (Screen code used for Version in loading screen)
-    79 = 0017			.def	V_2								= $17	; 7 (Screen code used for Version in loading screen)
-    80 = 0062			.def	V_3								= $62	; 61=a (Screen code used for Version in loading screen)
+    79 = 0018			.def	V_2								= $18	; 8 (Screen code used for Version in loading screen)
+    80 = 0000			.def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
     81
     82 				;-----------------------------------------------------------------------------
     83 				; VBXE Helpers
@@ -1785,7 +1785,7 @@ Source: init_vbxe.asm
    522 				; Step $08 - Load VBXE PAL Palette so we can restore it on exit
    523 					org LOAD_ADDRESS + $300
    524 3300			.proc Load_Palette2
-   525 3300-364E> A9 80			lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
+   525 3300-334E> A9 80			lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
    526 3302				vbsta VBXE_MA_BSEL
 Macro: VBSTA [Source: vbxe_min.asm]
      2 3302 48				pha
@@ -1827,42 +1827,40 @@ Source: init_vbxe.asm
    556
    557 332F			Load_Palette2_Message
    558 332F 2C 6F 61 64 69 6E + 	.sb 'Loading vbxe_pal.pal            '
-   559 334F			Palette
-   560 334F 00 00 00 11 11 11 + 	ins 'vbxe_pal.pal'
-   561
-   562 				.endp
-   563 02E2-02E3> 00 33			ini Load_Palette2
-   564
-   565 					org VBXE_WINDOW + $500				; Load data directly into VBXE RAM
-   566 2500			Palette2
-   567 2500-27FF> 00 00 00 07 + 	ins 'vbxe_ntsc.pal'
-   568
-   569 				; Step $09 - Print instructions
-   570 					org LOAD_ADDRESS + $300
-   571 3300			.proc Wait_Start
-   572 				; Print Load_Palette_Message - line 3 (y = $79)
-   573 3300-333D> A0 79			ldy #$79
-   574 3302 A2 00			ldx #$00
-   575 3304			Wait_Start_L1
-   576 3304 BD 18 33			lda Wait_Start_Message,x
-   577 3307 91 88			sta (Ptr_Lo),y
-   578 3309 E8				inx
-   579 330A C8				iny
-   580 330B E0 26			cpx #$26							; Copy $26 characters
-   581 330D D0 F5			bne Wait_Start_L1
+   559
+   560 				.endp
+   561 02E2-02E3> 00 33			ini Load_Palette2
+   562
+   563 					org VBXE_WINDOW + $500				; Load data directly into VBXE RAM
+   564 2500			Palette2
+   565 2500-27FF> 00 00 00 11 + 	ins 'vbxe_pal.pal'
+   566
+   567 				; Step $09 - Print instructions
+   568 					org LOAD_ADDRESS + $300
+   569 3300			.proc Wait_Start
+   570 				; Print Load_Palette_Message - line 3 (y = $79)
+   571 3300-333D> A0 79			ldy #$79
+   572 3302 A2 00			ldx #$00
+   573 3304			Wait_Start_L1
+   574 3304 BD 18 33			lda Wait_Start_Message,x
+   575 3307 91 88			sta (Ptr_Lo),y
+   576 3309 E8				inx
+   577 330A C8				iny
+   578 330B E0 26			cpx #$26							; Copy $26 characters
+   579 330D D0 F5			bne Wait_Start_L1
+   580
+   581 330F 20 4C 32			jsr Wait_For_Key_Exit
    582
-   583 330F 20 4C 32			jsr Wait_For_Key_Exit
-   584
-   585 3312 A9 FF			lda #$FF
-   586 3314 8D FC 02			sta CH
+   583 3312 A9 FF			lda #$FF
+   584 3314 8D FC 02			sta CH
+   585
+   586 3317 60				rts									; Return controll to loader
    587
-   588 3317 60				rts									; Return controll to loader
-   589
-   590 3318			Wait_Start_Message
-   591 3318 00 00 33 70 61 63 + 	.sb '  Space to cycle images or Q to Quit  '
-   592
-   593 				.endp
-   594 02E2-02E3> 00 33			ini Wait_Start
+   588 3318			Wait_Start_Message
+   589 3318 00 00 33 70 61 63 + 	.sb '  Space to cycle images or Q to Quit  '
+   590
+   591 				.endp
+   592 02E2-02E3> 00 33			ini Wait_Start
    131
    132 					org LOAD_ADDRESS + $300				; Libraries live above
    133
