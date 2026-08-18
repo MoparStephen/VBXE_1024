@@ -76,7 +76,7 @@
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $10	; 0 (Screen code used for Version in loading screen)
-.def	V_2								= $18	; 8 (Screen code used for Version in loading screen)
+.def	V_2								= $19	; 9 (Screen code used for Version in loading screen)
 .def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
@@ -143,12 +143,14 @@ start
 	vbsta VBXE_XDL_ADR1
 
 	lda #$00
-	;sta SDMCTL							; Turn ANTIC DMA off
+	sta SDMCTL							; Turn ANTIC DMA off
 
 	lda #%00000011						; XDL,XCOLOR Enabled and transparent color index 0
 	vbsta VBXE_VIDEO_CONTROL
-	jsr Wait_For_Sync
-	
+
+	lda #$FF							; Must set priority when using Attribute Map
+	vbsta VBXE_P0						; because VBXE defaults PO-P$ to #$00 on power-up
+
 	lda #$00
 	sta File_Index						; Start at index 0
 	tax
@@ -197,7 +199,7 @@ Setup_Cmap1
 	vbsta VBXE_BL_ADR1
 	lda #$00
 Setup_Cmap1_L1
-	lda VBXE_BLITTER_BUSY
+	vblda VBXE_BLITTER_BUSY
 	cmp #$00
 	bne Setup_Cmap1_L1					; Wait for blitter to finish
 	lda #$01
@@ -216,7 +218,7 @@ Clear_Screen
 	vbsta VBXE_BL_ADR1
 	lda #$00
 Clear_Screen_L1
-	lda VBXE_BLITTER_BUSY
+	vblda VBXE_BLITTER_BUSY
 	cmp #$00
 	bne Clear_Screen_L1					; Wait for blitter to finish
 	lda #$01
