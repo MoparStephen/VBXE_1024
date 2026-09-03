@@ -510,7 +510,7 @@ Progress_Bar_Loop
 	rts									; Return controll to loader
 
 Load_Palette1_Message
-	.sb 'Loading vbxe_ntsc.pal           '
+	.sb 'Loading vbxe_ntsc.pal            '
 
 .endp
 	ini Load_Palette1
@@ -555,7 +555,7 @@ Progress_Bar_Loop
 	rts									; Return controll to loader
 
 Load_Palette2_Message
-	.sb 'Loading vbxe_pal.pal            '
+	.sb 'Loading vbxe_pal.pal             '
 
 .endp
 	ini Load_Palette2

@@ -422,8 +422,8 @@ Source: equates.asm
     75
     76 				; Temp debug stuff
     77 = 0010			.def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
-    78 = 0010			.def	V_1								= $10	; 0 (Screen code used for Version in loading screen)
-    79 = 0019			.def	V_2								= $19	; 9 (Screen code used for Version in loading screen)
+    78 = 0011			.def	V_1								= $11	; 0 (Screen code used for Version in loading screen)
+    79 = 0010			.def	V_2								= $10	; 9 (Screen code used for Version in loading screen)
     80 = 0000			.def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
     81
     82 				;-----------------------------------------------------------------------------
@@ -736,250 +736,260 @@ Source: vbxe_min.asm
     31 = 0053			VBXE_BLITTER_BUSY		equ	VBXE_BASE+$53	; Read
     32 = 0054			VBXE_IRQ_CONTROL		equ	VBXE_BASE+$54	; Write
     33 = 0054			VBXE_IRQ_STATUS			equ	VBXE_BASE+$54	; Read
-    34 = 0055			VBXE_P0					equ	VBXE_BASE+$55
-    35 = 0055			VBXE_P1					equ	VBXE_BASE+$55
-    36 = 0055			VBXE_P2					equ	VBXE_BASE+$55
-    37 = 0055			VBXE_P3					equ	VBXE_BASE+$55
-    38 = 005D			VBXE_MB_CTL				equ	VBXE_BASE+$5D
-    39 = 005E			VBXE_MA_CTL				equ	VBXE_BASE+$5E
-    40 = 005F			VBXE_MA_BSEL			equ	VBXE_BASE+$5F
-    41
-    42 				/* Renamed to match fx1.26-en
-    43 				VBXE_VIDEO_CONTROL		equ	VBXE_BASE+$40	; Write
-    44 				VBXE_CORE_VERSION		equ	VBXE_BASE+$40	; Read
-    45 				VBXE_XDL_ADR0			equ	VBXE_BASE+$41	; Write
-    46 				VBXE_MINOR_REVISION		equ	VBXE_BASE+$41	; Read
-    47 				VBXE_XDL_ADR1			equ	VBXE_BASE+$42
-    48 				VBXE_XDL_ADR2			equ	VBXE_BASE+$43
-    49 				VBXE_CSEL				equ	VBXE_BASE+$44
-    50 				VBXE_PSEL				equ	VBXE_BASE+$45
-    51 				VBXE_CR					equ	VBXE_BASE+$46
-    52 				VBXE_CG					equ	VBXE_BASE+$47
-    53 				VBXE_CB					equ	VBXE_BASE+$48
-    54 				VBXE_COLMASK			equ	VBXE_BASE+$49
-    55 				VBXE_COLCLR				equ	VBXE_BASE+$4A	; Write
-    56 				VBXE_COLDETECT			equ	VBXE_BASE+$4A	; Read
-    57 				VBXE_BL_ADR0			equ	VBXE_BASE+$50	; Write
-    58 				VBXE_BLT_COLLISION_CODE	equ	VBXE_BASE+$50	; Read
-    59 				VBXE_BL_ADR1			equ	VBXE_BASE+$51
-    60 				VBXE_BL_ADR2			equ	VBXE_BASE+$52
-    61 				VBXE_BLITTER_START		equ	VBXE_BASE+$53	; Write
-    62 				VBXE_BLITTER_BUSY		equ	VBXE_BASE+$53	; Read
-    63 				VBXE_IRQ_CONTROL		equ	VBXE_BASE+$54	; Write
-    64 				VBXE_IRQ_STATUS			equ	VBXE_BASE+$54	; Read
-    65 				VBXE_P0					equ	VBXE_BASE+$55
-    66 				VBXE_P1					equ	VBXE_BASE+$55
-    67 				VBXE_P2					equ	VBXE_BASE+$55
-    68 				VBXE_P3					equ	VBXE_BASE+$55
-    69 				VBXE_MEMAC_B_CONTROL	equ	VBXE_BASE+$5D
-    70 				VBXE_MEMAC_CONTROL		equ	VBXE_BASE+$5E	; Write
-    71 				VBXE_MEMAC_CONTROL		equ	VBXE_BASE+$5E	; Read
-    72 				VBXE_MEMAC_BANK_SEL		equ	VBXE_BASE+$5F	; Write
-    73 				VBXE_MEMAC_BANK_SEL		equ	VBXE_BASE+$5F	; Read
-    74 				*/
-    74
-    75
-    76 = 0000			MEMAC_GLOBAL_DISABLE	equ	$00
-    77 = 0080			MEMAC_GLOBAL_ENABLE		equ	$80
-    78
-    79 				;-----------------------------------------------------------------------------
-    80 				; Structures for VBXE
-    81 				;-----------------------------------------------------------------------------
-    82 				.struct BLTBLK	
-    83 = 0000				orgin_ptr .long
-    84 = 0003				ostep_y .word
-    85 = 0005				ostep_x .byte
-    86 = 0006				dest_ptr .long
-    87 = 0009				dstep_y .word
-    88 = 000B				dstep_x .byte
-    89 = 000C				width .word
-    90 = 000E				height .byte
-    91 = 000F				and_mask .byte
-    92 = 0010				xor_mask .byte
-    93 = 0011				col_mask .byte
-    94 = 0012				zoom .byte
-    95 = 0013				pattern .byte
-    96 = 0014				control .byte
-    97 				.ends
-    98
-    99 				;-----------------------------------------------------------------------------
-   100 				; Zero page variables for VBXE
-   101 				;-----------------------------------------------------------------------------
-   102 312D			.zpvar	VBXEBase	.word
-   103 312D			.zpvar	Y_Register	.byte
-   104
-   105 				;-----------------------------------------------------------------------------
-   106 				; Other variables for VBXE
-   107 				;-----------------------------------------------------------------------------
-   108 312D			.var	Pal_ptr		.word
-   109
-   110 				;-----------------------------------------------------------------------------
-   111 				; Macro definitions for VBXE
-   112 				;-----------------------------------------------------------------------------
-   113
-   114 				;-----------------------------------------------------------------------------
-   115 				;vblda	- loads accumulator with VBXE register value
-   116 				;	  use:	vblda	VBXE_REGISTER
-   117
-   118 				; NOTE (__VBXE_AUTO__ mode only): VBXE_BASE is $0000 in this mode, so every
-   119 				; VBXE_xxx equate is already just its register offset ($40-$5F). VBXEBase is
-   120 				; set ONCE by VBXE_Detect (lo=$00, hi=$D6/$D7), so indexing through it costs
-   121 				; a flat 8 cycles/access regardless of which page VBXE lives on - no per-call
-   122 				; self-modifying code. This clobbers Y - callers must not rely on Y surviving
-   123 				; a vblda/vbsta call in auto mode.
-   124 				vblda	.macro
-   125 				.ifdef	__VBXE_AUTO__
-   126 					ldy #<:1
-   127 					lda (VBXEBase),y
-   128 				.else
-   129 					lda :1
-   130 				.endif
-   131 				.endm
-   132
-   133 				;-----------------------------------------------------------------------------
-   134 				;vbsta	- stores accumulator in VBXE register
-   135 				;	  use:	vbvbsta	VBXE_REGISTER
-   136
-   137 				vbsta	.macro
-   138 				.ifdef	__VBXE_AUTO__
-   139 					ldy #<:1
-   140 					sta (VBXEBase),y
-   141 				.else
-   142 					sta.w :1
-   143 				.endif
-   144 				.endm
-   145
-   146 				;-----------------------------------------------------------------------------
-   147 				; Common calls for VBXE
-   148 				;-----------------------------------------------------------------------------
-   149
-   150 				;-----------------------------------------------------------------------------
-   151 				;VBXE_Detect - detects VBXE FX core version 1.07 and above,
-   152 				; and stores VBXE Base address in VBXEBase
-   153 312D			VBXE_Detect
-   154 312D A9 00			lda #$00
-   155 312F A2 D6			ldx #$D6
-   156 3131 8D 40 D6			sta $D640							; Make sure it isn't coincidence
-   157 3134 AD 40 D6			lda $D640
-   158 3137 C9 10			cmp #$10							; Do we have major version here?
-   159 3139 F0 15			beq VBXE_Detected					; If so, then VBXE is detected
-   160 313B A9 00			lda #$00
-   161 313D E8				inx
-   162 313E 8D 40 D7			sta $D740							; No such luck, try other location
-   163 3141 AD 40 D7			lda $D740
-   164 3144 C9 10			cmp #$10
-   165 3146 F0 08			beq VBXE_Detected
-   166 3148 A2 00			ldx #$00							; Not here, so not present or FX core version too low
-   167 314A 86 90			stx VBXEBase+1
-   168 314C 86 8F			stx VBXEBase
-   169 314E 38				sec
-   170 314F 60				rts
-   171 3150			VBXE_Detected:
-   172 3150 86 90			stx VBXEBase+1
-   173 3152 A9 00			lda #$00
-   174 3154 85 8F			sta VBXEBase
-   175 3156				vblda VBXE_MINOR					; Get core minor version
+    34 = 0055			VBXE_P0					equ	VBXE_BASE+$55	; the four OVERLAY PRIORITY registers.  P1-P3
+    35 = 0056			VBXE_P1					equ	VBXE_BASE+$56	;   read $55 here until 2026-08-22; they are
+    36 = 0057			VBXE_P2					equ	VBXE_BASE+$57	;   four consecutive registers, per Altirra's
+    37 = 0058			VBXE_P3					equ	VBXE_BASE+$58	;   vbxe.cpp WriteControl.  Only an active
+    38 																	;   ATTRIBUTE MAP uses P0-P3 (a cell's byte 3
+    39 																	;   picks one); with the map off it is the
+    40 																	;   XDL's OVATT byte 1 that decides.  They
+    41 																	;   power up $00 on real hardware and $FF in
+    42 																	;   Altirra - write P0 explicitly.
+    43 = 005D			VBXE_MB_CTL				equ	VBXE_BASE+$5D
+    44 = 005E			VBXE_MA_CTL				equ	VBXE_BASE+$5E
+    45 = 005F			VBXE_MA_BSEL			equ	VBXE_BASE+$5F
+    46
+    47 				/* Renamed to match fx1.26-en
+    48 				VBXE_VIDEO_CONTROL		equ	VBXE_BASE+$40	; Write
+    49 				VBXE_CORE_VERSION		equ	VBXE_BASE+$40	; Read
+    50 				VBXE_XDL_ADR0			equ	VBXE_BASE+$41	; Write
+    51 				VBXE_MINOR_REVISION		equ	VBXE_BASE+$41	; Read
+    52 				VBXE_XDL_ADR1			equ	VBXE_BASE+$42
+    53 				VBXE_XDL_ADR2			equ	VBXE_BASE+$43
+    54 				VBXE_CSEL				equ	VBXE_BASE+$44
+    55 				VBXE_PSEL				equ	VBXE_BASE+$45
+    56 				VBXE_CR					equ	VBXE_BASE+$46
+    57 				VBXE_CG					equ	VBXE_BASE+$47
+    58 				VBXE_CB					equ	VBXE_BASE+$48
+    59 				VBXE_COLMASK			equ	VBXE_BASE+$49
+    60 				VBXE_COLCLR				equ	VBXE_BASE+$4A	; Write
+    61 				VBXE_COLDETECT			equ	VBXE_BASE+$4A	; Read
+    62 				VBXE_BL_ADR0			equ	VBXE_BASE+$50	; Write
+    63 				VBXE_BLT_COLLISION_CODE	equ	VBXE_BASE+$50	; Read
+    64 				VBXE_BL_ADR1			equ	VBXE_BASE+$51
+    65 				VBXE_BL_ADR2			equ	VBXE_BASE+$52
+    66 				VBXE_BLITTER_START		equ	VBXE_BASE+$53	; Write
+    67 				VBXE_BLITTER_BUSY		equ	VBXE_BASE+$53	; Read
+    68 				VBXE_IRQ_CONTROL		equ	VBXE_BASE+$54	; Write
+    69 				VBXE_IRQ_STATUS			equ	VBXE_BASE+$54	; Read
+    70 				VBXE_P0					equ	VBXE_BASE+$55	; the four OVERLAY PRIORITY registers.  P1-P3
+    71 				VBXE_P1					equ	VBXE_BASE+$56	;   read $55 here until 2026-08-22; they are
+    72 				VBXE_P2					equ	VBXE_BASE+$57	;   four consecutive registers, per Altirra's
+    73 				VBXE_P3					equ	VBXE_BASE+$58	;   vbxe.cpp WriteControl.  Only an active
+    74 																	;   ATTRIBUTE MAP uses P0-P3 (a cell's byte 3
+    75 																	;   picks one); with the map off it is the
+    76 																	;   XDL's OVATT byte 1 that decides.  They
+    77 																	;   power up $00 on real hardware and $FF in
+    78 																	;   Altirra - write P0 explicitly.
+    79 				VBXE_MEMAC_B_CONTROL	equ	VBXE_BASE+$5D
+    80 				VBXE_MEMAC_CONTROL		equ	VBXE_BASE+$5E	; Write
+    81 				VBXE_MEMAC_CONTROL		equ	VBXE_BASE+$5E	; Read
+    82 				VBXE_MEMAC_BANK_SEL		equ	VBXE_BASE+$5F	; Write
+    83 				VBXE_MEMAC_BANK_SEL		equ	VBXE_BASE+$5F	; Read
+    84 				*/
+    84
+    85
+    86 = 0000			MEMAC_GLOBAL_DISABLE	equ	$00
+    87 = 0080			MEMAC_GLOBAL_ENABLE		equ	$80
+    88
+    89 				;-----------------------------------------------------------------------------
+    90 				; Structures for VBXE
+    91 				;-----------------------------------------------------------------------------
+    92 				.struct BLTBLK	
+    93 = 0000				orgin_ptr .long
+    94 = 0003				ostep_y .word
+    95 = 0005				ostep_x .byte
+    96 = 0006				dest_ptr .long
+    97 = 0009				dstep_y .word
+    98 = 000B				dstep_x .byte
+    99 = 000C				width .word
+   100 = 000E				height .byte
+   101 = 000F				and_mask .byte
+   102 = 0010				xor_mask .byte
+   103 = 0011				col_mask .byte
+   104 = 0012				zoom .byte
+   105 = 0013				pattern .byte
+   106 = 0014				control .byte
+   107 				.ends
+   108
+   109 				;-----------------------------------------------------------------------------
+   110 				; Zero page variables for VBXE
+   111 				;-----------------------------------------------------------------------------
+   112 312D			.zpvar	VBXEBase	.word
+   113 312D			.zpvar	Y_Register	.byte
+   114
+   115 				;-----------------------------------------------------------------------------
+   116 				; Other variables for VBXE
+   117 				;-----------------------------------------------------------------------------
+   118 312D			.var	Pal_ptr		.word
+   119
+   120 				;-----------------------------------------------------------------------------
+   121 				; Macro definitions for VBXE
+   122 				;-----------------------------------------------------------------------------
+   123
+   124 				;-----------------------------------------------------------------------------
+   125 				;vblda	- loads accumulator with VBXE register value
+   126 				;	  use:	vblda	VBXE_REGISTER
+   127
+   128 				; NOTE (__VBXE_AUTO__ mode only): VBXE_BASE is $0000 in this mode, so every
+   129 				; VBXE_xxx equate is already just its register offset ($40-$5F). VBXEBase is
+   130 				; set ONCE by VBXE_Detect (lo=$00, hi=$D6/$D7), so indexing through it costs
+   131 				; a flat 8 cycles/access regardless of which page VBXE lives on - no per-call
+   132 				; self-modifying code. This clobbers Y - callers must not rely on Y surviving
+   133 				; a vblda/vbsta call in auto mode.
+   134 				vblda	.macro
+   135 				.ifdef	__VBXE_AUTO__
+   136 					ldy #<:1
+   137 					lda (VBXEBase),y
+   138 				.else
+   139 					lda :1
+   140 				.endif
+   141 				.endm
+   142
+   143 				;-----------------------------------------------------------------------------
+   144 				;vbsta	- stores accumulator in VBXE register
+   145 				;	  use:	vbvbsta	VBXE_REGISTER
+   146
+   147 				vbsta	.macro
+   148 				.ifdef	__VBXE_AUTO__
+   149 					ldy #<:1
+   150 					sta (VBXEBase),y
+   151 				.else
+   152 					sta.w :1
+   153 				.endif
+   154 				.endm
+   155
+   156 				;-----------------------------------------------------------------------------
+   157 				; Common calls for VBXE
+   158 				;-----------------------------------------------------------------------------
+   159
+   160 				;-----------------------------------------------------------------------------
+   161 				;VBXE_Detect - detects VBXE FX core version 1.07 and above,
+   162 				; and stores VBXE Base address in VBXEBase
+   163 312D			VBXE_Detect
+   164 312D A9 00			lda #$00
+   165 312F A2 D6			ldx #$D6
+   166 3131 8D 40 D6			sta $D640							; Make sure it isn't coincidence
+   167 3134 AD 40 D6			lda $D640
+   168 3137 C9 10			cmp #$10							; Do we have major version here?
+   169 3139 F0 15			beq VBXE_Detected					; If so, then VBXE is detected
+   170 313B A9 00			lda #$00
+   171 313D E8				inx
+   172 313E 8D 40 D7			sta $D740							; No such luck, try other location
+   173 3141 AD 40 D7			lda $D740
+   174 3144 C9 10			cmp #$10
+   175 3146 F0 08			beq VBXE_Detected
+   176 3148 A2 00			ldx #$00							; Not here, so not present or FX core version too low
+   177 314A 86 90			stx VBXEBase+1
+   178 314C 86 8F			stx VBXEBase
+   179 314E 38				sec
+   180 314F 60				rts
+   181 3150			VBXE_Detected:
+   182 3150 86 90			stx VBXEBase+1
+   183 3152 A9 00			lda #$00
+   184 3154 85 8F			sta VBXEBase
+   185 3156				vblda VBXE_MINOR					; Get core minor version
 Macro: VBLDA [Source: vbxe_min.asm]
      2 3156 A0 41			ldy #<VBXE_MINOR
      3 3158 B1 8F			lda (VBXEBase),y
 Source: vbxe_min.asm
-   176 315A 18				clc									; X - page of VBXE
-   177 315B 60				rts
-   178
-   179 				;-----------------------------------------------------------------------------
-   180 				; VBXE_SetPalette2 - sets palette
-   181 				;	A			- palette number
-   182 				;	Y_Register	- palette pointer - Data MUST be page aligned
-   183 				; NOTE: This code can run from ROM
-   184 				;       The palette is stored as 256 RGB triplets
-   185 				; NOTE (__VBXE_AUTO__ mode): the CR/CG/CB stores below use plain sta.w, not
-   186 				; vbsta - this loop needs Y as its data index every iteration, and vbsta's
-   187 				; (VBXEBase),Y addressing would clobber it every store. Instead the high
-   188 				; byte of all nine store operands is patched ONCE per call (self-modifying,
-   189 				; but off the hot path) so the loop itself runs at plain absolute-store cost.
-   190 315C			VBXE_SetPalette2
-   191 315C				vbsta VBXE_PSEL						; Set Palette 1
+   186 315A 18				clc									; X - page of VBXE
+   187 315B 60				rts
+   188
+   189 				;-----------------------------------------------------------------------------
+   190 				; VBXE_SetPalette2 - sets palette
+   191 				;	A			- palette number
+   192 				;	Y_Register	- palette pointer - Data MUST be page aligned
+   193 				; NOTE: This code can run from ROM
+   194 				;       The palette is stored as 256 RGB triplets
+   195 				; NOTE (__VBXE_AUTO__ mode): the CR/CG/CB stores below use plain sta.w, not
+   196 				; vbsta - this loop needs Y as its data index every iteration, and vbsta's
+   197 				; (VBXEBase),Y addressing would clobber it every store. Instead the high
+   198 				; byte of all nine store operands is patched ONCE per call (self-modifying,
+   199 				; but off the hot path) so the loop itself runs at plain absolute-store cost.
+   200 315C			VBXE_SetPalette2
+   201 315C				vbsta VBXE_PSEL						; Set Palette 1
 Macro: VBSTA [Source: vbxe_min.asm]
      2 315C A0 45			ldy #<VBXE_PSEL
      3 315E 91 8F			sta (VBXEBase),y
 Source: vbxe_min.asm
-   192 3160 A9 00			lda #$00
-   193 3162				vbsta VBXE_CSEL						; Start at colour 0
+   202 3160 A9 00			lda #$00
+   203 3162				vbsta VBXE_CSEL						; Start at colour 0
 Macro: VBSTA [Source: vbxe_min.asm]
      2 3162 A0 44			ldy #<VBXE_CSEL
      3 3164 91 8F			sta (VBXEBase),y
 Source: vbxe_min.asm
-   194
-   195 				.ifdef	__VBXE_AUTO__
-   196 3166 A5 90			lda VBXEBase+1
-   197 3168 8D 8A 31			sta SP2_CR1							; SP2_xxN labels equ *-1 to the store's
-   198 316B 8D 92 31			sta SP2_CG1							; high-byte position already - no +1
-   199 316E 8D 98 31			sta SP2_CB1
-   200 3171 8D A0 31			sta SP2_CR2
-   201 3174 8D A8 31			sta SP2_CG2
-   202 3177 8D B0 31			sta SP2_CB2
-   203 317A 8D B8 31			sta SP2_CR3
-   204 317D 8D BE 31			sta SP2_CG3
-   205 3180 8D C4 31			sta SP2_CB3
-   206 3183 A9 00			lda #$00							; Patching above clobbered A - restore it,
-   207 				.endif									; tay below needs #$00 to zero the loop index
-   208
-   209 3185 A8				tay
-   210 3186 B1 91		LoadPal1_1 lda (Y_Register),y
-   211 3188 8D 46 00			sta.w VBXE_CR						; Set the red component
-   212 = 318A			SP2_CR1	equ *-1
-   213 318B C8				iny
-   214 318C F0 3B			beq OverFlow1						; Since 256 / 3 is not even, we must skip to next section and resume at CG
-   215 318E B1 91			lda (Y_Register),y
-   216 3190 8D 47 00			sta.w VBXE_CG						; Set the green component
-   217 = 3192			SP2_CG1	equ *-1
-   218 3193 C8				iny
-   219 3194 B1 91			lda (Y_Register),y
-   220 3196 8D 48 00			sta.w VBXE_CB						; Set the blue component and increment CSEL
-   221 = 3198			SP2_CB1	equ *-1
-   222 3199 C8				iny
-   223 319A D0 EA			bne LoadPal1_1						; Copy a page
-   224 319C B1 91		LoadPal1_2 lda (Y_Register),y
-   225 319E 8D 46 00			sta.w VBXE_CR						; Set the red component
-   226 = 31A0			SP2_CR2	equ *-1
-   227 31A1 C8				iny
-   228 31A2 F0 10			beq LoadPal1_3
-   229 31A4			LP1_2_G
-   230 31A4 B1 91			lda (Y_Register),y
-   231 31A6 8D 47 00			sta.w VBXE_CG						; Set the green component
-   232 = 31A8			SP2_CG2	equ *-1
-   233 31A9 C8				iny
-   234 31AA F0 22			beq OverFlow2						; Since 256 / 3 is not even, we must skip to next section and resume at CB
-   235 31AC B1 91			lda (Y_Register),y
-   236 31AE 8D 48 00			sta.w VBXE_CB						; Set the blue component and increment CSEL
-   237 = 31B0			SP2_CB2	equ *-1
-   238 31B1 C8				iny
-   239 31B2 D0 E8			bne LoadPal1_2						; Copy a page
-   240 31B4 B1 91		LoadPal1_3 lda (Y_Register),y
-   241 31B6 8D 46 00			sta.w VBXE_CR						; Set the red component
-   242 = 31B8			SP2_CR3	equ *-1
-   243 31B9 C8				iny
-   244 31BA B1 91			lda (Y_Register),y
-   245 31BC 8D 47 00			sta.w VBXE_CG						; Set the green component
-   246 = 31BE			SP2_CG3	equ *-1
-   247 31BF C8				iny
-   248 31C0			LP1_3_B
-   249 31C0 B1 91			lda (Y_Register),y
-   250 31C2 8D 48 00			sta.w VBXE_CB						; Set the blue component and increment CSEL
-   251 = 31C4			SP2_CB3	equ *-1
-   252 31C5 C8				iny
-   253 31C6 D0 EC			bne LoadPal1_3						; Copy a page
-   254 31C8 60				rts
-   255
-   256 31C9			OverFlow1
-   257 31C9 E6 92			inc Y_Register + 1
-   258 31CB 4C A4 31			jmp LP1_2_G
-   259 31CE			OverFlow2
-   260 31CE E6 92			inc Y_Register + 1
-   261 31D0 4C C0 31			jmp LP1_3_B
-   261 = 008F			VBXEBASE
-   261 = 0091			Y_REGISTER
-   261 = 31D3 00 00		PAL_PTR
+   204
+   205 				.ifdef	__VBXE_AUTO__
+   206 3166 A5 90			lda VBXEBase+1
+   207 3168 8D 8A 31			sta SP2_CR1							; SP2_xxN labels equ *-1 to the store's
+   208 316B 8D 92 31			sta SP2_CG1							; high-byte position already - no +1
+   209 316E 8D 98 31			sta SP2_CB1
+   210 3171 8D A0 31			sta SP2_CR2
+   211 3174 8D A8 31			sta SP2_CG2
+   212 3177 8D B0 31			sta SP2_CB2
+   213 317A 8D B8 31			sta SP2_CR3
+   214 317D 8D BE 31			sta SP2_CG3
+   215 3180 8D C4 31			sta SP2_CB3
+   216 3183 A9 00			lda #$00							; Patching above clobbered A - restore it,
+   217 				.endif									; tay below needs #$00 to zero the loop index
+   218
+   219 3185 A8				tay
+   220 3186 B1 91		LoadPal1_1 lda (Y_Register),y
+   221 3188 8D 46 00			sta.w VBXE_CR						; Set the red component
+   222 = 318A			SP2_CR1	equ *-1
+   223 318B C8				iny
+   224 318C F0 3B			beq OverFlow1						; Since 256 / 3 is not even, we must skip to next section and resume at CG
+   225 318E B1 91			lda (Y_Register),y
+   226 3190 8D 47 00			sta.w VBXE_CG						; Set the green component
+   227 = 3192			SP2_CG1	equ *-1
+   228 3193 C8				iny
+   229 3194 B1 91			lda (Y_Register),y
+   230 3196 8D 48 00			sta.w VBXE_CB						; Set the blue component and increment CSEL
+   231 = 3198			SP2_CB1	equ *-1
+   232 3199 C8				iny
+   233 319A D0 EA			bne LoadPal1_1						; Copy a page
+   234 319C B1 91		LoadPal1_2 lda (Y_Register),y
+   235 319E 8D 46 00			sta.w VBXE_CR						; Set the red component
+   236 = 31A0			SP2_CR2	equ *-1
+   237 31A1 C8				iny
+   238 31A2 F0 10			beq LoadPal1_3
+   239 31A4			LP1_2_G
+   240 31A4 B1 91			lda (Y_Register),y
+   241 31A6 8D 47 00			sta.w VBXE_CG						; Set the green component
+   242 = 31A8			SP2_CG2	equ *-1
+   243 31A9 C8				iny
+   244 31AA F0 22			beq OverFlow2						; Since 256 / 3 is not even, we must skip to next section and resume at CB
+   245 31AC B1 91			lda (Y_Register),y
+   246 31AE 8D 48 00			sta.w VBXE_CB						; Set the blue component and increment CSEL
+   247 = 31B0			SP2_CB2	equ *-1
+   248 31B1 C8				iny
+   249 31B2 D0 E8			bne LoadPal1_2						; Copy a page
+   250 31B4 B1 91		LoadPal1_3 lda (Y_Register),y
+   251 31B6 8D 46 00			sta.w VBXE_CR						; Set the red component
+   252 = 31B8			SP2_CR3	equ *-1
+   253 31B9 C8				iny
+   254 31BA B1 91			lda (Y_Register),y
+   255 31BC 8D 47 00			sta.w VBXE_CG						; Set the green component
+   256 = 31BE			SP2_CG3	equ *-1
+   257 31BF C8				iny
+   258 31C0			LP1_3_B
+   259 31C0 B1 91			lda (Y_Register),y
+   260 31C2 8D 48 00			sta.w VBXE_CB						; Set the blue component and increment CSEL
+   261 = 31C4			SP2_CB3	equ *-1
+   262 31C5 C8				iny
+   263 31C6 D0 EC			bne LoadPal1_3						; Copy a page
+   264 31C8 60				rts
+   265
+   266 31C9			OverFlow1
+   267 31C9 E6 92			inc Y_Register + 1
+   268 31CB 4C A4 31			jmp LP1_2_G
+   269 31CE			OverFlow2
+   270 31CE E6 92			inc Y_Register + 1
+   271 31D0 4C C0 31			jmp LP1_3_B
+   271 = 008F			VBXEBASE
+   271 = 0091			Y_REGISTER
+   271 = 31D3 00 00		PAL_PTR
     89
     90 				;-----------------------------------------------------------------------------
     91 				; Clean up and exit
@@ -1631,7 +1641,7 @@ Source: bcbs.asm
    480 				; Step $07 - Load VBXE NTSC Palette so we can restore it on exit
    481 					org LOAD_ADDRESS + $300
    482 3300			.proc Load_Palette1
-   483 3300-3343> A9 80			lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
+   483 3300-3344> A9 80			lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
    484 3302				vbsta VBXE_MA_BSEL
 Macro: VBSTA [Source: vbxe_min.asm]
      2 3302 A0 5F			ldy #<VBXE_MA_BSEL
@@ -1665,7 +1675,7 @@ Source: init_vbxe.asm
    510 3323 60				rts									; Return controll to loader
    511
    512 3324			Load_Palette1_Message
-   513 3324 2C 6F 61 64 69 6E + 	.sb 'Loading vbxe_ntsc.pal           '
+   513 3324 2C 6F 61 64 69 6E + 	.sb 'Loading vbxe_ntsc.pal            '
    514
    515 				.endp
    516 02E2-02E3> 00 33			ini Load_Palette1
@@ -1677,7 +1687,7 @@ Source: init_vbxe.asm
    522 				; Step $08 - Load VBXE PAL Palette so we can restore it on exit
    523 					org LOAD_ADDRESS + $300
    524 3300			.proc Load_Palette2
-   525 3300-3348> A9 80			lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
+   525 3300-3349> A9 80			lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
    526 3302				vbsta VBXE_MA_BSEL
 Macro: VBSTA [Source: vbxe_min.asm]
      2 3302 A0 5F			ldy #<VBXE_MA_BSEL
@@ -1714,7 +1724,7 @@ Source: init_vbxe.asm
    555 3328 60				rts									; Return controll to loader
    556
    557 3329			Load_Palette2_Message
-   558 3329 2C 6F 61 64 69 6E + 	.sb 'Loading vbxe_pal.pal            '
+   558 3329 2C 6F 61 64 69 6E + 	.sb 'Loading vbxe_pal.pal             '
    559
    560 				.endp
    561 02E2-02E3> 00 33			ini Load_Palette2
@@ -2214,41 +2224,41 @@ Source: view1024.asm
    473 				; Data Tables go here
    474 				;-----------------------------------------------------------------------------
    475 34F3			Palettes								; Each entry must be $10 bytes!
-   476 34F3 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.PAL',$00,$00,$00,$00,$00
-   477 3503 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.PAL',$00,$00,$00,$00,$00
-   478 3513 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.PAL',$00,$00,$00,$00,$00
-   479 3523 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.PAL',$00,$00,$00,$00,$00
-   480 3533 44 32 3A 49 4D 47 + 	dta c'D2:IMG5.PAL',$00,$00,$00,$00,$00
-   481 3543 44 32 3A 49 4D 47 + 	dta c'D2:IMG6.PAL',$00,$00,$00,$00,$00
-   482 3553 44 32 3A 49 4D 47 + 	dta c'D2:IMG7.PAL',$00,$00,$00,$00,$00
-   483 3563 44 32 3A 49 4D 47 + 	dta c'D2:IMG8.PAL',$00,$00,$00,$00,$00
-   484 3573 44 32 3A 49 4D 47 + 	dta c'D2:IMG9.PAL',$00,$00,$00,$00,$00
-   485 3583 44 32 3A 49 4D 47 + 	dta c'D2:IMGA.PAL',$00,$00,$00,$00,$00
-   486 3593 44 32 3A 49 4D 47 + 	dta c'D2:IMGB.PAL',$00,$00,$00,$00,$00
+   476 34F3 44 3A 49 4D 47 31 + 	dta c'D:IMG1.PAL',$00,$00,$00,$00,$00,$00
+   477 3503 44 3A 49 4D 47 32 + 	dta c'D:IMG2.PAL',$00,$00,$00,$00,$00,$00
+   478 3513 44 3A 49 4D 47 33 + 	dta c'D:IMG3.PAL',$00,$00,$00,$00,$00,$00
+   479 3523 44 3A 49 4D 47 34 + 	dta c'D:IMG4.PAL',$00,$00,$00,$00,$00,$00
+   480 3533 44 3A 49 4D 47 35 + 	dta c'D:IMG5.PAL',$00,$00,$00,$00,$00,$00
+   481 3543 44 3A 49 4D 47 36 + 	dta c'D:IMG6.PAL',$00,$00,$00,$00,$00,$00
+   482 3553 44 3A 49 4D 47 37 + 	dta c'D:IMG7.PAL',$00,$00,$00,$00,$00,$00
+   483 3563 44 3A 49 4D 47 38 + 	dta c'D:IMG8.PAL',$00,$00,$00,$00,$00,$00
+   484 3573 44 3A 49 4D 47 39 + 	dta c'D:IMG9.PAL',$00,$00,$00,$00,$00,$00
+   485 3583 44 3A 49 4D 47 41 + 	dta c'D:IMGA.PAL',$00,$00,$00,$00,$00,$00
+   486 3593 44 3A 49 4D 47 42 + 	dta c'D:IMGB.PAL',$00,$00,$00,$00,$00,$00
    487 35A3			Colour									; Each entry must be $10 bytes!
-   488 35A3 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.MAP',$00,$00,$00,$00,$00
-   489 35B3 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.MAP',$00,$00,$00,$00,$00
-   490 35C3 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.MAP',$00,$00,$00,$00,$00
-   491 35D3 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.MAP',$00,$00,$00,$00,$00
-   492 35E3 44 32 3A 49 4D 47 + 	dta c'D2:IMG5.MAP',$00,$00,$00,$00,$00
-   493 35F3 44 32 3A 49 4D 47 + 	dta c'D2:IMG6.MAP',$00,$00,$00,$00,$00
-   494 3603 44 32 3A 49 4D 47 + 	dta c'D2:IMG7.MAP',$00,$00,$00,$00,$00
-   495 3613 44 32 3A 49 4D 47 + 	dta c'D2:IMG8.MAP',$00,$00,$00,$00,$00
-   496 3623 44 32 3A 49 4D 47 + 	dta c'D2:IMG9.MAP',$00,$00,$00,$00,$00
-   497 3633 44 32 3A 49 4D 47 + 	dta c'D2:IMGA.MAP',$00,$00,$00,$00,$00
-   498 3643 44 32 3A 49 4D 47 + 	dta c'D2:IMGB.MAP',$00,$00,$00,$00,$00
+   488 35A3 44 3A 49 4D 47 31 + 	dta c'D:IMG1.MAP',$00,$00,$00,$00,$00,$00
+   489 35B3 44 3A 49 4D 47 32 + 	dta c'D:IMG2.MAP',$00,$00,$00,$00,$00,$00
+   490 35C3 44 3A 49 4D 47 33 + 	dta c'D:IMG3.MAP',$00,$00,$00,$00,$00,$00
+   491 35D3 44 3A 49 4D 47 34 + 	dta c'D:IMG4.MAP',$00,$00,$00,$00,$00,$00
+   492 35E3 44 3A 49 4D 47 35 + 	dta c'D:IMG5.MAP',$00,$00,$00,$00,$00,$00
+   493 35F3 44 3A 49 4D 47 36 + 	dta c'D:IMG6.MAP',$00,$00,$00,$00,$00,$00
+   494 3603 44 3A 49 4D 47 37 + 	dta c'D:IMG7.MAP',$00,$00,$00,$00,$00,$00
+   495 3613 44 3A 49 4D 47 38 + 	dta c'D:IMG8.MAP',$00,$00,$00,$00,$00,$00
+   496 3623 44 3A 49 4D 47 39 + 	dta c'D:IMG9.MAP',$00,$00,$00,$00,$00,$00
+   497 3633 44 3A 49 4D 47 41 + 	dta c'D:IMGA.MAP',$00,$00,$00,$00,$00,$00
+   498 3643 44 3A 49 4D 47 42 + 	dta c'D:IMGB.MAP',$00,$00,$00,$00,$00,$00
    499 3653			Image									; Each entry must be $10 bytes!
-   500 3653 44 32 3A 49 4D 47 + 	dta c'D2:IMG1.RAW',$00,$00,$00,$00,$00
-   501 3663 44 32 3A 49 4D 47 + 	dta c'D2:IMG2.RAW',$00,$00,$00,$00,$00
-   502 3673 44 32 3A 49 4D 47 + 	dta c'D2:IMG3.RAW',$00,$00,$00,$00,$00
-   503 3683 44 32 3A 49 4D 47 + 	dta c'D2:IMG4.RAW',$00,$00,$00,$00,$00
-   504 3693 44 32 3A 49 4D 47 + 	dta c'D2:IMG5.RAW',$00,$00,$00,$00,$00
-   505 36A3 44 32 3A 49 4D 47 + 	dta c'D2:IMG6.RAW',$00,$00,$00,$00,$00
-   506 36B3 44 32 3A 49 4D 47 + 	dta c'D2:IMG7.RAW',$00,$00,$00,$00,$00
-   507 36C3 44 32 3A 49 4D 47 + 	dta c'D2:IMG8.RAW',$00,$00,$00,$00,$00
-   508 36D3 44 32 3A 49 4D 47 + 	dta c'D2:IMG9.RAW',$00,$00,$00,$00,$00
-   509 36E3 44 32 3A 49 4D 47 + 	dta c'D2:IMGA.RAW',$00,$00,$00,$00,$00
-   510 36F3 44 32 3A 49 4D 47 + 	dta c'D2:IMGB.RAW',$00,$00,$00,$00,$00
+   500 3653 44 3A 49 4D 47 31 + 	dta c'D:IMG1.RAW',$00,$00,$00,$00,$00,$00
+   501 3663 44 3A 49 4D 47 32 + 	dta c'D:IMG2.RAW',$00,$00,$00,$00,$00,$00
+   502 3673 44 3A 49 4D 47 33 + 	dta c'D:IMG3.RAW',$00,$00,$00,$00,$00,$00
+   503 3683 44 3A 49 4D 47 34 + 	dta c'D:IMG4.RAW',$00,$00,$00,$00,$00,$00
+   504 3693 44 3A 49 4D 47 35 + 	dta c'D:IMG5.RAW',$00,$00,$00,$00,$00,$00
+   505 36A3 44 3A 49 4D 47 36 + 	dta c'D:IMG6.RAW',$00,$00,$00,$00,$00,$00
+   506 36B3 44 3A 49 4D 47 37 + 	dta c'D:IMG7.RAW',$00,$00,$00,$00,$00,$00
+   507 36C3 44 3A 49 4D 47 38 + 	dta c'D:IMG8.RAW',$00,$00,$00,$00,$00,$00
+   508 36D3 44 3A 49 4D 47 39 + 	dta c'D:IMG9.RAW',$00,$00,$00,$00,$00,$00
+   509 36E3 44 3A 49 4D 47 41 + 	dta c'D:IMGA.RAW',$00,$00,$00,$00,$00,$00
+   510 36F3 44 3A 49 4D 47 42 + 	dta c'D:IMGB.RAW',$00,$00,$00,$00,$00,$00
    511 					
    512 				;-----------------------------------------------------------------------------
    513 				; 

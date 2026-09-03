@@ -75,8 +75,8 @@
 
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
-.def	V_1								= $10	; 0 (Screen code used for Version in loading screen)
-.def	V_2								= $19	; 9 (Screen code used for Version in loading screen)
+.def	V_1								= $11	; 0 (Screen code used for Version in loading screen)
+.def	V_2								= $10	; 9 (Screen code used for Version in loading screen)
 .def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
@@ -473,41 +473,41 @@ Enable_Colour_Map
 ; Data Tables go here
 ;-----------------------------------------------------------------------------
 Palettes								; Each entry must be $10 bytes!
-	dta c'D2:IMG1.PAL',$00,$00,$00,$00,$00
-	dta c'D2:IMG2.PAL',$00,$00,$00,$00,$00
-	dta c'D2:IMG3.PAL',$00,$00,$00,$00,$00
-	dta c'D2:IMG4.PAL',$00,$00,$00,$00,$00
-	dta c'D2:IMG5.PAL',$00,$00,$00,$00,$00
-	dta c'D2:IMG6.PAL',$00,$00,$00,$00,$00
-	dta c'D2:IMG7.PAL',$00,$00,$00,$00,$00
-	dta c'D2:IMG8.PAL',$00,$00,$00,$00,$00
-	dta c'D2:IMG9.PAL',$00,$00,$00,$00,$00
-	dta c'D2:IMGA.PAL',$00,$00,$00,$00,$00
-	dta c'D2:IMGB.PAL',$00,$00,$00,$00,$00
+	dta c'D:IMG1.PAL',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG2.PAL',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG3.PAL',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG4.PAL',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG5.PAL',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG6.PAL',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG7.PAL',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG8.PAL',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG9.PAL',$00,$00,$00,$00,$00,$00
+	dta c'D:IMGA.PAL',$00,$00,$00,$00,$00,$00
+	dta c'D:IMGB.PAL',$00,$00,$00,$00,$00,$00
 Colour									; Each entry must be $10 bytes!
-	dta c'D2:IMG1.MAP',$00,$00,$00,$00,$00
-	dta c'D2:IMG2.MAP',$00,$00,$00,$00,$00
-	dta c'D2:IMG3.MAP',$00,$00,$00,$00,$00
-	dta c'D2:IMG4.MAP',$00,$00,$00,$00,$00
-	dta c'D2:IMG5.MAP',$00,$00,$00,$00,$00
-	dta c'D2:IMG6.MAP',$00,$00,$00,$00,$00
-	dta c'D2:IMG7.MAP',$00,$00,$00,$00,$00
-	dta c'D2:IMG8.MAP',$00,$00,$00,$00,$00
-	dta c'D2:IMG9.MAP',$00,$00,$00,$00,$00
-	dta c'D2:IMGA.MAP',$00,$00,$00,$00,$00
-	dta c'D2:IMGB.MAP',$00,$00,$00,$00,$00
+	dta c'D:IMG1.MAP',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG2.MAP',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG3.MAP',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG4.MAP',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG5.MAP',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG6.MAP',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG7.MAP',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG8.MAP',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG9.MAP',$00,$00,$00,$00,$00,$00
+	dta c'D:IMGA.MAP',$00,$00,$00,$00,$00,$00
+	dta c'D:IMGB.MAP',$00,$00,$00,$00,$00,$00
 Image									; Each entry must be $10 bytes!
-	dta c'D2:IMG1.RAW',$00,$00,$00,$00,$00
-	dta c'D2:IMG2.RAW',$00,$00,$00,$00,$00
-	dta c'D2:IMG3.RAW',$00,$00,$00,$00,$00
-	dta c'D2:IMG4.RAW',$00,$00,$00,$00,$00
-	dta c'D2:IMG5.RAW',$00,$00,$00,$00,$00
-	dta c'D2:IMG6.RAW',$00,$00,$00,$00,$00
-	dta c'D2:IMG7.RAW',$00,$00,$00,$00,$00
-	dta c'D2:IMG8.RAW',$00,$00,$00,$00,$00
-	dta c'D2:IMG9.RAW',$00,$00,$00,$00,$00
-	dta c'D2:IMGA.RAW',$00,$00,$00,$00,$00
-	dta c'D2:IMGB.RAW',$00,$00,$00,$00,$00
+	dta c'D:IMG1.RAW',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG2.RAW',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG3.RAW',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG4.RAW',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG5.RAW',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG6.RAW',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG7.RAW',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG8.RAW',$00,$00,$00,$00,$00,$00
+	dta c'D:IMG9.RAW',$00,$00,$00,$00,$00,$00
+	dta c'D:IMGA.RAW',$00,$00,$00,$00,$00,$00
+	dta c'D:IMGB.RAW',$00,$00,$00,$00,$00,$00
 	
 ;-----------------------------------------------------------------------------
 ; 
