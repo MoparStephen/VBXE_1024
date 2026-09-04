@@ -1,0 +1,6 @@
+/Convertor/Samples
+/.venv
+__pycache__/
+
+# Converter output: generated, and one preview run can add dozens of files.
+/Convertor/out/

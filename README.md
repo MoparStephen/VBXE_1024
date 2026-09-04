@@ -106,6 +106,158 @@ python3 palettize4.py myart.png --out build --colors 960
 
 ---
 
+## The GUI — VBXE PAL Studio
+
+Four of the options above — `--dither`, `--dither-strength`, `--color-bias`
+and `--coherence` — cannot be judged from a number. You have to look at the
+result, and from a command line that means edit, re-run, open the PNG, and try
+to remember what the last one looked like. `Convertor/palgui/` is a PySide6
+front end that closes that loop.
+
+```
+run_palgui.cmd            (Windows — works from anywhere, including Explorer)
+./run_palgui.sh           (elsewhere)
+```
+
+Both force the venv's interpreter and `Convertor` as the working directory;
+by hand it is `cd Convertor && ..\.venv\Scripts\python -m palgui`. One-off
+setup:
+
+```
+python -m venv .venv
+.venv\Scripts\python -m pip install PySide6 Pillow numpy scipy
+```
+
+The venv needs **numpy, Pillow and scipy as well as Qt**, because Preview
+shells out to `palettize4.py` under the same interpreter. Miss scipy and
+everything works until the first dithered run.
+
+**Preview runs the real converter.** It shells out to `palettize4.py --json`
+into a scratch directory and shows the `{name}_preview.png` it wrote, so what
+is on screen is byte for byte what Convert will put on disk — there is no
+second implementation of the packer in the GUI that could drift away from this
+one. The GUI drives the converter entirely through the `--quiet` / `--json` /
+`{name}_stats.json` interface described under *Scripting / batch use* below,
+plus `resize_image()` imported as a function — it holds no copy of the packing
+logic. (The one change the GUI prompted inside `palettize4.py` was the
+diagonal-at-a-time error diffusion described under *Dithering*, which speeds up
+the CLI equally and leaves its output unchanged.)
+
+What it adds over the command line:
+
+- **A flip, not a side-by-side.** Source and result share one zoom and one pan,
+  and hold SPACE (or press A / B) to swap them in place. Two pictures six
+  inches apart tell you almost nothing about a dither; one that swaps under the
+  same magnifier turns the difference into motion. The source pane shows the
+  image *resampled the way the run will resample it*, so the flip compares a
+  dither rather than a resize. Nearest-neighbour at every zoom — a smooth scale
+  is precisely a filter for removing the grain you are trying to judge.
+- **The numbers, ranked.** Colours out against the budget, what the loss cost,
+  then the duplication and component figures that explain why you did not get
+  more — with the README's own advice attached when they point somewhere.
+- **The four palettes**, read back out of the `.pal` files, with unused slots
+  hatched so 12/255 cannot be mistaken for 254/255.
+- **A warning when `--dither` did nothing.** Dithering only happens inside the
+  pre-quantization branch, so on a source already within the budget the flag is
+  accepted and ignored. Without the warning, comparing three dithers on a piece
+  of pixel art gives three identical pictures and no explanation.
+- **One folder per image.** A conversion writes into `out/<name>/` rather than
+  dropping eleven files into a flat `out/`, so converting a second picture
+  cannot bury or overwrite the first. The `Copy command line` button and the
+  `run with` block both name that folder, so the line still reproduces the run
+  when you paste it.
+- **Preview snapshots** (off by default, a tick box under *Output*). Every
+  Preview then leaves a numbered pair in `out/<name>/previews/`:
+  `Preview_01.png`, the converted 320x240 picture with its exact colours, and
+  `Preview_01.txt`, holding the command line that would reproduce it, every row
+  of the Result tab, and `palettize4`'s own report in full. This is what makes
+  a dither comparison survive the afternoon — a preview otherwise lives in a
+  scratch directory the next one overwrites. Numbering is max + 1, so deleting
+  `Preview_02` never causes a later run to overwrite `Preview_03`. The `.txt`
+  ends with a `[data]` line holding the settings and the stats verbatim, so the
+  pair can be read back in full — see below.
+- **Stepping back through a folder of previews** (the *Previews* panel, or
+  `File > Browse previews...`). Point it at an `out/<image>/previews` directory
+  and every pair becomes a row. Landing on one puts its picture in the middle
+  pane, its summary in the Report tab, its numbers in the Result tab **and its
+  settings back in the options panel** — so when one of thirty wins, `Convert`
+  is the next click. `Alt+Left` / `Alt+Right` (or the toolbar arrows) step
+  without moving your eye off the picture; they walk the queue's finished jobs
+  instead when no previews are loaded. Snapshots written before the `[data]`
+  footer existed still give back every setting, because the command line in
+  them is parsed — only their numbers are missing, and the row says so rather
+  than showing a blank.
+- **How far the result is from the ideal, and how blocky.** Every run now
+  measures the picture the viewer will show against the same image resized and
+  reduced to the same colours but with *no* 8-pixel cell restriction — the
+  result the hardware is not allowed to produce. `RMSE` / `PSNR` say how far
+  apart they are; `cells damaged` says how much of the picture sits inside a
+  compromised cell; `cell seams` says whether the cell grid has become
+  **visible**, as a multiple of the seam the ideal image already had (`1.00x` =
+  the grid added nothing). Queue one image at three colour biases and read the
+  trade straight off the result column: the colour count climbs while the dB
+  falls. This is the number for choosing 700 clean colours over 900 blocky
+  ones — **RMSE and PSNR cannot see blockiness**, because the same total error
+  scores the same whether it lands as noise or as stripes.
+- **A batch queue, with two ways to run it.** Queue the same image several
+  times with different dithers, or a set of images with one recipe, and read
+  the colour counts down the table. Clicking a finished row brings back
+  everything it produced — its picture, its report and its settings — so a
+  batch is something you walk through afterwards rather than a column of
+  numbers.
+  - **Run all** converts: one output directory per image. A conversion is
+    named after its image, so *fifteen jobs on one picture all write the same
+    eleven filenames* and you keep only the last. The queue says so before you
+    press it rather than after.
+  - **Preview all** (`Ctrl+F5`) runs the same jobs as previews and keeps a
+    numbered snapshot of each, so all fifteen survive side by side in
+    `out/<image>/previews/` — and the Previews panel opens on them when the
+    queue finishes. This is the one to use for comparing variants of a single
+    image. It switches the snapshot tick box on if it is off, because
+    otherwise the run would keep nothing.
+- **A queue is a file, and a file is a script.** `Save...` / `Load...` in the
+  queue panel (also `File > Save queue...`) write a `.json` holding the jobs
+  and deliberately *not* their results — a stale colour count from a source
+  that has since been edited would be a lie that looks exactly like a fact.
+  **`Retarget...`** points every job in the queue at a different image and
+  clears each job's output name, so one saved experiment runs over any
+  picture: load, retarget, Preview all, step through.
+- **Presets** (`Convertor/palgui/presets/*.json`, a recipe without the paths)
+  and a **Copy command line** button that puts the equivalent
+  `palettize4.py ...` invocation on the clipboard.
+- **Panels you cannot lose.** All five docks are closable, and `View > Panels`
+  lists them as checkable items (plus `Show all`); `View > Reset panels` puts
+  the whole layout back where it started. The arrangement, the window geometry
+  and the snapshot tick box are remembered between sessions.
+
+**The GUI targets one hardware configuration and does not offer the four flags
+that would change it.** `--resize` is fixed at `320x240`, `--cell` at `8`,
+`--palettes` at `4` and `--slots` at `256`, because that is the mode the VBXE
+viewer runs; a conversion at any other setting produces files it cannot
+display, so those controls could only ever be used by accident. The panel
+states them instead. `--filter`, `--fit` and `--display-aspect` are still
+controls, because *how* a source is fitted into 320x240 remains a real choice.
+Everything else — a wider cell, a cut-down palette, the 2:1-pixel `160x240`
+mode — is still available from `palettize4.py` on the command line, which is
+unchanged.
+
+Checking an install:
+
+```
+run_palgui.cmd --selftest                              # builds every pane offscreen,
+                                                       #   runs one real conversion
+cd Convertor && python -m unittest discover -s palgui/tests -t .
+```
+
+The selftest writes only into temporary directories; it never touches `out/`.
+
+The tests run on the **system Python with nothing installed** — nothing below
+`palgui/ui/` imports Qt. One of them scrapes `palettize4.py --help` and fails
+if the GUI cannot produce a flag the converter offers, which is what will catch
+a twenty-second option being added here and forgotten there.
+
+---
+
 ## Input formats
 
 The input does **not** have to be a PNG. The file is opened with Pillow and
@@ -148,7 +300,9 @@ Two families are available:
 - **Error-diffusion** — `floyd` (classic), `atkinson` (gentlest), `jjn`, `stucki`,
   `sierra`, `burkes`. Smooth and organic, but can leave faint random colour
   speckle, and because it concentrates error into some cells, occasionally
-  produces a stray recoloured pixel after packing. Sequential, so slower (~3s).
+  produces a stray recoloured pixel after packing. Sequential in principle, but
+  computed a diagonal at a time rather than a pixel at a time (see below), so
+  it is no longer the slow option it was.
 - **Ordered** — `bayer2/4/8` (fast, deterministic, but show a regular grid
   texture) and **`blue`** (blue-noise via void-and-cluster). Vectorized and fast.
 
@@ -162,6 +316,16 @@ testing). The mask is generated once and cached, so bulk runs stay fast.
 ```
 python palettize4.py plasma.png --out build --dither blue
 ```
+
+**Why error diffusion is not slow any more.** Each pixel's error goes to
+neighbours below and to the right, so the obvious implementation is a per-pixel
+Python loop with one nearest-colour query each — which on an 800×600 source took
+about 7 seconds. Numbering the diagonals `k = x + 3y` puts every pixel a given
+pixel depends on strictly earlier, so a whole diagonal can be resolved in one
+vectorized step. That is ~15x faster (800×600 floyd: 6.8s → 0.4s) for
+**byte-identical output** — the diagonals impose the same read ordering the
+scan did. The tests check the fast path against a plain serial implementation
+on every kernel, so the two cannot drift apart.
 
 `--dither-strength` scales the effect: for error-diffusion it's the fraction of
 error diffused; for ordered/blue it scales the perturbation amplitude (1.0 is a
@@ -210,8 +374,41 @@ Colour count and per-pixel accuracy trade off against each other, controlled by
 
 The bias slider chooses how to spend the slot budget: low bias spends slots on
 duplicates (exact colours, no blocks, fewer distinct colours); high bias spends
-them on distinct colours (more colours, more recolouring). Check `recoloured
-pixels` / `mean OKLab error` in the report to judge a given bias.
+them on distinct colours (more colours, more recolouring).
+
+To judge a given bias, read the report's **`accuracy vs the ideal`** block
+rather than `mean OKLab error` on its own — that one averages over *recoloured
+pixels only*, so it can fall while a run gets worse simply because the run
+recoloured more pixels more gently. The block compares the displayed image
+against the same image quantized to the same colours with no cell restriction,
+so the quantization loss cancels and what remains is exactly what the 8-pixel
+cell cost:
+
+```
+accuracy vs the ideal (what the 8-px cell rule cost):
+  identical pixels   : 75016 / 76800  (97.68% of opaque px)
+  RMSE (sRGB)        : 2.84     <- the norm distance
+  PSNR               : 39.1 dB
+  mean OKLab error   : 0.0006  (every pixel, not just the recoloured ones)
+  worst OKLab error  : 0.2009
+  cells damaged      : 674 / 9600  (7.0%)
+  cell seams         : 1.38x
+```
+
+`cell seams` is the blockiness measure, and it is the reason the block exists:
+the run above scores 39 dB and damages only 7% of its cells, yet its cell
+boundaries jump **38% harder than the ideal's do**, which is visible striping.
+No distance metric can report that — the same total error scores identically
+whether it arrives as scattered noise or as 8-pixel stripes — so the ratio of
+the jump across cell boundaries to the jump everywhere else is measured
+directly, and divided by the same ratio taken on the ideal so that a source
+with genuine vertical edges on the 8-pixel grid does not read as blocky when
+nothing went wrong. Letterbox pixels are excluded from every count.
+
+In practice: `1.0x`–`1.1x` shows nothing, and past roughly `1.3x` the grid is
+plain. Raising the bias buys colours and spends seams; lowering it does the
+reverse. (Both notes appear in the GUI's Result tab and will therefore give you
+opposite advice at once — that contradiction *is* the trade.)
 
 **Block artifacts and `--coherence`.** When `--color-bias > 0`, the attribute map
 is built by repeatedly assigning each cell to the palette that minimizes the
@@ -303,6 +500,17 @@ text report and read `{name}_stats.json` (always written) for results, or use
 `master_colours`, `recoloured_pixels`, `recoloured_pct`, `mean_oklab_error`,
 `strategy`, `color_bias`, `coherence`, `duplicated_across_palettes`, `lossless`,
 `per_palette`, and a `files` map of every output filename produced.
+
+`ideal_vs_output` is a nested object holding the accuracy block described
+above: `compared_pixels`, `identical_pixels`, `identical_pct`, `rgb_rmse`,
+`psnr_db`, `mean_oklab_error`, `max_oklab_error`, `cells_compared`,
+`cells_damaged`, `cells_damaged_pct` and `seam_index`. It is nested rather than
+flattened because `mean_oklab_error` already exists at the top level meaning
+something narrower (recoloured pixels only). `psnr_db` is `null` — not
+`Infinity`, which is not valid JSON — when the output is identical to the
+ideal, and `seam_index` is `null` for an image with no column detail to
+measure. `identical_pixels + recoloured_pixels == compared_pixels` always
+holds, because a pixel whose colour was not substituted is reproduced exactly.
 
 ### Index / scan ordering details
 - **`{name}.raw`** is laid out one full scanline at a time, left to right, top to

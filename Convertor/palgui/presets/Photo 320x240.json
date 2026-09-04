@@ -1,0 +1,19 @@
+{
+  "_name": "Photo 320x240",
+  "cell": 8,
+  "coherence": 1.5,
+  "color_bias": 0.0,
+  "colors": 0,
+  "display_aspect": "4:3",
+  "dither": "none",
+  "dither_strength": 1.0,
+  "filter": "lanczos",
+  "fit": "cover",
+  "max_colors": false,
+  "optimize": true,
+  "palettes": 4,
+  "reserve0": true,
+  "resize": "320x240",
+  "seed": 0,
+  "slots": 256
+}
