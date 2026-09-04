@@ -75,9 +75,9 @@
 
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
-.def	V_1								= $11	; 0 (Screen code used for Version in loading screen)
-.def	V_2								= $10	; 9 (Screen code used for Version in loading screen)
-.def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
+.def	V_1								= $11	; 1 (Screen code used for Version in loading screen)
+.def	V_2								= $10	; 0 (Screen code used for Version in loading screen)
+.def	V_3								= $61	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
 ; VBXE Helpers
@@ -408,7 +408,7 @@ Increment_Image
 	clc
 	lda File_Index
 	adc #$10
-	cmp #$B0							; Past index C
+	cmp #$C0							; Past index D
 	bcc Increment_Image_Valid
 	lda #$00							; Wrap to index 0
 Increment_Image_Valid
@@ -473,6 +473,7 @@ Enable_Colour_Map
 ; Data Tables go here
 ;-----------------------------------------------------------------------------
 Palettes								; Each entry must be $10 bytes!
+	dta c'D:IMG0.PAL',$00,$00,$00,$00,$00,$00
 	dta c'D:IMG1.PAL',$00,$00,$00,$00,$00,$00
 	dta c'D:IMG2.PAL',$00,$00,$00,$00,$00,$00
 	dta c'D:IMG3.PAL',$00,$00,$00,$00,$00,$00
@@ -485,6 +486,7 @@ Palettes								; Each entry must be $10 bytes!
 	dta c'D:IMGA.PAL',$00,$00,$00,$00,$00,$00
 	dta c'D:IMGB.PAL',$00,$00,$00,$00,$00,$00
 Colour									; Each entry must be $10 bytes!
+	dta c'D:IMG0.MAP',$00,$00,$00,$00,$00,$00
 	dta c'D:IMG1.MAP',$00,$00,$00,$00,$00,$00
 	dta c'D:IMG2.MAP',$00,$00,$00,$00,$00,$00
 	dta c'D:IMG3.MAP',$00,$00,$00,$00,$00,$00
@@ -497,6 +499,7 @@ Colour									; Each entry must be $10 bytes!
 	dta c'D:IMGA.MAP',$00,$00,$00,$00,$00,$00
 	dta c'D:IMGB.MAP',$00,$00,$00,$00,$00,$00
 Image									; Each entry must be $10 bytes!
+	dta c'D:IMG0.RAW',$00,$00,$00,$00,$00,$00
 	dta c'D:IMG1.RAW',$00,$00,$00,$00,$00,$00
 	dta c'D:IMG2.RAW',$00,$00,$00,$00,$00,$00
 	dta c'D:IMG3.RAW',$00,$00,$00,$00,$00,$00
