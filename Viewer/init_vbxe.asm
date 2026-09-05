@@ -67,33 +67,14 @@ NTSC_Detected
 	sta Step1_Message + $75				; Set text in Row 2 of Step1_Message
 	lda #$01
 
-; Check for SDX
+; If SpartaDOS X has its 64/80-column soft console up (CON.SYS / CON64.SYS on a
+; base such as S_VBXE.SYS), drop it to the standard 40-column OS editor. The
+; original mode is put back by SDX_Console_Restore in Cleanup_Exit.
 Check_SDX
 	sta Video_Flag						; Save for later
-	lda $0700
-	cmp #$53							; ASCII S
-	bne SDX_No
-	lda $0701
-	cmp #$44							; ASCII D
-	bne SDX_No
 
-; Use IOCB channel 2 to force a CON 40 call
-SDX_Yes
-	ldx #$20							; Channel 2
-	lda #$50
-	sta ICCMD,x
-	lda #<Device
-	sta ICBAL,x
-	lda #>Device
-	sta ICBAH,x
-	lda #$0C							; Read + Write
-	sta ICAX1,x							; Aux1
-	lda #$40
-	sta ICAX2,x							; Aux2
-	jsr CIOV
+	jsr SDX_Console_Save_And_40
 
-; TODO: Close Channel #2 (and do this in the APOD viewer as well)
-SDX_No
 	lda #$00
 	sta LMARGIN
 
@@ -148,8 +129,6 @@ Step1_Message							; Internal screen codes
 	.byte $41,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$44
 	.byte $7C,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$7C
 	.byte $5A,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$52,$43
-Device
-	dta c"E:",$9B
 .endp
 	ini Step_1
 
@@ -564,6 +543,222 @@ Load_Palette2_Message
 Palette2
 	ins 'vbxe_pal.pal'
 
+; Step $08b - Scan D:*.MAP and build the image name list in VBXE bank IMAGE_BANK
+	org LOAD_ADDRESS + $300
+.proc Scan_Images
+	lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
+	vbsta VBXE_MA_BSEL
+
+; Print Scan_Message - line 3 (y = $79)
+	ldy #$79
+	ldx #$00
+Print_Scan_Message_L1
+	lda Scan_Message,x
+	sta (Ptr_Lo),y
+	inx
+	iny
+	cpx #$21							; Copy $21 characters
+	bne Print_Scan_Message_L1
+
+	jsr Build_Image_List				; Fills IMAGE_BANK, sets ImageCount
+
+	jsr Sort_Image_List					; (future UI option: alphabetical order)
+
+	lda ImageCount
+	ora ImageCount+1
+	bne Scan_Images_Done				; At least one image - carry on
+
+; No images: mirror the VBXE-not-found path (still safe here, pre-start)
+	ldy #$42							; Dark Red
+	sty COLOR2
+
+	ldy #$79
+	ldx #$00
+Print_No_Images_L1
+	lda No_Images_Message,x
+	sta (Ptr_Lo),y
+	inx
+	iny
+	cpx #$21							; Copy $21 characters
+	bne Print_No_Images_L1
+
+	jsr Wait_For_Key_Exit
+	jmp Cleanup_Exit
+
+Scan_Images_Done
+	lda #$FF
+	sta CH
+
+	rts									; Return controll to loader
+
+;-----------------------------------------------------------------------------
+; Build_Image_List - OPEN D:*.MAP as a directory (the wildcard filters), GET
+; each line, and pack every base name as an 8-byte space-padded record into
+; IMAGE_BANK (mapped through the $2000 window). ImageCount = entries stored.
+; Ported from getdir.asm, minus the per-line screen echo.
+;-----------------------------------------------------------------------------
+Build_Image_List
+	lda #$00
+	sta ImageCount
+	sta ImageCount+1
+
+	jsr Find_First_IOCB
+	cpy #$01
+	beq Build_Image_List_Have_IOCB
+	rts									; No free IOCB - ImageCount stays 0
+Build_Image_List_Have_IOCB
+	stx Dir_IOCB
+
+	lda #CIO_dir
+	sta ICAX1,x
+	lda #<Dir_Spec
+	sta ICBAL,x
+	lda #>Dir_Spec
+	sta ICBAH,x
+	lda #CIO_open
+	sta ICCOM,x
+	jsr CIOV
+	bmi Build_Image_List_Done			; OPEN failed - nothing to scan
+
+	lda #IMAGE_BANK | MEMAC_GLOBAL_ENABLE
+	vbsta VBXE_MA_BSEL
+	mwa #ImageNames Name_Ptr
+
+Build_Image_List_L1
+	ldx Dir_IOCB
+	lda #CIO_gettext
+	sta ICCOM,x
+	lda #<Dir_Line_Buf
+	sta ICBAL,x
+	lda #>Dir_Line_Buf
+	sta ICBAH,x
+	lda #<Dir_Line_Len
+	sta ICBLL,x
+	lda #>Dir_Line_Len
+	sta ICBLH,x
+	jsr CIOV
+	bmi Build_Image_List_Close			; Negative status (EOF or error) - done
+
+; Table full? Compare the write cursor to the end of the reserved space
+	lda Name_Ptr+1
+	cmp #>ImageNames_End
+	bcc Build_Image_List_Room
+	bne Build_Image_List_L1				; Hi byte over end - full, skip storing
+	lda Name_Ptr
+	cmp #<ImageNames_End
+	bcs Build_Image_List_L1				; At/past end - full
+Build_Image_List_Room
+	jsr Parse_Dir_Line
+	beq Build_Image_List_L1				; A=0 - not a real filename
+
+	inc ImageCount
+	bne Build_Image_List_Adv
+	inc ImageCount+1
+Build_Image_List_Adv
+	lda Name_Ptr
+	clc
+	adc #$08
+	sta Name_Ptr
+	bcc Build_Image_List_L1
+	inc Name_Ptr+1
+	jmp Build_Image_List_L1
+
+Build_Image_List_Close
+	ldx Dir_IOCB
+	lda #CIO_close
+	sta ICCOM,x
+	jsr CIOV
+
+	lda #MEMAC_GLOBAL_DISABLE			; Give the CPU back $2000-$2FFF
+	vbsta VBXE_MA_BSEL
+Build_Image_List_Done
+	rts
+
+;-----------------------------------------------------------------------------
+; Parse_Dir_Line - pull the base filename out of one Dir_Line_Buf entry and
+; write it space-padded to exactly 8 bytes at Name_Ptr. Skips leading spaces
+; and the '*' protect flag; stops the name at space/'.'/EOL. Rejects an
+; all-digit "name" (the trailing "nnn FREE SECTORS" line).
+;  returns A = $01 if a name was written, $00 if not.
+; Ported verbatim from getdir.asm (Reg1 is already declared in view1024.asm).
+;-----------------------------------------------------------------------------
+Parse_Dir_Line
+	ldx #$00							; X = source index into Dir_Line_Buf
+Parse_Skip_L1							; Skip leading spaces / protect flag
+	lda Dir_Line_Buf,x
+	cmp #$9B
+	beq Parse_Dir_Line_Reject			; Hit EOL before any name
+	cmp #' '
+	beq Parse_Skip_Next
+	cmp #'*'
+	bne Parse_Skip_Done
+Parse_Skip_Next
+	inx
+	cpx #Dir_Line_Len
+	bcc Parse_Skip_L1
+	bcs Parse_Dir_Line_Reject			; Ran off the end
+Parse_Skip_Done
+	ldy #$00							; Y = dest index into the entry slot (0-7)
+	lda #$00
+	sta Reg1							; Reg1 = "saw a non-digit name char" flag
+
+Parse_Copy_L1
+	lda Dir_Line_Buf,x
+	cmp #$9B
+	beq Parse_Copy_Done
+	cmp #' '
+	beq Parse_Copy_Done
+	cmp #'.'
+	beq Parse_Copy_Done
+	cmp #'0'
+	bcc Parse_Copy_Is_Name_Char
+	cmp #'9'+1
+	bcs Parse_Copy_Is_Name_Char
+	jmp Parse_Copy_Store				; '0'-'9' - a digit, don't set Reg1
+Parse_Copy_Is_Name_Char
+	inc Reg1
+Parse_Copy_Store
+	cpy #$08							; Slot bytes 0-7 hold up to 8 name chars
+	bcs Parse_Copy_Next					; Name already full - keep scanning
+	lda Dir_Line_Buf,x
+	sta (Name_Ptr),y
+	iny
+Parse_Copy_Next
+	inx
+	cpx #Dir_Line_Len
+	bcc Parse_Copy_L1
+
+Parse_Copy_Done
+	lda Reg1
+	beq Parse_Dir_Line_Reject			; All digits - e.g. "nnn FREE SECTORS"
+
+Parse_Pad_L1							; Right-pad the slot to a fixed 8 bytes
+	cpy #$08
+	bcs Parse_Dir_Line_Accept
+	lda #' '
+	sta (Name_Ptr),y
+	iny
+	bne Parse_Pad_L1
+
+Parse_Dir_Line_Accept
+	lda #$01							; Non-zero - a name was stored
+	rts
+
+Parse_Dir_Line_Reject
+	lda #$00
+	rts
+
+Dir_Spec
+	dta c'D:*.MAP',$9B					; Wildcard - DOS does the filtering
+
+Scan_Message
+	.sb 'Scanning disk for images         '
+No_Images_Message
+	.sb 'No images found - press any key   '
+
+.endp
+	ini Scan_Images
+
 ; Step $09 - Print instructions
 	org LOAD_ADDRESS + $300
 .proc Wait_Start
@@ -586,7 +781,7 @@ Wait_Start_L1
 	rts									; Return controll to loader
 
 Wait_Start_Message
-	.sb '  Space to cycle images or Q to Quit  '
+	.sb ' Space/BkSp next/prev image    Q quit '
 
 .endp
 	ini Wait_Start

@@ -2,7 +2,7 @@
 	"comment": "Altirra configuration file.",
 
 	"_1": "Which asm file is to be compiled?",
-	"input": "Viewer\\getdir.asm",
+	"input": "Viewer\\view1024.asm",
 
 	"_2": "Array of folders that will be searched when files are .include(d)",
 	"includes": [
