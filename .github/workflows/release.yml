@@ -1,0 +1,49 @@
+name: Release Windows app
+
+# Tag a commit v1.2.3 and push the tag:
+#   git tag v0.1.0 && git push origin v0.1.0
+# This builds dist/VBXE PAL Studio/ on a Windows runner and attaches the zip to
+# a GitHub Release. Nothing runs on ordinary pushes.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}      # allow a manual run from the Actions tab
+
+permissions:
+  contents: write            # create the Release and upload the asset
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build
+        shell: pwsh
+        run: ./build_app.ps1
+
+      - name: Locate zip
+        id: zip
+        shell: pwsh
+        run: |
+          $z = Get-ChildItem -Path . -Filter 'VBXE PAL Studio v*.zip' | Select-Object -First 1
+          if (-not $z) { throw 'no zip produced' }
+          "path=$($z.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VBXE-PAL-Studio-windows
+          path: ${{ steps.zip.outputs.path }}
+
+      - name: Publish Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.zip.outputs.path }}
+          generate_release_notes: true

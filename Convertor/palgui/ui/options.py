@@ -25,6 +25,7 @@ The panel never runs anything itself.
 """
 
 import os
+import sys
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox,
@@ -610,6 +611,8 @@ class OptionsPanel(QWidget):
 
 
 def _convertor_dir():
-    """Where palettize4.py and the sample images live - a sensible start dir."""
+    """Where palettize4 and the sample images live - a sensible start dir."""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(os.path.abspath(sys.executable))
     return os.path.dirname(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__))))

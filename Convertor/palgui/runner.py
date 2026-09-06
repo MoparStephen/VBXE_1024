@@ -28,10 +28,23 @@ import sys
 from . import summary
 
 
-#: palettize4.py lives one directory up from this package.
-CONVERTOR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REPO = os.path.dirname(CONVERTOR)
-SCRIPT = os.path.join(CONVERTOR, 'palettize4.py')
+#: FROZEN (a PyInstaller build) vs RUN FROM SOURCE.  Frozen, there is no
+#: palettize4.py on disk and sys.executable is the GUI exe rather than a Python
+#: interpreter: the converter ships as a sibling palettize4.exe, and the folder
+#: the app was unzipped into is the anchor for a relative --out.  From source,
+#: palettize4.py sits one directory up from this package and sys.executable is
+#: the venv's Python.
+FROZEN = getattr(sys, 'frozen', False)
+if FROZEN:
+    APPDIR = os.path.dirname(os.path.abspath(sys.executable))
+    CONVERTOR = APPDIR
+    REPO = APPDIR
+    SCRIPT = os.path.join(APPDIR, 'palettize4.py')       # source-mode only
+else:
+    APPDIR = None
+    CONVERTOR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    REPO = os.path.dirname(CONVERTOR)
+    SCRIPT = os.path.join(CONVERTOR, 'palettize4.py')
 
 #: The base name Preview runs use inside the scratch directory.  Fixed, so the
 #: scratch dir holds one set of files that get overwritten rather than growing
@@ -96,16 +109,35 @@ def script_path():
     return SCRIPT
 
 
+def converter_argv():
+    """The command prefix that runs the converter.
+
+    Frozen: [<appdir>\\palettize4.exe] - there is no interpreter to invoke and
+    no .py to hand it, the build ships the converter as its own exe.
+    From source: [sys.executable, palettize4.py] - the same interpreter running
+    the GUI, for the reason in the module docstring (not a bare `python`).
+    """
+    if FROZEN:
+        exe = os.path.join(APPDIR, 'palettize4.exe')
+        if not os.path.isfile(exe):
+            raise RunError('palettize4.exe is not next to the app (looked in %s)'
+                           % APPDIR)
+        return [exe]
+    return [sys.executable, script_path()]
+
+
 def build_command(settings, out=None, name=None, python=None):
-    """The full argv, interpreter first, ready for QProcess or subprocess.
+    """The full argv, converter first, ready for QProcess or subprocess.
 
     --quiet and --json are appended here rather than being Settings fields:
     every caller wants machine-readable stats on stdout and none of them has
     anywhere to put the human report, which palettize4 writes to
     {name}_report.txt regardless.
+
+    `python` forces the from-source form with a chosen interpreter (tests).
     """
-    python = python or sys.executable
-    return ([python, script_path()]
+    prefix = [python, script_path()] if python else converter_argv()
+    return (prefix
             + list(settings.to_argv(out=out, name=name))
             + ['--quiet', '--json'])
 
@@ -200,11 +232,17 @@ def palettize4():
     """
     global _p4
     if _p4 is None:
-        spec = importlib.util.spec_from_file_location('palettize4',
-                                                      script_path())
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        _p4 = mod
+        if FROZEN:
+            # Collected into the exe by the .spec (hiddenimports); there is no
+            # file to load_from_location.
+            import palettize4 as _mod
+            _p4 = _mod
+        else:
+            spec = importlib.util.spec_from_file_location('palettize4',
+                                                          script_path())
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            _p4 = mod
     return _p4
 
 

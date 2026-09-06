@@ -15,11 +15,20 @@ including paths, because a queue entry IS a job.
 import json
 import os
 import re
+import sys
 
 from .settings import RESIZE_FIXED, Settings
 
-PRESET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                          'presets')
+#: FROZEN (a PyInstaller build): presets live beside the exe, in the folder the
+#: user unzipped - writable and portable, unlike the read-only _internal\ tree
+#: this package is unpacked into.  From source: in the package, as before, so
+#: they diff and commit with the rest of the repo.
+if getattr(sys, 'frozen', False):
+    PRESET_DIR = os.path.join(os.path.dirname(os.path.abspath(sys.executable)),
+                              'presets')
+else:
+    PRESET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              'presets')
 
 #: The fields a preset does not carry.  See the docstring.
 NOT_A_RECIPE = ('input', 'out', 'name')
@@ -126,8 +135,16 @@ BUILTIN = {
 
 
 def ensure_builtins():
-    """Lay down the shipped presets if the directory has nothing in it."""
+    """Lay down the shipped presets if the directory has nothing in it.
+
+    A read-only PRESET_DIR (e.g. the app unpacked under Program Files) must not
+    take the whole GUI down on first launch - the app is perfectly usable with
+    no presets, and names() already tolerates the empty case.
+    """
     if names():
         return
     for name, fields in BUILTIN.items():
-        save(name, Settings(**fields))
+        try:
+            save(name, Settings(**fields))
+        except OSError:
+            return

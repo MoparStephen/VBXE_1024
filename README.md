@@ -132,6 +132,19 @@ The venv needs **numpy, Pillow and scipy as well as Qt**, because Preview
 shells out to `palettize4.py` under the same interpreter. Miss scipy and
 everything works until the first dithered run.
 
+### Standalone Windows build (no Python)
+
+For anyone who just wants to run it: download **`VBXE PAL Studio v<version>.zip`**
+from the [Releases](../../releases) page, unzip it anywhere writable (Desktop,
+Documents, a data drive — not `C:\Program Files`), and double-click
+**`VBXE PAL Studio.exe`**. No Python, no `pip`, no `PATH`, nothing to install.
+The same folder also has **`palettize4.exe`** — the converter with the exact
+options above, for the command line. Output lands in `VBXE PAL Studio\out\`,
+saved presets in `VBXE PAL Studio\presets\`.
+
+Building the zip yourself: `pwsh ./build_app.ps1` from the repo root, or push a
+`v*` tag to let GitHub Actions build it. See [`packaging/README.md`](packaging/README.md).
+
 **Preview runs the real converter.** It shells out to `palettize4.py --json`
 into a scratch directory and shows the `{name}_preview.png` it wrote, so what
 is on screen is byte for byte what Convert will put on disk — there is no
