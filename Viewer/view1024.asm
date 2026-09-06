@@ -146,6 +146,41 @@ Wait_For_Key_Exit_L1
 	beq Wait_For_Key_Exit_L1			; Wait for Key Press
 	rts									; Exit on  Key Press
 
+;-----------------------------------------------------------------------------
+; Restores VBXE Palette 0 based on NTSC/PAL test.
+; MUST stay in this resident block: Cleanup_Exit calls it, and Cleanup_Exit is
+; reached from the init-time abort paths (no images / VBXE not found) while the
+; main segment is not yet loaded.
+;-----------------------------------------------------------------------------
+Restore_Palette0
+	lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
+	vbsta VBXE_MA_BSEL
+
+	lda Video_Flag						; 0 = PAL, 1 = NTSC
+	bne Restore_Palette0_Setup_NTSC
+Restore_Palette0_Setup_PAL
+	lda <(VBXE_WINDOW + $0500)
+	sta Y_Register
+	lda >(VBXE_WINDOW + $0500)			; PAL_Palette = $00500 - $006FF
+	sta Y_Register + $01
+	jmp Restore_Palette0_SetPalette
+
+Restore_Palette0_Setup_NTSC
+	lda <(VBXE_WINDOW + $0200)
+	sta Y_Register
+	lda >(VBXE_WINDOW + $0200)			; NTSC_Palette = $00200 - $004FF
+	sta Y_Register + $01
+
+Restore_Palette0_SetPalette
+	lda #$00							; Set Palette 0
+	jsr VBXE_SetPalette2
+
+Restore_Palette0_Done
+	lda #MEMAC_GLOBAL_DISABLE			; USE CPU address space
+	vbsta VBXE_MA_BSEL
+
+	rts
+
 ; SpartaDOS X 40/80-column soft-console control (lives in the always-resident
 ; page-3 block so Step_1's ini-time call resolves to loaded code)
 	icl 'sdx_con.asm'
@@ -248,38 +283,6 @@ Clear_Screen_L1
 	bne Clear_Screen_L1					; Wait for blitter to finish
 	lda #$01
 	vbsta VBXE_BLITTER_START			; Start the blit
-	rts
-
-;-----------------------------------------------------------------------------
-; Restores VBXE Palette 0 based on NTSC/PAL test
-;-----------------------------------------------------------------------------
-Restore_Palette0
-	lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
-	vbsta VBXE_MA_BSEL
-
-	lda Video_Flag						; 0 = PAL, 1 = NTSC
-	bne Restore_Palette0_Setup_NTSC
-Restore_Palette0_Setup_PAL
-	lda <(VBXE_WINDOW + $0500)
-	sta Y_Register
-	lda >(VBXE_WINDOW + $0500)			; PAL_Palette = $00500 - $006FF
-	sta Y_Register + $01
-	jmp Restore_Palette0_SetPalette
-
-Restore_Palette0_Setup_NTSC
-	lda <(VBXE_WINDOW + $0200)
-	sta Y_Register
-	lda >(VBXE_WINDOW + $0200)			; NTSC_Palette = $00200 - $004FF
-	sta Y_Register + $01
-
-Restore_Palette0_SetPalette
-	lda #$00							; Set Palette 0
-	jsr VBXE_SetPalette2
-
-Restore_Palette0_Done
-	lda #MEMAC_GLOBAL_DISABLE			; USE CPU address space
-	vbsta VBXE_MA_BSEL
-
 	rts
 
 ;-----------------------------------------------------------------------------

@@ -562,7 +562,13 @@ Print_Scan_Message_L1
 
 	jsr Build_Image_List				; Fills IMAGE_BANK, sets ImageCount
 
-	jsr Sort_Image_List					; (future UI option: alphabetical order)
+;	jsr Sort_Image_List					; future UI option: alphabetical order.
+;										; Kept OFF - list stays in disk order. Do
+;										; NOT just uncomment: Sort_Image_List is in
+;										; the main segment, which is not loaded
+;										; during ini. Wire the sort in from start:
+;										; instead, or move it into the resident
+;										; .pages 3 block first.
 
 	lda ImageCount
 	ora ImageCount+1
