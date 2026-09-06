@@ -73,3 +73,10 @@ Actions tab (artifact only, no Release).
   same folder instead (~80 MB larger, no MERGE).
 - The GUI's `--selftest` is a from-source tool; it is not wired into the frozen
   build.
+- A build has been seen to fail once with `Exception: Qt plugin directory
+  '...PySide6/plugins' does not exist!` in the PySide6 hook, then succeed on a
+  `-Clean` rebuild against the same versions. If you hit it, rerun with
+  `pwsh ./build_app.ps1 -Clean`.
+- **Build on Python 3.10-3.13.** PyInstaller 6.x + PySide6 6.11 are not reliable
+  on 3.14 (the version the source venv uses). `build_app.ps1` picks a supported
+  interpreter automatically; the CI workflow pins 3.12.
