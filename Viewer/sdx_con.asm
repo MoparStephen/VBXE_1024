@@ -25,8 +25,9 @@
 ;                            extended console (back to 40 columns).
 ;   XIO nc,#0,12,128,"E:"  - AUX2 = 128 re-enables it.
 ;
-; Operates on IOCB #0, which the OS keeps open to E:/CON:. Needs the CIO
-; equates from equates.asm. No other dependencies - safe to icl from any build.
+; Operates on IOCB #0, which the OS keeps open to E:/CON:. Needs the CIO equates
+; plus ROWCRS/COLCRS/OLDROW/OLDCOL from equates.asm. No other dependencies -
+; safe to icl from any build.
 ;-----------------------------------------------------------------------------
 
 SDX_CON_IOCB	equ $00						; IOCB #0 - OS editor / CON:
@@ -85,13 +86,22 @@ SDX_Console_Restore
 	lda SDX_Con_Func						; 0 = no soft console at startup -> no-op
 	beq SDX_Console_Restore_Done
 
-	lda SDX_Con_WasExt						; $00 -> re-assert 40-col, $80 -> re-enable 64/80.
-	jsr SDX_Con_ModeCall					;   Re-issuing the XIO either way makes the soft
-											;   console re-init and redraw - including its
-											;   cursor.  Restoring CRSINH alone does NOT bring
-											;   the cursor back after the demo trashed the
-											;   display, so the 40-col path needs this too.
-	jsr SDX_Con_ClearScreen					; wipe the loader screen off it
+	lda SDX_Con_WasExt						; $00 -> re-assert 40-col, $80 -> re-enable 64/80
+	jsr SDX_Con_ModeCall
+
+	; SDX 4.50 User Guide 6.9.3: before quitting to DOS the driver's internal
+	; state must be reset by homing the cursor coords and THEN sending Clear
+	; Screen (125).  The mode call alone leaves the cursor block undrawn -
+	; CRSINH is already 0 but nothing has repainted it - until the console does
+	; a full-screen operation (the user sees it come back on the first DIR).
+	lda #$00
+	sta ROWCRS
+	sta COLCRS
+	sta COLCRS+1
+	sta OLDROW
+	sta OLDCOL
+	sta OLDCOL+1
+	jsr SDX_Con_ClearScreen					; ASCII 125 - resyncs the driver, redraws cursor
 SDX_Console_Restore_Done
 	rts
 
@@ -113,18 +123,25 @@ SDX_Con_ModeCall
 	jmp CIOV
 
 ;-----------------------------------------------------------------------------
-; SDX_Con_ClearScreen - send CLEAR (125) to IOCB #0 so the editor resyncs.
-; PUT BYTES with a zero buffer length makes CIO output the char in A.
+; SDX_Con_ClearScreen - PUT one byte, ATASCII 125 (Clear Screen), to IOCB #0.
+; A real 1-byte buffer, not the zero-length-outputs-A quirk, so it works the
+; same through the soft console's handler as through the ROM editor.
 ;-----------------------------------------------------------------------------
 SDX_Con_ClearScreen
 	ldx #SDX_CON_IOCB
 	lda #$0B								; PUT BYTES
 	sta ICCOM,x
-	lda #$00
+	lda #<SDX_Con_ClrChar
+	sta ICBAL,x
+	lda #>SDX_Con_ClrChar
+	sta ICBAH,x
+	lda #$01
 	sta ICBLL,x
+	lda #$00
 	sta ICBLH,x
-	lda #$7D								; ATASCII clear screen
 	jmp CIOV
 
+SDX_Con_ClrChar
+	dta $7D									; ATASCII clear screen
 SDX_Con_EDev
 	dta c"E:",$9B
