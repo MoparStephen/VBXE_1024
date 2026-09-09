@@ -134,3 +134,23 @@ BLT_FILL_COLOUR_MONO
 	dta $00								; Zoom
 	dta $00								; Pattern feature
 	dta $00								; Control (Mode 0 with NEXT bit Cleared)
+
+; Save-under rectangle copy for the text-window primitive (Text_Window_Save /
+; Text_Window_Restore).  A plain {glyph,attr} rect copy at screen pitch: step x
+; = 1, step y = TEXT_PITCH, MODE 0, And $FF.  Both address triplets plus Width-1
+; and Height-1 are patched per call; the two directions just swap Src <-> Dest.
+BLT_TEXT_RECT
+	dta $00,$00,$02						; Source address (PATCHED)
+	dta a(TEXT_PITCH)					; Source step y (160 - next row)
+	dta $01								; Source step x (1)
+	dta $00,$00,$02						; Destination address (PATCHED)
+	dta a(TEXT_PITCH)					; Destination step y (160 - next row)
+	dta $01								; Destination step x (1)
+	dta a($0000)						; Width-1  in BYTES (PATCHED = cells*2 - 1)
+	dta $00								; Height-1 (PATCHED = rows - 1)
+	dta $FF								; And mask ($FF -> straight copy)
+	dta $00								; Xor mask
+	dta $00								; Collision and mask
+	dta $00								; Zoom
+	dta $00								; Pattern feature
+	dta $00								; Control (Mode 0 with NEXT bit Cleared)

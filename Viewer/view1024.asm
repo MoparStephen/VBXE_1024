@@ -8,8 +8,9 @@
 ; VBXE:
 ;    XDLs            = $00000 - $0002D (image attribute + image normal + text)
 ;    BCBs            = $00100 - $001FF
-;    NTSC_Palette    = $00200 - $004FF (Used to restore Palette 0 on program exit)
-;    PAL_Palette     = $00500 - $006FF (Used to restore Palette 0 on program exit)
+;    NTSC_Palette    = $00200 - $004FF (256 RGB triplets; restores Palette 0 on exit)
+;    PAL_Palette     = $00500 - $007FF (256 RGB triplets; restores Palette 0 on exit)
+;    Text pal buffer = $00800 - $00AFF (UI_Apply_TextPalette de-interleave scratch)
 ;    VRAM            = $01000 - $13BFF (Video Ram)
 ;    CRAM_Buffer     = $14000 - $1657F (Compressed palette bytes)
 ;    CRAM            = $17000 - $205FF (Colour Ram)
@@ -20,9 +21,11 @@
 ;    Mono text page  = $27000 - $2EFFF (banks $27-$2E: reformatted mono glyphs,
 ;                      MONO_PAGE_STRIDE bytes/row - .nfo body + list bodies,
 ;                      blitted to the text screen by Text_BlitMonoPage)
-;    Image name list = $40000 - $40FFF (bank $40: up to MAX_IMAGES=255 base
-;                      names, 8 bytes each, built by Rescan_Images / ui.asm)
-;    Dir browser list= $41000 - $41FFF (bank $41: folder-browser entries)
+;    Text win save   = $2F000 - $2FFFF (WIN_SAVE_VRAM: save-under for the D window)
+;    Image name list = $40000 - $40FFF (bank $40: up to MAX_IMAGES=255 rows -
+;                      "..", sub-dirs and *.MAP files, 8 bytes each; + a 10-char
+;                      display field is formatted in place at draw time)
+;    (bank $41 is free - the old folder browser used it)
 ;
 ; MAX_IMAGES is a hard design ceiling of 255 - each image is a ~90kB
 ; .PAL/.MAP/.RAW set, so 255 far exceeds any real slideshow, and a one-byte
@@ -52,7 +55,7 @@
 .zpvar Ptr_Lo			.byte			; Lo byte of pointer
 .zpvar Ptr_Hi			.byte			; Hi byte of pointer
 .zpvar Name_Ptr			.word			; Scan write-cursor / Build_Filename source ptr
-.zpvar Sort_Ptr			.word			; Sort_Image_List 2nd record ptr
+.zpvar Sort_Ptr			.word			; Sort_Range 2nd record ptr
 
 ; Non Page-0 Variables
 ;	$480 to $4FF free
@@ -73,16 +76,16 @@
 .var Path_Buf			:56 .byte = $48D	; Built "D[n]:PATH>NAME.EXT",$00 for LoadData ($48D-$4C4)
 .var Dir_IOCB			.byte = $4C5	; IOCB used by Build_Image_List
 ; --- viewer UI state (ui.asm) ---
-.var UI_Mode			.byte = $4C6	; 0 = selector, 1 = image view, 2 = slideshow
+.var UI_Mode			.byte = $4C6	; 0 selector / 1 image / 2 slideshow / 3 drive picker / 4 info
 .var Sel_Index			.byte = $4C7	; highlighted list entry (0-based)
 .var Sel_Top			.byte = $4C8	; list index of the first visible row (scroll)
 .var Slide_Secs			.byte = $4C9	; slideshow delay, seconds (1..30)
 .var Slide_FrameCtr		.word = $4CA	; slideshow countdown, frames
 .var Scan_Drive			.byte = $4CC	; '1'..'8', or $00 for a bare "D:"
-.var Name_Row_Buf		:12 .byte = $4CD	; one name record, NUL-terminated, for drawing
-.var Brow_Count			.byte = $4D9	; folder browser: entry count
-.var Brow_Index			.byte = $4DA	; folder browser: highlighted entry
-.var Brow_Top			.byte = $4DB	; folder browser: scroll offset
+.var Name_Row_Buf		:12 .byte = $4CD	; one name record / formatted row, NUL-terminated
+.var Dir_Count			.byte = $4D9	; selector list: number of sub-directory rows
+.var FileStart			.byte = $4DA	; selector list: index of the first *.MAP row (= upCount + Dir_Count)
+.var Drive_Pick_Index	.byte = $4DB	; drive picker (UI_Mode 3): 0 = "D:", 1..8 = "Dn:"
 .var Nfo_Top			.word = $4DC	; info viewer: first visible line (0-based)
 .var Nfo_LineCount		.word = $4DE	; info viewer: total lines in the loaded .nfo
 ;	$4E0 to $4FF free
@@ -90,8 +93,7 @@
 .var Scan_Path			:$28 .byte = $628	; subdirectory part, ">DIR>DIR>" or empty ($628-$64F)
 .var Scan_Spec			:$30 .byte = $650	; assembled "D[n]:PATH*.MAP",$9B ($650-$67F)
 .var Txt_Line			:$30 .byte = $680	; scratch line assembled for Text_PutStrAt ($680-$6AF)
-.var Folder_Saved_Path	:$28 .byte = $6B7	; Scan_Path saved on entering the folder browser, restored by ESC-cancel ($6B7-$6DE).  NOT shared with Txt_Line: every screen draw rewrites Txt_Line, so it cannot hold a value across the browser session.
-;	$6E0 to $6FF free (text80.asm uses $6B0-$6B6)
+;	$6B7 to $6FF free (text80.asm uses $6B0-$6B6)
 ; Info viewer (.nfo) line buffer + walk pointers.  Overlays Scan_Spec+Txt_Line
 ; ($650-$6AF): both are idle whenever UI_Mode = 4, and Selector_Draw rebuilds
 ; Txt_Line / the next scan rebuilds Scan_Spec on the way out.
@@ -137,6 +139,16 @@
 .def	MONO_PAGE_BANK					= MONO_PAGE_VRAM / $1000	; = $27
 .def	MONO_PAGE_STRIDE				= $80		; 128 bytes/row (32 rows per 4K bank)
 
+; Save-under text window (Text_Window_Save/Restore/Frame in text80.asm).  The
+; covered {glyph,attr} rectangle is blit-copied here at screen pitch (160) and
+; blitted back on close.  $2F000 is the first free 4K above the mono page.
+.def	WIN_SAVE_VRAM					= $2F000
+; Drive picker (UI_Mode 3) geometry - a small overlay of "D:" + "D1:".."D8:".
+.def	DRIVE_WIN_ROW					= 6
+.def	DRIVE_WIN_COL					= 30
+.def	DRIVE_WIN_W						= 12		; cells wide  (border + "  Dn:  ")
+.def	DRIVE_WIN_H						= 13		; rows        (border + title + 9 + border)
+
 ; BCB field byte offsets
 .def	Src_Adr0						= $00
 .def	Src_Adr1						= $01
@@ -154,8 +166,8 @@
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $11	; 1 (Screen code used for Version in loading screen)
-.def	V_2								= $10	; 0 (Screen code used for Version in loading screen)
-.def	V_3								= $61	; 61=a (Screen code used for Version in loading screen)
+.def	V_2								= $11	; 1 (Screen code used for Version in loading screen)
+.def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
 ; VBXE Helpers
@@ -415,8 +427,9 @@ Load_Image_Done
 ; Handle_Keys
 ;-----------------------------------------------------------------------------
 Handle_Keys
-; Dispatch on the current UI mode - the selector, slideshow and folder browser
-; each have their own key set (ui.asm); mode 1 (image view) uses the set below.
+; Dispatch on the current UI mode - the selector, slideshow, drive picker and
+; info viewer each have their own key set (ui.asm); mode 1 (image view) uses
+; the set below.
 	lda UI_Mode
 	bne Handle_Keys_NotSelector
 	jmp Selector_Keys					; 0 = selector
@@ -427,7 +440,7 @@ Handle_Keys_NotSelector
 Handle_Keys_NotSlide
 	cmp #$03
 	bne Handle_Keys_NotFolder
-	jmp Folder_Keys						; 3 = folder browser
+	jmp Drive_Keys						; 3 = drive picker (D-key overlay)
 Handle_Keys_NotFolder
 	cmp #$04
 	bne Handle_Keys_ImageView
@@ -504,31 +517,43 @@ Exit
 	jmp Cleanup_Exit					; Clean up and exit (accounts for any long branch issues)
 
 ;-----------------------------------------------------------------------------
-; Increment_Image - advance File_Index, wrapping past the last image to 0.
-; ImageCount fits one byte (MAX_IMAGES = 255), so the low byte is all we test.
+; Increment_Image - advance File_Index within the *.MAP file band
+; [FileStart, ImageCount), wrapping past the last file to the first.
+; No-op when the list holds no files.  (The selector list may now also carry
+; ".." and directory rows below FileStart - Space/BkSp must skip those.)
 ;-----------------------------------------------------------------------------
 Increment_Image
+	lda FileStart
+	cmp ImageCount
+	bcs Increment_Image_Done			; no *.MAP files in the list
 	ldx File_Index
 	inx
 	cpx ImageCount
-	bcc Increment_Image_Valid
-	ldx #$00							; Wrap to the first image
-Increment_Image_Valid
+	bcc Increment_Image_Store
+	ldx FileStart						; wrap past the last file to the first
+Increment_Image_Store
 	stx File_Index
 	jsr Load_Image
+Increment_Image_Done
 	rts
 
 ;-----------------------------------------------------------------------------
-; Decrement_Image - step File_Index back, wrapping from 0 to the last image.
+; Decrement_Image - step File_Index back within [FileStart, ImageCount),
+; wrapping from the first file to the last.  No-op when the list holds no files.
 ;-----------------------------------------------------------------------------
 Decrement_Image
+	lda FileStart
+	cmp ImageCount
+	bcs Decrement_Image_Done
 	ldx File_Index
-	bne Decrement_Image_Valid
-	ldx ImageCount						; Wrap: 0 -> ImageCount, then dex below
-Decrement_Image_Valid
+	cpx FileStart
+	bne Decrement_Image_Step
+	ldx ImageCount						; wrap: first file -> (last file + 1)
+Decrement_Image_Step
 	dex
 	stx File_Index
 	jsr Load_Image
+Decrement_Image_Done
 	rts
 
 ;-----------------------------------------------------------------------------
@@ -668,30 +693,32 @@ Ext_Table
 	dta c'PALMAPRAWNFO'					; selector 0=PAL 1=MAP 2=RAW 3=NFO
 
 ;-----------------------------------------------------------------------------
-; Sort_Image_List - in-place alphabetical (lexicographic) selection sort of
-; the ImageCount 8-byte space-padded records in IMAGE_BANK.
-; Called from Rescan_Images (ui.asm) after every scan. O(n^2) byte compares;
-; trivial at MAX_IMAGES = 255.
-; Clobbers A/X/Y, Reg2..Reg8, Name_Ptr, Sort_Ptr, Path_Buf[0..7].
+; Sort_Range - in-place alphabetical selection sort of the records
+; [start .. start+count) in IMAGE_BANK (8-byte space-padded, lexicographic).
+;   In:  A = start index, X = count.  count < 2 -> no-op.
+; Rescan_Images (ui.asm) calls it once per group (dirs, then files) so the
+; ".." / dir / file grouping is preserved.  O(n^2) byte compares; trivial.
+; Clobbers A/X/Y, Reg2..Reg6, Name_Ptr, Sort_Ptr, Path_Buf[0..7].
 ;-----------------------------------------------------------------------------
-Sort_Image_List
-	lda ImageCount
-	cmp #$02
-	bcc Sort_Image_List_Done			; 0 or 1 records -> nothing to do
-	sta Reg5							; Reg5 = n
+Sort_Range
+	cpx #$02
+	bcc Sort_Range_Done					; 0 or 1 records -> nothing to do
+	sta Reg2							; Reg2 = i = start
+	stx Reg3							; Reg3 = count (temp)
+	clc
+	adc Reg3
+	sta Reg5							; Reg5 = end = start + count
 	sec
 	sbc #$01
-	sta Reg6							; Reg6 = n-1 (outer limit)
+	sta Reg6							; Reg6 = end - 1 (outer limit)
 
 	lda #IMAGE_BANK | MEMAC_GLOBAL_ENABLE
 	vbsta VBXE_MA_BSEL
 
-	lda #$00
-	sta Reg2							; i = 0
-Sort_Outer
+Sort_Range_Outer
 	lda Reg2
 	cmp Reg6
-	bcs Sort_Image_List_Unmap			; i >= n-1 -> done
+	bcs Sort_Range_Unmap				; i >= end-1 -> done
 
 	sta Reg4							; m = i
 	jsr Sort_SetNamePtr					; Name_Ptr = rec(m)
@@ -700,42 +727,42 @@ Sort_Outer
 	clc
 	adc #$01
 	sta Reg3							; j = i + 1
-Sort_Inner
+Sort_Range_Inner
 	lda Reg3
 	cmp Reg5
-	bcs Sort_Inner_Done					; j >= n
+	bcs Sort_Range_Inner_Done			; j >= end
 
 	lda Reg3
 	jsr Sort_SetSortPtr					; Sort_Ptr = rec(j)
 	jsr Cmp_Records						; rec(m) : rec(j)
-	bcc Sort_Inner_Next					; rec(m) < rec(j) -> keep m
-	beq Sort_Inner_Next					; equal          -> keep m
+	bcc Sort_Range_Inner_Next			; rec(m) < rec(j) -> keep m
+	beq Sort_Range_Inner_Next			; equal          -> keep m
 	lda Reg3							; rec(m) > rec(j) -> new min is j
 	sta Reg4
 	lda Sort_Ptr
 	sta Name_Ptr
 	lda Sort_Ptr + $01
 	sta Name_Ptr + $01
-Sort_Inner_Next
+Sort_Range_Inner_Next
 	inc Reg3
-	jmp Sort_Inner
-Sort_Inner_Done
+	jmp Sort_Range_Inner
+Sort_Range_Inner_Done
 	lda Reg4
 	cmp Reg2
-	beq Sort_Outer_Next					; min already in place
+	beq Sort_Range_Outer_Next			; min already in place
 	lda Reg2
 	jsr Sort_SetSortPtr					; Sort_Ptr = rec(i)
 	lda Reg4
 	jsr Sort_SetNamePtr					; Name_Ptr = rec(m)
 	jsr Swap_Records
-Sort_Outer_Next
+Sort_Range_Outer_Next
 	inc Reg2
-	jmp Sort_Outer
+	jmp Sort_Range_Outer
 
-Sort_Image_List_Unmap
+Sort_Range_Unmap
 	lda #MEMAC_GLOBAL_DISABLE
 	vbsta VBXE_MA_BSEL
-Sort_Image_List_Done
+Sort_Range_Done
 	rts
 
 ;-----------------------------------------------------------------------------

@@ -321,6 +321,184 @@ Text_BlitMonoPage_L2
 	rts
 
 ;-----------------------------------------------------------------------------
+; Text_Window_Save / Text_Window_Restore - blit a rectangle of {glyph,attr}
+; cells between the text screen and WIN_SAVE_VRAM (a save-under buffer held at
+; screen pitch).  Inputs: Txt_Row / Txt_Col = top-left cell, Reg1 = width-1
+; (cells), Reg2 = height-1 (rows).  Patches BLT_TEXT_RECT and waits.  The rect
+; must fit WIN_SAVE_VRAM: 4K / TEXT_PITCH = 25 rows max.
+; Clobbers A/X/Y, Reg4, Reg5.  (Reg1 / Reg2 / Txt_Row / Txt_Col survive - the
+; caller can Save then Frame on the same geometry.)
+;-----------------------------------------------------------------------------
+Text_Window_Save
+	jsr Text_Window_Setup				; Reg5:Reg4 = screen offset; W-1/H-1 patched; bank mapped
+	lda Reg4
+	sta BLT_TEXT_RECT + Src_Adr0
+	lda Reg5
+	clc
+	adc #$30							; low 16 bits of TEXT_SCREEN_VRAM = $3000
+	sta BLT_TEXT_RECT + Src_Adr1
+	lda #$02
+	sta BLT_TEXT_RECT + Src_Adr2
+	lda #<WIN_SAVE_VRAM
+	sta BLT_TEXT_RECT + Dest_Adr0
+	lda #>WIN_SAVE_VRAM
+	sta BLT_TEXT_RECT + Dest_Adr1
+	lda #[WIN_SAVE_VRAM >> 16]
+	sta BLT_TEXT_RECT + Dest_Adr2
+	jmp Text_Window_Kick
+
+Text_Window_Restore
+	jsr Text_Window_Setup
+	lda #<WIN_SAVE_VRAM
+	sta BLT_TEXT_RECT + Src_Adr0
+	lda #>WIN_SAVE_VRAM
+	sta BLT_TEXT_RECT + Src_Adr1
+	lda #[WIN_SAVE_VRAM >> 16]
+	sta BLT_TEXT_RECT + Src_Adr2
+	lda Reg4
+	sta BLT_TEXT_RECT + Dest_Adr0
+	lda Reg5
+	clc
+	adc #$30
+	sta BLT_TEXT_RECT + Dest_Adr1
+	lda #$02
+	sta BLT_TEXT_RECT + Dest_Adr2
+	jmp Text_Window_Kick
+
+; Reg5:Reg4 = Txt_Row*TEXT_PITCH + Txt_Col*2 ; patch Width-1 (bytes) + Height-1 ;
+; map VBXE bank $00 into the $2000 window (Text_Window_Kick unmaps).
+Text_Window_Setup
+	lda #$00
+	sta Reg4
+	sta Reg5
+	ldx Txt_Row
+	beq Text_Window_Setup_Col
+Text_Window_Setup_RowL
+	lda Reg4
+	clc
+	adc #TEXT_PITCH
+	sta Reg4
+	bcc Text_Window_Setup_RowNC
+	inc Reg5
+Text_Window_Setup_RowNC
+	dex
+	bne Text_Window_Setup_RowL
+Text_Window_Setup_Col
+	lda Txt_Col
+	asl
+	clc
+	adc Reg4
+	sta Reg4
+	bcc Text_Window_Setup_ColNC
+	inc Reg5
+Text_Window_Setup_ColNC
+	lda #MEMAC_GLOBAL_ENABLE				; map VBXE bank $00 -> $2000 window
+	vbsta VBXE_MA_BSEL
+	lda Reg1							; Width-1 (bytes) = (cells-1)*2 + 1 = Reg1*2 + 1
+	asl
+	clc
+	adc #$01
+	sta BLT_TEXT_RECT + Blt_W0
+	lda #$00
+	sta BLT_TEXT_RECT + Blt_W1
+	lda Reg2
+	sta BLT_TEXT_RECT + Blt_H
+	rts
+
+Text_Window_Kick
+	lda #MEMAC_GLOBAL_DISABLE
+	vbsta VBXE_MA_BSEL
+	lda #BLT_TEXT_RECT-BLT_CLEAR
+	vbsta VBXE_BL_ADR0
+	lda #$00
+	vbsta VBXE_BL_ADR2
+	lda #$01
+	vbsta VBXE_BL_ADR1
+Text_Window_Kick_L1
+	vblda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Text_Window_Kick_L1				; wait for any prior blit
+	lda #$01
+	vbsta VBXE_BLITTER_START
+Text_Window_Kick_L2
+	vblda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Text_Window_Kick_L2				; wait for the copy to finish
+	rts
+
+;-----------------------------------------------------------------------------
+; Text_Window_Frame - draw a simple ASCII box ('+' '-' '|') with a blank
+; interior over Txt_Row / Txt_Col / Reg1 (width-1) / Reg2 (height-1), using the
+; current pen.  Uses Txt_Line as scratch.  Clobbers A/X/Y, Reg1..Reg8.
+;-----------------------------------------------------------------------------
+Text_Window_Frame
+	lda Reg1
+	sta Reg7							; Reg7 = width-1 (survives Text_PutStrAt)
+	lda Txt_Col
+	sta Reg8							; Reg8 = left column
+	lda Txt_Row
+	clc
+	adc Reg2
+	sta Reg6							; Reg6 = bottom-edge screen row
+	lda Txt_Row
+	sta Reg5							; Reg5 = current screen row
+	jsr Text_Window_Frame_EdgeRow		; top edge
+Text_Window_Frame_Mid
+	inc Reg5
+	lda Reg5
+	cmp Reg6
+	bcs Text_Window_Frame_Bottom
+	jsr Text_Window_Frame_MidRow
+	jmp Text_Window_Frame_Mid
+Text_Window_Frame_Bottom
+	jmp Text_Window_Frame_EdgeRow		; bottom edge (tail - returns to caller)
+
+Text_Window_Frame_EdgeRow
+	lda #'+'
+	sta Txt_Line+0
+	ldx #$01
+Text_Window_Frame_EdgeL
+	cpx Reg7
+	bcs Text_Window_Frame_EdgeEnd
+	lda #'-'
+	sta Txt_Line,x
+	inx
+	bne Text_Window_Frame_EdgeL
+Text_Window_Frame_EdgeEnd
+	lda #'+'
+	sta Txt_Line,x
+	inx
+	jmp Text_Window_Frame_PutRow
+
+Text_Window_Frame_MidRow
+	lda #'|'
+	sta Txt_Line+0
+	ldx #$01
+Text_Window_Frame_MidL
+	cpx Reg7
+	bcs Text_Window_Frame_MidEnd
+	lda #' '
+	sta Txt_Line,x
+	inx
+	bne Text_Window_Frame_MidL
+Text_Window_Frame_MidEnd
+	lda #'|'
+	sta Txt_Line,x
+	inx
+Text_Window_Frame_PutRow
+	lda #$00
+	sta Txt_Line,x
+	lda Reg5
+	sta Txt_Row
+	lda Reg8
+	sta Txt_Col
+	lda #<Txt_Line
+	sta Txt_Ptr
+	lda #>Txt_Line
+	sta Txt_Ptr + $01
+	jmp Text_PutStrAt					; tail (rts returns to Text_Window_Frame's caller)
+
+;-----------------------------------------------------------------------------
 ; Text_PutStrAt - write {ASCII, Txt_Attr} pairs for the $00-terminated string
 ; at Txt_Ptr, starting at cell (Txt_Col, Txt_Row).  Tracks bank + window
 ; offset explicitly (a row near the bottom straddles the $24000 boundary).

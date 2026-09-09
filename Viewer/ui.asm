@@ -12,7 +12,8 @@
 ;
 ; Screen model (text80.asm): 80 columns x 30 rows, Palette 0.
 ;
-; UI_Mode:  0 = selector   1 = image view   2 = slideshow   3 = folder browser
+; UI_Mode:  0 = selector   1 = image view   2 = slideshow
+;           3 = drive picker (D-key save-under overlay)   4 = info viewer (.nfo)
 ;=============================================================================
 
 .def	UI_VISROWS		= 24			; filename rows visible at once (rows 3..26)
@@ -20,19 +21,16 @@
 ; row 27 = slideshow delay, row 28 = key legend, row 29 = bottom margin
 .def	UI_SLIDE_MIN	= 1
 .def	UI_SLIDE_MAX	= 30
-; VBXE text-mode colour byte: low 7 bits = foreground palette entry (0-127),
-; bit 7 = 1 -> opaque (coloured) background, 0 -> transparent.  So Text_SetPen
-; takes A = fg palette index, X = 0 (transparent bg) / non-zero (opaque bg).
-; The highlighted row is drawn opaque; the plain rows transparent.  Tune the
-; two indices once it's on screen.
-.def	UI_PEN_FG		= $0F			; normal text foreground (palette 0 index)
-; Highlighted row: hardware forces bg = UI_PEN_HI+$80 (hue 8, blue) and text =
-; UI_PEN_HI (hue 0, grey), sharing the luma nibble.  $04 = royal-blue bar,
-; dark-grey text - readable; $00 was a near-black bar.
-.def	UI_PEN_HI		= $04			; highlighted-row text foreground
-
-.def	DIRBROW_BANK	= $41			; VBXE bank holding the folder-browser list
-.def	DIRBROW_MAX		= 200			; cap on browser entries
+; VBXE text-mode colour byte: bits 0-6 = foreground palette-0 entry (0-127),
+; bit 7 = 1 -> opaque background (hardware-forced to palette[fg+128]), 0 ->
+; transparent.  UI_Apply_TextPalette de-interleaves the Atari master into set 0
+; so entry e = master colour 2e: hue = e>>3 (all 16 hues), luma = (e&7)*2.
+; The cursor row is marked by FOREGROUND colour only - no opaque bar - because
+; after the de-interleave palette[e+128] is the adjacent-luma neighbour of
+; palette[e] and gives no contrast.  Tune the three indices once on screen.
+.def	UI_PEN_FG		= $07			; normal text   : hue 0 grey,  luma 14
+.def	UI_PEN_HI		= $0F			; highlighted   : hue 1 gold,  luma 14
+.def	UI_PEN_DIR		= $62			; directory/".." : hue $C green, luma 4
 
 .def	NFO_BANK		= $25			; VBXE bank(s) the .nfo text streams into (up to 2)
 .def	NFO_TOPROW		= 0				; info viewer: first screen row of the scroll region
@@ -52,9 +50,8 @@
 .def	KEY_Q			= $2F
 .def	KEY_S			= $3E
 .def	KEY_D			= $3A
-.def	KEY_F			= $38
 .def	KEY_P			= $0A
-.def	KEY_A			= $3F
+.def	KEY_I			= $0D
 .def	KEY_COMMA		= $20			; "," - shorter slideshow delay
 .def	KEY_DOT			= $22			; "." - longer slideshow delay
 
@@ -83,12 +80,26 @@
 ; Tolerates zero matches (an ordinary state the selector shows).
 ;-----------------------------------------------------------------------------
 Rescan_Images
-	jsr Build_Spec						; Scan_Spec = "D[n]:PATH*.MAP",EOL
-	jsr Build_Image_List				; fills IMAGE_BANK, sets ImageCount
-	jsr Sort_Image_List
+	jsr Build_Image_List				; fills IMAGE_BANK; sets ImageCount/Dir_Count/FileStart
+
+; sort the two real groups independently: dirs [FileStart-Dir_Count .. FileStart)
+; then files [FileStart .. ImageCount).  ".." (if present) stays pinned at 0.
+	lda FileStart
+	sec
+	sbc Dir_Count
+	ldx Dir_Count
+	jsr Sort_Range						; directories A-Z
+	lda ImageCount
+	sec
+	sbc FileStart
+	tax									; X = file count
+	lda FileStart
+	jsr Sort_Range						; *.MAP files A-Z
+
 	lda #$00
 	sta Sel_Index
 	sta Sel_Top
+	sta File_Index
 	rts
 
 ;-----------------------------------------------------------------------------
@@ -147,28 +158,54 @@ Build_Spec_MapWild	dta c'*.MAP',$9B
 Build_Spec_AnyWild	dta c'*.*',$9B
 
 ;-----------------------------------------------------------------------------
-; Build_Image_List - OPEN Scan_Spec as a directory (the wildcard filters), GET
-; each line, pack every base name as an 8-byte space-padded record into
-; IMAGE_BANK through the $2000 window.  ImageCount = entries stored.
+; Build_Image_List - rebuild the selector list in IMAGE_BANK through the $2000
+; window, grouped:  ".."  (only below the drive root)  |  sub-directories  |
+; *.MAP files.  Rescan_Images sorts the two real groups A-Z afterwards.
+; Sets ImageCount, Dir_Count and FileStart (index of the first *.MAP row).
+;   - directory pass: OPEN "D[n]:PATH*.*" long DIR format (AUX2 = $80) and keep
+;     only lines carrying SDX's "<DIR>" size-column tag (Line_Has_Dir_Tag).
+;   - file pass:      OPEN "D[n]:PATH*.MAP" short format (AUX2 = $00) as before.
+; One 8-byte write cursor (Name_Ptr) and one ImageNames_End guard span both.
 ;-----------------------------------------------------------------------------
 Build_Image_List
 	lda #$00
 	sta ImageCount
 	sta ImageCount+1
+	sta Dir_Count
 
+	lda #IMAGE_BANK | MEMAC_GLOBAL_ENABLE
+	vbsta VBXE_MA_BSEL
+	mwa #ImageNames Name_Ptr
+
+; --- ".." at slot 0 whenever we are below the drive root
+	lda Scan_Path
+	beq Build_Image_List_Dirs
+	ldy #$00
+	lda #'.'
+	sta (Name_Ptr),y
+	iny
+	sta (Name_Ptr),y
+	iny
+	lda #' '
+Build_Image_List_DotPad
+	sta (Name_Ptr),y
+	iny
+	cpy #$08
+	bcc Build_Image_List_DotPad
+	inc ImageCount
+	jsr Build_Image_List_Adv
+
+; --- directory pass : "D[n]:PATH*.*", long DIR format
+Build_Image_List_Dirs
+	jsr Build_Browse_Spec
 	jsr Find_First_IOCB
 	cpy #$01
-	beq Build_Image_List_Have_IOCB
-	rts									; No free IOCB - ImageCount stays 0
-Build_Image_List_Have_IOCB
+	bne Build_Image_List_Files			; no free IOCB - skip to files
 	stx Dir_IOCB
-
 	lda #CIO_dir
 	sta ICAX1,x
-	lda #$00								; AUX2 = short DIRS format: plain name lines,
-	sta ICAX2,x							; no "Volume:"/"Directory:" header records to
-										; mistake for image names (Parse_Dir_Line has
-										; no "<DIR>" filter on this path)
+	lda #$80							; long DIR format -> subdirs carry "<DIR>"
+	sta ICAX2,x
 	lda #<Scan_Spec
 	sta ICBAL,x
 	lda #>Scan_Spec
@@ -176,13 +213,83 @@ Build_Image_List_Have_IOCB
 	lda #CIO_open
 	sta ICCOM,x
 	jsr CIOV
-	bmi Build_Image_List_Done			; OPEN failed - nothing to scan
+	bmi Build_Image_List_Files			; dir OPEN failed - still try files
 
-	lda #IMAGE_BANK | MEMAC_GLOBAL_ENABLE
+Build_Image_List_DirL1
+	jsr Build_Image_List_ReadLine
+	bcs Build_Image_List_DirClose		; EOF / error
+	jsr Build_Image_List_Full
+	bcs Build_Image_List_DirL1			; list full - drain, store nothing
+	jsr Parse_Dir_Line
+	beq Build_Image_List_DirL1			; not a name line
+	ldy #$00
+	lda (Name_Ptr),y
+	cmp #'.'
+	beq Build_Image_List_DirL1			; "." / ".." listing line
+	jsr Line_Has_Dir_Tag
+	beq Build_Image_List_DirL1			; no "<DIR>" tag -> a file, skip
+	inc ImageCount
+	inc Dir_Count
+	jsr Build_Image_List_Adv
+	jmp Build_Image_List_DirL1
+
+Build_Image_List_DirClose
+	ldx Dir_IOCB
+	lda #CIO_close
+	sta ICCOM,x
+	jsr CIOV
+
+; --- file pass : "D[n]:PATH*.MAP", short format
+Build_Image_List_Files
+	lda ImageCount						; FileStart = rows so far (".." + dirs)
+	sta FileStart
+
+	jsr Build_Spec
+	jsr Find_First_IOCB
+	cpy #$01
+	bne Build_Image_List_Unmap
+	stx Dir_IOCB
+	lda #CIO_dir
+	sta ICAX1,x
+	lda #$00							; short DIRS format
+	sta ICAX2,x
+	lda #<Scan_Spec
+	sta ICBAL,x
+	lda #>Scan_Spec
+	sta ICBAH,x
+	lda #CIO_open
+	sta ICCOM,x
+	jsr CIOV
+	bmi Build_Image_List_Unmap			; OPEN failed - nothing to scan
+
+Build_Image_List_FileL1
+	jsr Build_Image_List_ReadLine
+	bcs Build_Image_List_FileClose
+	jsr Build_Image_List_Full
+	bcs Build_Image_List_FileL1
+	jsr Parse_Dir_Line
+	beq Build_Image_List_FileL1
+	inc ImageCount
+	bne Build_Image_List_FileAdv
+	inc ImageCount+1
+Build_Image_List_FileAdv
+	jsr Build_Image_List_Adv
+	jmp Build_Image_List_FileL1
+
+Build_Image_List_FileClose
+	ldx Dir_IOCB
+	lda #CIO_close
+	sta ICCOM,x
+	jsr CIOV
+
+Build_Image_List_Unmap
+	lda #MEMAC_GLOBAL_DISABLE			; give the CPU back $2000-$2FFF
 	vbsta VBXE_MA_BSEL
-	mwa #ImageNames Name_Ptr
+	rts
 
-Build_Image_List_L1
+; --- Build_Image_List helpers -----------------------------------------------
+; GET RECORD one dir line into Dir_Line_Buf.  C=1 on EOF/error, C=0 on a line.
+Build_Image_List_ReadLine
 	ldx Dir_IOCB
 	lda #CIO_gettext
 	sta ICCOM,x
@@ -195,41 +302,38 @@ Build_Image_List_L1
 	lda #>Dir_Line_Len
 	sta ICBLH,x
 	jsr CIOV
-	bmi Build_Image_List_Close			; Negative status (EOF or error) - done
+	bmi Build_Image_List_ReadLine_EOF
+	clc
+	rts
+Build_Image_List_ReadLine_EOF
+	sec
+	rts
 
-; Table full? Compare the write cursor to the end of the reserved space
+; C=1 once the 8-byte write cursor has reached ImageNames_End (list full).
+Build_Image_List_Full
 	lda Name_Ptr+1
 	cmp #>ImageNames_End
-	bcc Build_Image_List_Room
-	bne Build_Image_List_L1				; Hi byte over end - full, skip storing
+	bcc Build_Image_List_Full_Room
+	bne Build_Image_List_Full_Yes
 	lda Name_Ptr
 	cmp #<ImageNames_End
-	bcs Build_Image_List_L1				; At/past end - full
-Build_Image_List_Room
-	jsr Parse_Dir_Line
-	beq Build_Image_List_L1				; A=0 - not a real filename
+	bcs Build_Image_List_Full_Yes
+Build_Image_List_Full_Room
+	clc
+	rts
+Build_Image_List_Full_Yes
+	sec
+	rts
 
-	inc ImageCount
-	bne Build_Image_List_Adv
-	inc ImageCount+1
+; Advance the 8-byte write cursor.
 Build_Image_List_Adv
 	lda Name_Ptr
 	clc
 	adc #$08
 	sta Name_Ptr
-	bcc Build_Image_List_L1
+	bcc Build_Image_List_Adv_Done
 	inc Name_Ptr+1
-	jmp Build_Image_List_L1
-
-Build_Image_List_Close
-	ldx Dir_IOCB
-	lda #CIO_close
-	sta ICCOM,x
-	jsr CIOV
-
-	lda #MEMAC_GLOBAL_DISABLE			; Give the CPU back $2000-$2FFF
-	vbsta VBXE_MA_BSEL
-Build_Image_List_Done
+Build_Image_List_Adv_Done
 	rts
 
 ;-----------------------------------------------------------------------------
@@ -343,10 +447,111 @@ Emit_Path_Prefix_Done
 ;-----------------------------------------------------------------------------
 Enter_Selector
 	jsr Restore_Palette0				; standard PAL/NTSC master palette -> set 0
+	jsr UI_Apply_TextPalette			; ...then de-interleave it for text mode
 	jsr Text_Activate					; point the XDL at the text screen
 	lda #$00
 	sta UI_Mode
 	jsr Selector_Draw
+	rts
+
+;-----------------------------------------------------------------------------
+; UI_Apply_TextPalette - Restore_Palette0 has just put the standard Atari 256-
+; colour master into palette set 0.  The VBXE text mode can only reach entries
+; 0-127 as a foreground, and in the master that range is hues 0-7 (no green).
+; De-interleave it so:
+;     entry e        (0..127) = master colour 2e    (all 16 hues, even lumas)
+;     entry 128+e             = master colour 2e+1  (odd lumas - inverse bg)
+; Build a page-aligned 768-byte image at VBXE $00800 (free: NTSC master
+; $00200-$004FF, PAL master $00500-$007FF, VRAM from $01000) and re-upload it
+; as set 0.  Runs only on entry to the selector - not per frame.
+; Restore_Palette0 itself is left untouched so the DOS-exit path still restores
+; the true master.  Clobbers A/X/Y, Ptr_Lo/Hi, Name_Ptr, Y_Register.
+;-----------------------------------------------------------------------------
+UI_APPLY_TP_BUF		= VBXE_WINDOW + $800		; page-aligned de-interleave buffer
+
+UI_Apply_TextPalette
+	lda #$00 | MEMAC_GLOBAL_ENABLE				; map VBXE bank $00 into the window
+	vbsta VBXE_MA_BSEL
+
+; --- pass 1: even master colours -> buf[0..127]
+	jsr UI_Apply_TP_SrcBase
+	lda #<UI_APPLY_TP_BUF
+	sta Name_Ptr
+	lda #>UI_APPLY_TP_BUF
+	sta Name_Ptr+1
+	jsr UI_Apply_TP_Pass
+
+; --- pass 2: odd master colours -> buf[128..255]
+	jsr UI_Apply_TP_SrcBase
+	lda Ptr_Lo
+	clc
+	adc #$03									; step onto the first odd triplet
+	sta Ptr_Lo
+	bcc UI_Apply_TP_P2Dst
+	inc Ptr_Hi
+UI_Apply_TP_P2Dst
+	lda #<[UI_APPLY_TP_BUF + $180]				; buf + 128*3
+	sta Name_Ptr
+	lda #>[UI_APPLY_TP_BUF + $180]
+	sta Name_Ptr+1
+	jsr UI_Apply_TP_Pass
+
+; --- upload the de-interleaved image as palette set 0
+	lda #<UI_APPLY_TP_BUF
+	sta Y_Register
+	lda #>UI_APPLY_TP_BUF
+	sta Y_Register+1
+	lda #$00
+	jsr VBXE_SetPalette2
+
+	lda #MEMAC_GLOBAL_DISABLE
+	vbsta VBXE_MA_BSEL
+	rts
+
+; Ptr_Lo/Hi = active master base ($2500 PAL / $2200 NTSC), mirrors Restore_Palette0
+UI_Apply_TP_SrcBase
+	lda Video_Flag						; 0 = PAL, non-zero = NTSC
+	bne UI_Apply_TP_SrcNTSC
+	lda #<(VBXE_WINDOW + $500)
+	sta Ptr_Lo
+	lda #>(VBXE_WINDOW + $500)
+	sta Ptr_Hi
+	rts
+UI_Apply_TP_SrcNTSC
+	lda #<(VBXE_WINDOW + $200)
+	sta Ptr_Lo
+	lda #>(VBXE_WINDOW + $200)
+	sta Ptr_Hi
+	rts
+
+; Copy 128 RGB triplets (Ptr_Lo) -> (Name_Ptr); src += 6, dst += 3 each entry.
+UI_Apply_TP_Pass
+	ldx #$80							; 128 entries
+UI_Apply_TP_Pass_L1
+	ldy #$00
+UI_Apply_TP_Pass_Cp
+	lda (Ptr_Lo),y
+	sta (Name_Ptr),y
+	iny
+	cpy #$03
+	bcc UI_Apply_TP_Pass_Cp
+
+	lda Ptr_Lo
+	clc
+	adc #$06
+	sta Ptr_Lo
+	bcc UI_Apply_TP_Pass_Dst
+	inc Ptr_Hi
+UI_Apply_TP_Pass_Dst
+	lda Name_Ptr
+	clc
+	adc #$03
+	sta Name_Ptr
+	bcc UI_Apply_TP_Pass_Next
+	inc Name_Ptr+1
+UI_Apply_TP_Pass_Next
+	dex
+	bne UI_Apply_TP_Pass_L1
 	rts
 
 ;-----------------------------------------------------------------------------
@@ -359,6 +564,8 @@ Selector_Draw
 	TXT_AT 0, 2, UI_Str_Title
 	TXT_AT 0, 40, UI_Str_Images
 	lda ImageCount
+	sec
+	sbc FileStart						; count the *.MAP rows only, not ".."/dirs
 	jsr Put_U8_Dec_Line
 	TXT_AT 0, 48, Txt_Line
 
@@ -388,16 +595,20 @@ Selector_DrawList_Have
 Selector_DrawList_L1
 	lda Reg5
 	cmp #UI_VISROWS
-	bcs Selector_DrawList_Done
+	bcs Selector_DrawList_Tail
 	clc
 	adc Sel_Top
 	sta Reg6							; Reg6 = list index for this row
 	cmp ImageCount
-	bcs Selector_DrawList_Done			; past the end of the list
+	bcs Selector_DrawList_Tail			; past the end of the list
 
 	lda Reg6
 	ldx #IMAGE_BANK
-	jsr UI_ReadRec						; Name_Row_Buf = names[Reg6]
+	jsr UI_ReadRec						; Name_Row_Buf = raw names[Reg6]
+	lda Reg6
+	jsr UI_RowType
+	sta Reg7							; Reg7 = row type (0 file / 1 dir / 2 "..")
+	jsr UI_Format_Row					; Name_Row_Buf -> fixed 10-char field
 
 	lda Reg5
 	clc
@@ -405,15 +616,41 @@ Selector_DrawList_L1
 	sta Txt_Row
 	lda Reg6
 	cmp Sel_Index
-	beq Selector_DrawList_Hi
-	lda #$00
+	bne Selector_DrawList_NotHi
+	lda #$01							; pen code 1 = highlighted
 	jmp Selector_DrawList_Put
-Selector_DrawList_Hi
-	lda #$01
+Selector_DrawList_NotHi
+	lda Reg7
+	beq Selector_DrawList_Put			; file -> pen code 0
+	lda #$02							; dir / ".." -> pen code 2
 Selector_DrawList_Put
 	jsr UI_DrawNameRow
 	inc Reg5
 	jmp Selector_DrawList_L1
+
+Selector_DrawList_Tail
+; list has rows but none are *.MAP files -> note it under the last entry
+	lda FileStart
+	cmp ImageCount
+	bcc Selector_DrawList_Done			; some files present
+	lda ImageCount
+	beq Selector_DrawList_Done			; wholly empty -> UI_Str_Empty already drawn
+	lda ImageCount
+	sec
+	sbc Sel_Top							; rows from the top of the window
+	cmp #UI_VISROWS
+	bcs Selector_DrawList_Done			; tail row is off-screen
+	clc
+	adc #UI_FIRSTROW
+	sta Txt_Row
+	jsr UI_Pen_Normal
+	lda #$04
+	sta Txt_Col
+	lda #<UI_Str_Empty
+	sta Txt_Ptr
+	lda #>UI_Str_Empty
+	sta Txt_Ptr + $01
+	jsr Text_PutStrAt
 Selector_DrawList_Done
 	rts
 
@@ -439,17 +676,23 @@ Selector_HiRow
 	bcs Selector_HiRow_Skip				; past the end of the list
 	lda #4
 	sta Txt_Col
-	lda #7
-	sta Reg1							; width-1 = 8 name cells
+	lda #9
+	sta Reg1							; width-1 = 10 cells ("<NAME....>")
 	lda #$00
 	sta Reg2							; height-1 = 1 row
 	lda Reg6
 	cmp Sel_Index
 	beq Selector_HiRow_Hi
-	lda #UI_PEN_FG						; normal: attr $0F (fg $0F, transparent bg)
+	lda Reg6
+	jsr UI_RowType						; normal: dir/".." pen for those rows,
+	beq Selector_HiRow_File				; file pen otherwise (foreground only)
+	lda #UI_PEN_DIR
+	jmp Text_FillColour					; tail
+Selector_HiRow_File
+	lda #UI_PEN_FG
 	jmp Text_FillColour					; tail
 Selector_HiRow_Hi
-	lda #UI_PEN_HI | $80				; highlighted: attr $84 (fg $04, opaque bg)
+	lda #UI_PEN_HI						; highlighted: gold foreground, no bar
 	jmp Text_FillColour					; tail
 Selector_HiRow_Skip
 	rts
@@ -481,16 +724,21 @@ Selector_DrawDelay_Pad2
 	rts
 
 ;-----------------------------------------------------------------------------
-; UI_DrawNameRow - A = 0 normal / non-zero highlighted.  Name_Row_Buf -> col 4
-; of the screen row already in Txt_Row.
+; UI_DrawNameRow - A = pen code (0 file / 1 highlighted / 2 directory or "..").
+; Draws Name_Row_Buf (already formatted by UI_Format_Row) at col 4 of Txt_Row.
 ;-----------------------------------------------------------------------------
 UI_DrawNameRow
-	tax									; stash the highlight flag
+	tax									; X = pen code
 	lda #4
 	sta Txt_Col
-	txa
-	beq UI_DrawNameRow_N
+	cpx #$01
+	bne UI_DrawNameRow_1
 	jsr UI_Pen_Invert
+	jmp UI_DrawNameRow_P
+UI_DrawNameRow_1
+	cpx #$02
+	bne UI_DrawNameRow_N
+	jsr UI_Pen_DirRow
 	jmp UI_DrawNameRow_P
 UI_DrawNameRow_N
 	jsr UI_Pen_Normal
@@ -502,13 +750,111 @@ UI_DrawNameRow_P
 	jmp Text_PutStrAt					; tail call
 
 ;-----------------------------------------------------------------------------
+; UI_RowType - A = list index -> A = 0 file / 1 directory / 2 "..".
+; Z is set iff the row is a file.  The list is grouped ".." | dirs | files,
+; so the type is FileStart / Dir_Count / Scan_Path arithmetic, not a stored byte.
+;-----------------------------------------------------------------------------
+UI_RowType
+	cmp FileStart
+	bcs UI_RowType_File					; index >= FileStart -> *.MAP file
+	tax									; index < FileStart
+	bne UI_RowType_Dir					; index != 0 -> a directory
+	lda Scan_Path
+	beq UI_RowType_Dir					; at root: slot 0 is a directory
+	lda #$02							; below root: slot 0 is ".."
+	rts
+UI_RowType_Dir
+	lda #$01
+	rts
+UI_RowType_File
+	lda #$00
+	rts
+
+;-----------------------------------------------------------------------------
+; UI_Format_Row - A = row type (from UI_RowType).  Rewrites Name_Row_Buf (which
+; holds the raw 8-byte record from UI_ReadRec) as a fixed 10-char space-padded
+; field + NUL:  file -> "NAME    " ; dir -> "<NAME....>" ; ".." -> ".."  .
+; A fixed width means scrolling onto a shorter entry leaves no stale glyphs.
+; Uses Txt_Line as scratch for the directory case.
+;-----------------------------------------------------------------------------
+UI_Format_Row
+	cmp #$02
+	beq UI_Format_Up
+	cmp #$01
+	beq UI_Format_Dir
+; file: the record is already space-padded to 8 - just widen to 10 + NUL
+	ldy #$08
+	lda #' '
+	sta Name_Row_Buf,y
+	iny
+	sta Name_Row_Buf,y
+	iny
+	lda #$00
+	sta Name_Row_Buf,y
+	rts
+UI_Format_Up
+	lda #'.'
+	sta Name_Row_Buf+0
+	sta Name_Row_Buf+1
+	ldy #$02
+UI_Format_Up_Pad
+	lda #' '
+	sta Name_Row_Buf,y
+	iny
+	cpy #$0A
+	bcc UI_Format_Up_Pad
+	lda #$00
+	sta Name_Row_Buf,y
+	rts
+UI_Format_Dir
+	ldy #$00							; stash the raw name in Txt_Line
+UI_Format_Dir_Cp
+	lda Name_Row_Buf,y
+	sta Txt_Line,y
+	iny
+	cpy #$08
+	bcc UI_Format_Dir_Cp
+	lda #'<'
+	sta Name_Row_Buf+0
+	ldx #$01							; X = write index into Name_Row_Buf
+	ldy #$00							; Y = read index into Txt_Line
+UI_Format_Dir_Name
+	lda Txt_Line,y
+	cmp #' '
+	beq UI_Format_Dir_Close
+	sta Name_Row_Buf,x
+	inx
+	iny
+	cpy #$08
+	bcc UI_Format_Dir_Name
+UI_Format_Dir_Close
+	lda #'>'
+	sta Name_Row_Buf,x
+	inx
+UI_Format_Dir_Pad
+	cpx #$0A
+	bcs UI_Format_Dir_End
+	lda #' '
+	sta Name_Row_Buf,x
+	inx
+	bne UI_Format_Dir_Pad
+UI_Format_Dir_End
+	lda #$00
+	sta Name_Row_Buf,x
+	rts
+
+;-----------------------------------------------------------------------------
 UI_Pen_Normal
 	lda #UI_PEN_FG
 	ldx #$00							; transparent background
 	jmp Text_SetPen
-UI_Pen_Invert							; the highlighted list row
+UI_Pen_Invert							; the highlighted list row (foreground only)
 	lda #UI_PEN_HI
-	ldx #$01							; opaque background (attribute bit 7)
+	ldx #$00							; transparent bg - no bar after the palette repack
+	jmp Text_SetPen
+UI_Pen_DirRow							; directory / ".." rows
+	lda #UI_PEN_DIR
+	ldx #$00
 	jmp Text_SetPen
 
 ;-----------------------------------------------------------------------------
@@ -534,10 +880,6 @@ UI_ReadRec_L1
 	lda #MEMAC_GLOBAL_DISABLE
 	vbsta VBXE_MA_BSEL
 	rts
-
-Folder_ReadName							; A = browser index -> Name_Row_Buf
-	ldx #DIRBROW_BANK
-	jmp UI_ReadRec
 
 ;-----------------------------------------------------------------------------
 ; UI_Build_LocLine - Txt_Line = "D[n]:" + Scan_Path , NUL-terminated.
@@ -654,20 +996,16 @@ SelK_5
 	jmp Sel_Key_DelayDown
 SelK_6
 	cmp #KEY_D
-	bne SelK_7
-	jmp Sel_Key_Drive
-SelK_7
-	cmp #KEY_F
 	bne SelK_8
-	jmp Sel_Key_Folder
+	jmp Sel_Key_Drive
 SelK_8
 	cmp #KEY_P
 	bne SelK_9
 	jmp Sel_Key_P
 SelK_9
-	cmp #KEY_A
+	cmp #KEY_I
 	bne SelK_10
-	jmp Sel_Key_A
+	jmp Sel_Key_I
 SelK_10
 	cmp #KEY_Q
 	bne SelK_None
@@ -734,6 +1072,25 @@ Sel_Key_Enter
 	lda ImageCount
 	ora ImageCount+1
 	beq Sel_RD
+	lda Sel_Index
+	jsr UI_RowType
+	beq Sel_Key_Enter_View				; file  -> view it
+	cmp #$02
+	beq Sel_Key_Enter_Up				; ".."  -> up one level
+; directory -> descend and re-scan
+	lda Sel_Index
+	ldx #IMAGE_BANK
+	jsr UI_ReadRec						; Name_Row_Buf = raw dir name (not "<...>")
+	jsr Folder_Path_Push				; Scan_Path += "name>"
+	jsr Rescan_Images
+	jsr Selector_Draw
+	jmp Read_Key_Done
+Sel_Key_Enter_Up
+	jsr Path_Pop_Segment
+	jsr Rescan_Images
+	jsr Selector_Draw
+	jmp Read_Key_Done
+Sel_Key_Enter_View
 	jsr View_Selected
 	lda #$01
 	sta UI_Mode
@@ -743,10 +1100,14 @@ Sel_Key_Show
 	lda ImageCount
 	ora ImageCount+1
 	beq Sel_RD
+	lda Sel_Index
+	jsr UI_RowType
+	bne Sel_Key_Show_Ignore				; dir / ".." -> can't slideshow a folder
 	jsr View_Selected
 	jsr Slideshow_Reload_Counter
 	lda #$02
 	sta UI_Mode
+Sel_Key_Show_Ignore
 	jmp Read_Key_Done
 
 Sel_Key_DelayUp
@@ -765,50 +1126,172 @@ Sel_Key_DelayDown
 	jsr Selector_DrawDelay
 	jmp Read_Key_Done
 
+;-----------------------------------------------------------------------------
+; Sel_Key_Drive - open the "D" save-under overlay: stash the covered rectangle,
+; frame it, list "D:" + "D1:".."D8:", and hand control to Drive_Keys (UI_Mode 3).
+;-----------------------------------------------------------------------------
 Sel_Key_Drive
-	lda Scan_Drive
-	bne Sel_Key_Drive_Digit
-	lda #'1'-1							; $00 -> begin cycling at '1'
-Sel_Key_Drive_Digit
-	clc
-	adc #$01
-	cmp #'8'+1
-	bcc Sel_Key_Drive_Store
-	lda #$00							; past '8' -> back to a bare "D:"
-Sel_Key_Drive_Store
-	sta Scan_Drive
-	lda #$00
-	sta Scan_Path						; new drive -> start at its root
-	jsr Rescan_Images
-	jmp Sel_Redraw
+	jsr UI_Pen_Normal
+	jsr Drive_Win_Geom
+	jsr Text_Window_Save				; keep the list underneath intact
+	jsr Text_Window_Frame
 
-Sel_Key_Folder
-; save the current path so ESC in the browser can cancel back to it.
-; Folder_Saved_Path is a dedicated buffer - Txt_Line is rewritten by every
-; screen draw the browser does, so it cannot survive the session.
-	ldy #$00
-Sel_Key_Folder_Save
-	lda Scan_Path,y
-	sta Folder_Saved_Path,y
-	beq Sel_Key_Folder_Go
-	iny
-	cpy #$28
-	bcc Sel_Key_Folder_Save
-Sel_Key_Folder_Go
-	jsr Folder_Scan
+	lda #DRIVE_WIN_ROW+1					; title on the first interior row
+	sta Txt_Row
+	lda #DRIVE_WIN_COL+2
+	sta Txt_Col
+	lda #<UI_Str_DriveTitle
+	sta Txt_Ptr
+	lda #>UI_Str_DriveTitle
+	sta Txt_Ptr + $01
+	jsr Text_PutStrAt
+
+	lda Scan_Drive						; seed the cursor from the current drive
+	beq Sel_Key_Drive_Seed0
+	sec
+	sbc #'0'
+	jmp Sel_Key_Drive_SeedSet
+Sel_Key_Drive_Seed0
 	lda #$00
-	sta Brow_Index
-	sta Brow_Top
+Sel_Key_Drive_SeedSet
+	sta Drive_Pick_Index
+
+	jsr Drive_DrawRows
 	lda #$03
 	sta UI_Mode
-	jsr Folder_Draw
+	jmp Read_Key_Done
+
+; Txt_Row / Txt_Col / Reg1 (width-1) / Reg2 (height-1) for the drive window
+Drive_Win_Geom
+	lda #DRIVE_WIN_ROW
+	sta Txt_Row
+	lda #DRIVE_WIN_COL
+	sta Txt_Col
+	lda #DRIVE_WIN_W-1
+	sta Reg1
+	lda #DRIVE_WIN_H-1
+	sta Reg2
+	rts
+
+; Draw the 9 drive rows ("D:", "D1:".."D8:"); Drive_Pick_Index is drawn inverted.
+Drive_DrawRows
+	lda #$00
+	sta Reg5							; Reg5 = drive index 0..8
+Drive_DrawRows_L1
+	lda Reg5
+	cmp #$09
+	bcs Drive_DrawRows_Done
+	ldx #$00
+	lda #'D'
+	sta Txt_Line,x
+	inx
+	lda Reg5
+	beq Drive_DrawRows_Colon
+	clc
+	adc #'0'
+	sta Txt_Line,x
+	inx
+Drive_DrawRows_Colon
+	lda #':'
+	sta Txt_Line,x
+	inx
+Drive_DrawRows_Pad
+	cpx #$06
+	bcs Drive_DrawRows_Term
+	lda #' '
+	sta Txt_Line,x
+	inx
+	bne Drive_DrawRows_Pad
+Drive_DrawRows_Term
+	lda #$00
+	sta Txt_Line,x
+	lda Reg5
+	cmp Drive_Pick_Index
+	bne Drive_DrawRows_Normal
+	jsr UI_Pen_Invert
+	jmp Drive_DrawRows_Put
+Drive_DrawRows_Normal
+	jsr UI_Pen_Normal
+Drive_DrawRows_Put
+	lda Reg5
+	clc
+	adc #DRIVE_WIN_ROW+3
+	sta Txt_Row
+	lda #DRIVE_WIN_COL+2
+	sta Txt_Col
+	lda #<Txt_Line
+	sta Txt_Ptr
+	lda #>Txt_Line
+	sta Txt_Ptr + $01
+	jsr Text_PutStrAt
+	inc Reg5
+	jmp Drive_DrawRows_L1
+Drive_DrawRows_Done
+	rts
+
+;=============================================================================
+; Drive picker keys  (UI_Mode = 3)
+;=============================================================================
+Drive_Keys
+	lda CH
+	cmp #KEY_DOWN
+	bne DrvK_1
+	lda Drive_Pick_Index
+	cmp #$08
+	bcs Drive_Keys_Ret
+	inc Drive_Pick_Index
+	jsr Drive_DrawRows
+	jmp Read_Key_Done
+DrvK_1
+	cmp #KEY_UP
+	bne DrvK_2
+	lda Drive_Pick_Index
+	beq Drive_Keys_Ret
+	dec Drive_Pick_Index
+	jsr Drive_DrawRows
+	jmp Read_Key_Done
+DrvK_2
+	cmp #KEY_RETURN
+	bne DrvK_3
+	lda Drive_Pick_Index
+	beq Drive_Keys_Bare
+	clc
+	adc #'0'
+	sta Scan_Drive
+	jmp Drive_Keys_Commit
+Drive_Keys_Bare
+	lda #$00
+	sta Scan_Drive
+Drive_Keys_Commit
+	lda #$00
+	sta Scan_Path						; always scan the drive root
+	jsr Drive_Win_Geom
+	jsr Text_Window_Restore
+	jsr Rescan_Images
+	jsr Selector_Draw
+	lda #$00
+	sta UI_Mode
+	jmp Read_Key_Done
+DrvK_3
+	cmp #KEY_ESC
+	bne DrvK_4
+	jsr Drive_Win_Geom
+	jsr Text_Window_Restore
+	lda #$00
+	sta UI_Mode
+	jmp Read_Key_Done
+DrvK_4
+	cmp #KEY_Q
+	bne Drive_Keys_Ret
+	jmp Exit
+Drive_Keys_Ret
 	jmp Read_Key_Done
 
 Sel_Key_P
 	jsr Selector_Handle_P
 	jmp Read_Key_Done
-Sel_Key_A
-	jsr Selector_Handle_A
+Sel_Key_I
+	jsr Selector_Handle_I
 	jmp Read_Key_Done
 Sel_Key_Quit
 	jmp Exit
@@ -871,27 +1354,27 @@ Selector_Handle_P
 	rts
 
 ;-----------------------------------------------------------------------------
-; Selector_Handle_A - load the selected image's "<name>.NFO" and open the info
+; Selector_Handle_I - load the selected image's "<name>.NFO" and open the info
 ; viewer (UI_Mode 4).  Missing file -> stay on the selector, do nothing.
 ;-----------------------------------------------------------------------------
-Selector_Handle_A
+Selector_Handle_I
 	lda ImageCount
 	ora ImageCount+1
-	beq Selector_Handle_A_Ret			; no images -> nothing to describe
+	beq Selector_Handle_I_Ret			; no images -> nothing to describe
 	lda Sel_Index
 	sta File_Index
 	lda #$03							; ext selector 3 = .NFO
 	jsr Build_Filename					; FileNamePtr -> "D[n]:PATH<base>.NFO",0
 	jsr Info_Load						; stream into NFO_BANK, count lines
 	lda LoadStatus
-	beq Selector_Handle_A_Ret			; OPEN failed (no .nfo) - selector stays up
+	beq Selector_Handle_I_Ret			; OPEN failed (no .nfo) - selector stays up
 	lda #$00
 	sta Nfo_Top
 	sta Nfo_Top + $01
 	jsr Info_Draw
 	lda #$04
 	sta UI_Mode
-Selector_Handle_A_Ret
+Selector_Handle_I_Ret
 	rts
 
 ;=============================================================================
@@ -1015,7 +1498,7 @@ Info_Load_ClearPage
 	sta BankIndex
 	jsr LoadData						; FileNamePtr was set by Build_Filename
 	lda LoadStatus
-	beq Info_Load_Ret					; OPEN failed - Selector_Handle_A bails
+	beq Info_Load_Ret					; OPEN failed - Selector_Handle_I bails
 	jsr Info_Format_Page				; reformat -> MONO_PAGE, sets Nfo_LineCount
 Info_Load_Ret
 	rts
@@ -1294,7 +1777,7 @@ InfK_3
 InfK_4
 	cmp #KEY_ESC
 	beq Info_Key_Leave
-	cmp #KEY_A
+	cmp #KEY_I
 	beq Info_Key_Leave
 	cmp #KEY_Q
 	bne InfK_None
@@ -1361,13 +1844,12 @@ Info_Key_PageDown_Draw
 	jmp Read_Key_Done
 
 ;=============================================================================
-; Folder browser  (UI_Mode = 3)
+; Shared directory helpers
 ;-----------------------------------------------------------------------------
-; Lists the sub-directories under D[n]:Scan_Path (files are filtered out by the
-; "<DIR>" tag SDX puts in a CIO directory listing).  ENTER descends into the
-; highlighted entry (append ">name") and re-scans; ".." pops a segment.  SPACE
-; commits the current location (rescan images, back to the selector).  ESC
-; restores the path we came in with and returns.
+; Line_Has_Dir_Tag classifies a CIO directory line; Folder_Path_Push /
+; Path_Pop_Segment maintain the Scan_Path segment stack ("NAME>NAME2>").  All
+; three are driven from Build_Image_List and Sel_Key_Enter now that directory
+; navigation lives in the selector itself.
 ;=============================================================================
 
 ;-----------------------------------------------------------------------------
@@ -1401,371 +1883,6 @@ Line_Has_Dir_Tag_Next
 	bcc Line_Has_Dir_Tag_L1
 	lda #$00							; not found
 	rts
-
-;-----------------------------------------------------------------------------
-; Folder_Scan - build the browser list in DIRBROW_BANK from D[n]:Scan_Path*.*
-;-----------------------------------------------------------------------------
-Folder_Scan
-	lda #$00
-	sta Brow_Count
-
-; ".." at slot 0 whenever we are below the drive root
-	lda Scan_Path
-	beq Folder_Scan_Open
-	lda #DIRBROW_BANK | MEMAC_GLOBAL_ENABLE
-	vbsta VBXE_MA_BSEL
-	lda #'.'
-	sta VBXE_WINDOW+0
-	sta VBXE_WINDOW+1
-	lda #' '
-	sta VBXE_WINDOW+2
-	sta VBXE_WINDOW+3
-	sta VBXE_WINDOW+4
-	sta VBXE_WINDOW+5
-	sta VBXE_WINDOW+6
-	sta VBXE_WINDOW+7
-	lda #MEMAC_GLOBAL_DISABLE
-	vbsta VBXE_MA_BSEL
-	inc Brow_Count
-
-Folder_Scan_Open
-	jsr Build_Browse_Spec
-	jsr Find_First_IOCB
-	cpy #$01
-	beq Folder_Scan_Have_IOCB
-	rts
-Folder_Scan_Have_IOCB
-	stx Dir_IOCB
-	lda #CIO_dir
-	sta ICAX1,x
-	lda #$80								; AUX2 = long DIR format: subdirs get the
-	sta ICAX2,x							; "<DIR>" size-field tag Line_Has_Dir_Tag
-										; looks for.  AUX2=0 gives the short (DIRS)
-										; format where a subdir is only flagged by a
-										; ':' name prefix, so every folder was being
-										; read then misclassified as a file and
-										; dropped.  Long format also prepends
-										; "Volume:"/"Directory:" header lines - those
-										; carry no "<DIR>" tag so the filter below
-										; discards them anyway.  $A8 stays <= 40
-										; chars/line (fits Dir_Line_Buf).
-	lda #<Scan_Spec
-	sta ICBAL,x
-	lda #>Scan_Spec
-	sta ICBAH,x
-	lda #CIO_open
-	sta ICCOM,x
-	jsr CIOV
-	bmi Folder_Scan_Done				; OPEN failed - keep just ".."
-
-	lda Brow_Count						; write cursor starts after ".."
-	jsr Sort_SetNamePtr					; Name_Ptr = ImageNames + Brow_Count*8
-	lda #DIRBROW_BANK | MEMAC_GLOBAL_ENABLE
-	vbsta VBXE_MA_BSEL
-
-Folder_Scan_L1
-	ldx Dir_IOCB
-	lda #CIO_gettext
-	sta ICCOM,x
-	lda #<Dir_Line_Buf
-	sta ICBAL,x
-	lda #>Dir_Line_Buf
-	sta ICBAH,x
-	lda #<Dir_Line_Len
-	sta ICBLL,x
-	lda #>Dir_Line_Len
-	sta ICBLH,x
-	jsr CIOV
-	bmi Folder_Scan_Close
-
-	lda Brow_Count
-	cmp #DIRBROW_MAX
-	bcs Folder_Scan_L1					; list full - drain the rest
-
-	jsr Parse_Dir_Line
-	beq Folder_Scan_L1					; not a real name
-
-	ldy #$00							; drop "." / ".." from the listing itself
-	lda (Name_Ptr),y
-	cmp #'.'
-	beq Folder_Scan_L1
-
-	jsr Line_Has_Dir_Tag				; SDX marks subdirs with "<DIR>" in the listing
-	beq Folder_Scan_L1					; no tag -> it's a file, skip it
-
-	inc Brow_Count
-	lda Name_Ptr
-	clc
-	adc #$08
-	sta Name_Ptr
-	bcc Folder_Scan_L1
-	inc Name_Ptr+1
-	jmp Folder_Scan_L1
-
-Folder_Scan_Close
-	ldx Dir_IOCB
-	lda #CIO_close
-	sta ICCOM,x
-	jsr CIOV
-	lda #MEMAC_GLOBAL_DISABLE
-	vbsta VBXE_MA_BSEL
-Folder_Scan_Done
-	rts
-
-;-----------------------------------------------------------------------------
-; Folder_Draw - full repaint (Text_Clear + chrome + list + legend).  Only from
-; Sel_Key_Folder and Folder_Redraw; the nav keys use Folder_HiRow (cursor move)
-; / Folder_DrawList (scroll) in place, like the selector.
-;-----------------------------------------------------------------------------
-Folder_Draw
-	jsr Text_Clear
-	jsr UI_Pen_Normal
-	TXT_AT 0, 2, UI_Str_FolderTitle
-	TXT_AT 1, 2, UI_Str_Loc
-	jsr UI_Build_LocLine
-	TXT_AT 1, 12, Txt_Line
-
-	jsr Folder_DrawList
-
-	jsr UI_Pen_Normal
-	TXT_AT 28, 2, UI_Str_FolderLegend
-	rts
-
-;-----------------------------------------------------------------------------
-; Folder_RealCount - A = browser entries that are not the synthetic ".." (which
-; sits at slot 0 only when Scan_Path is non-empty).
-;-----------------------------------------------------------------------------
-Folder_RealCount
-	lda Scan_Path
-	beq Folder_RealCount_Raw			; at the drive root - no ".."
-	lda Brow_Count
-	beq Folder_RealCount_Raw			; (defensive) nothing at all
-	sec
-	sbc #$01
-	rts
-Folder_RealCount_Raw
-	lda Brow_Count
-	rts
-
-;-----------------------------------------------------------------------------
-; Folder_DrawList - repaint the whole browser list in place (no Text_Clear, no
-; chrome).  Adds "(no directories found here)" below the last row when there
-; are no real sub-directories.
-;-----------------------------------------------------------------------------
-Folder_DrawList
-	jsr Folder_DrawList_Body
-	jsr Folder_RealCount
-	bne Folder_DrawList_Ret
-	jsr UI_Pen_Normal
-	lda Brow_Count						; 0 (root) or 1 (just "..") -> row after it
-	clc
-	adc #UI_FIRSTROW
-	sta Txt_Row
-	lda #4
-	sta Txt_Col
-	lda #<UI_Str_NoDirs
-	sta Txt_Ptr
-	lda #>UI_Str_NoDirs
-	sta Txt_Ptr + $01
-	jsr Text_PutStrAt
-Folder_DrawList_Ret
-	rts
-
-Folder_DrawList_Body
-	lda #$00
-	sta Reg5							; Reg5 = visible row 0..VISROWS-1
-Folder_DrawList_L1
-	lda Reg5
-	cmp #UI_VISROWS
-	bcs Folder_DrawList_Done
-	clc
-	adc Brow_Top
-	sta Reg6							; Reg6 = list index for this row
-	cmp Brow_Count
-	bcs Folder_DrawList_Done
-
-	lda Reg6
-	ldx #DIRBROW_BANK
-	jsr UI_ReadRec
-
-	lda Reg5
-	clc
-	adc #UI_FIRSTROW
-	sta Txt_Row
-	lda Reg6
-	cmp Brow_Index
-	beq Folder_DrawList_Hi
-	lda #$00
-	jmp Folder_DrawList_Put
-Folder_DrawList_Hi
-	lda #$01
-Folder_DrawList_Put
-	jsr UI_DrawNameRow
-	inc Reg5
-	jmp Folder_DrawList_L1
-Folder_DrawList_Done
-	rts
-
-;-----------------------------------------------------------------------------
-; Folder_HiRow - A = list index.  Recolours just that row's 8 name cells via
-; the blitter (no glyph redraw), highlighted if index == Brow_Index.  No-op if
-; off screen.  Mirrors Selector_HiRow.
-;-----------------------------------------------------------------------------
-Folder_HiRow
-	sta Reg6
-	cmp Brow_Top
-	bcc Folder_HiRow_Skip
-	sec
-	sbc Brow_Top
-	cmp #UI_VISROWS
-	bcs Folder_HiRow_Skip
-	clc
-	adc #UI_FIRSTROW
-	sta Txt_Row
-	lda Reg6
-	cmp Brow_Count
-	bcs Folder_HiRow_Skip
-	lda #4
-	sta Txt_Col
-	lda #7
-	sta Reg1
-	lda #$00
-	sta Reg2
-	lda Reg6
-	cmp Brow_Index
-	beq Folder_HiRow_Hi
-	lda #UI_PEN_FG
-	jmp Text_FillColour					; tail
-Folder_HiRow_Hi
-	lda #UI_PEN_HI | $80
-	jmp Text_FillColour					; tail
-Folder_HiRow_Skip
-	rts
-
-;-----------------------------------------------------------------------------
-Folder_Keys
-	lda CH
-	cmp #KEY_DOWN
-	bne FolK_1
-	jmp Folder_Key_Down
-FolK_1
-	cmp #KEY_UP
-	bne FolK_2
-	jmp Folder_Key_Up
-FolK_2
-	cmp #KEY_RETURN
-	bne FolK_3
-	jmp Folder_Key_Open
-FolK_3
-	cmp #KEY_SPACE
-	bne FolK_4
-	jmp Folder_Key_Commit
-FolK_4
-	cmp #KEY_ESC
-	bne FolK_5
-	jmp Folder_Key_Cancel
-FolK_5
-	cmp #KEY_Q
-	bne FolK_None
-	jmp Folder_Key_Quit
-FolK_None
-	jmp Read_Key_Done
-
-Folder_Redraw
-	jsr Folder_Draw
-	jmp Read_Key_Done
-
-Folder_Key_Down
-	lda Brow_Count
-	beq Folder_Nav_Done					; empty list
-	ldx Brow_Index
-	inx
-	cpx Brow_Count
-	bcs Folder_Nav_Done					; already on the last entry
-	lda Brow_Index
-	sta Reg3							; Reg3 = old (now un-highlighted) index
-	stx Brow_Index
-	txa
-	sec
-	sbc #[UI_VISROWS-1]
-	bcc Folder_Key_Down_Rows			; still visible
-	cmp Brow_Top
-	bcc Folder_Key_Down_Rows
-	beq Folder_Key_Down_Rows
-	sta Brow_Top						; scrolled -> repaint the list in place
-	jsr Folder_DrawList
-	jmp Read_Key_Done
-Folder_Key_Down_Rows
-	lda Reg3
-	jsr Folder_HiRow					; un-highlight the row we left
-	lda Brow_Index
-	jsr Folder_HiRow					; highlight the row we moved to
-Folder_Nav_Done
-	jmp Read_Key_Done
-
-Folder_Key_Up
-	lda Brow_Index
-	beq Folder_Nav_Done					; already at the top
-	sta Reg3
-	sec
-	sbc #$01
-	sta Brow_Index
-	cmp Brow_Top
-	bcs Folder_Key_Up_Rows				; still visible
-	sta Brow_Top						; scrolled -> repaint the list in place
-	jsr Folder_DrawList
-	jmp Read_Key_Done
-Folder_Key_Up_Rows
-	lda Reg3
-	jsr Folder_HiRow
-	lda Brow_Index
-	jsr Folder_HiRow
-	jmp Read_Key_Done
-
-Folder_Key_Open
-	lda Brow_Count
-	beq Folder_Redraw					; nothing to open
-	jsr Folder_Open_Selected
-	lda #$00
-	sta Brow_Index
-	sta Brow_Top
-	jmp Folder_Redraw
-
-Folder_Key_Commit
-	jsr Rescan_Images
-	jsr Enter_Selector
-	jmp Read_Key_Done
-
-Folder_Key_Cancel
-	ldy #$00							; restore the saved path (Folder_Saved_Path)
-Folder_Key_Cancel_L1
-	lda Folder_Saved_Path,y
-	sta Scan_Path,y
-	beq Folder_Key_Cancel_Done
-	iny
-	cpy #$28
-	bcc Folder_Key_Cancel_L1
-Folder_Key_Cancel_Done
-	jsr Enter_Selector
-	jmp Read_Key_Done
-
-Folder_Key_Quit
-	jmp Exit
-
-;-----------------------------------------------------------------------------
-; Folder_Open_Selected - descend into Brow_Index (or pop for ".."), re-scan.
-;-----------------------------------------------------------------------------
-Folder_Open_Selected
-	lda Brow_Index
-	jsr Folder_ReadName					; Name_Row_Buf = entry
-	lda Name_Row_Buf
-	cmp #'.'
-	beq Folder_Open_Pop
-	jsr Folder_Path_Push
-	jmp Folder_Scan
-Folder_Open_Pop
-	jsr Path_Pop_Segment
-	jmp Folder_Scan
 
 ;-----------------------------------------------------------------------------
 ; Folder_Path_Push - append "<name>>" to Scan_Path (name from Name_Row_Buf,
@@ -1836,9 +1953,7 @@ UI_Str_Title		dta c'1024 Colour Picture Viewer',0
 UI_Str_Images		dta c'Images: ',0
 UI_Str_Loc			dta c'Location: ',0
 UI_Str_Empty		dta c'(no images found here)',0
-UI_Str_NoDirs		dta c'(no directories found here)',0
 UI_Str_Delay		dta c'Slideshow delay: ',0
 UI_Str_DelayHint	dta c's    , shorter    . longer',0
-UI_Str_Legend		dta c'Up/Dn move  ENTER view  S slide  D drive  F folder  P pal  A info  Q quit',0
-UI_Str_FolderTitle	dta c'Select folder for image scan',0
-UI_Str_FolderLegend	dta c'Up/Dn move   ENTER open   SPACE scan here   ESC cancel',0
+UI_Str_Legend		dta c'Up/Dn move  ENTER open  S slide  D drive  P pal  I info  Q quit',0
+UI_Str_DriveTitle	dta c'Scan drive',0
