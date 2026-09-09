@@ -170,7 +170,7 @@
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $11	; 1 (Screen code used for Version in loading screen)
-.def	V_2								= $11	; 1 (Screen code used for Version in loading screen)
+.def	V_2								= $12	; 1 (Screen code used for Version in loading screen)
 .def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
