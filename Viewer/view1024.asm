@@ -15,7 +15,8 @@
 ;    CRAM_Buffer     = $14000 - $1657F (Compressed palette bytes)
 ;    CRAM            = $17000 - $205FF (Colour Ram)
 ;    Palette_Buffers = $21000 - $21FFF (Temp 4kB buffer for loading palettes)
-;    Text font       = $22000 - $227FF (CGA.F08, VBXE text mode - see text80.asm)
+;    Text fonts      = $22000 - $22FFF (CGA.F08 @ $22000 / ATARI.F08 @ $22800;
+;                      F toggles XDL_Text CHBASE between them - see text80.asm)
 ;    Text screen RAM = $23000 - $242BF (80x30 {glyph,attr} cells)
 ;    .nfo raw text   = $25000 - $26FFF (bank $25/$26: verbatim .NFO file bytes)
 ;    Mono text page  = $27000 - $2EFFF (banks $27-$2E: reformatted mono glyphs,
@@ -88,7 +89,8 @@
 .var Drive_Pick_Index	.byte = $4DB	; drive picker (UI_Mode 3): 0 = "D:", 1..8 = "Dn:"
 .var Nfo_Top			.word = $4DC	; info viewer: first visible line (0-based)
 .var Nfo_LineCount		.word = $4DE	; info viewer: total lines in the loaded .nfo
-;	$4E0 to $4FF free
+.var Font_Sel			.byte = $4E0	; text font: 0 = CGA ($44), 1 = Atari ($45)
+;	$4E1 to $4FF free
 .var Dir_Line_Buf		:$28 .byte = $600	; One GET RECORD dir line ($600-$627)
 .var Scan_Path			:$28 .byte = $628	; subdirectory part, ">DIR>DIR>" or empty ($628-$64F)
 .var Scan_Spec			:$30 .byte = $650	; assembled "D[n]:PATH*.MAP",$9B ($650-$67F)
@@ -123,7 +125,9 @@
 ; ($21000), the name list ($40000) and the dir browser ($41000).
 .def	TEXT_FONT_VRAM					= $22000	; CGA.F08 (2048 bytes) lands here
 .def	TEXT_FONT_BANK					= TEXT_FONT_VRAM / $1000	; = $22  (LoadData target bank)
-.def	TEXT_CHBASE						= TEXT_FONT_VRAM / $800	; = $44  (XDL_Text CHBASE byte)
+.def	TEXT_CHBASE						= TEXT_FONT_VRAM / $800	; = $44  (XDL_Text CHBASE byte, CGA - boot default)
+.def	TEXT_FONT2_VRAM					= TEXT_FONT_VRAM + $800	; $22800 - Atari font (2nd 2K slot in bank $22)
+.def	TEXT_CHBASE2					= TEXT_FONT2_VRAM / $800	; = $45  (XDL_Text CHBASE byte, Atari)
 .def	TEXT_SCREEN_VRAM				= $23000	; 80x30 {glyph,attr} cells = 4800 bytes
 .def	TEXT_SCREEN_BANK				= TEXT_SCREEN_VRAM / $1000	; = $23  (first bank of screen RAM)
 .def	TEXT_COLS						= 80
@@ -272,6 +276,7 @@ start
 	lda #$00
 	sta Scan_Drive						; Default scan location = "D:" (current drive)
 	sta Scan_Path						; No subdirectory
+	sta Font_Sel						; Start on the CGA font (XDL_Text CHBASE = $44)
 	lda #$05
 	sta Slide_Secs						; Default slideshow delay, seconds
 
@@ -430,6 +435,12 @@ Handle_Keys
 ; Dispatch on the current UI mode - the selector, slideshow, drive picker and
 ; info viewer each have their own key set (ui.asm); mode 1 (image view) uses
 ; the set below.
+	lda CH
+	cmp #KEY_F							; F toggles the text font on every screen
+	bne Handle_Keys_Mode
+	jsr Toggle_Font
+	jmp Read_Key_Done
+Handle_Keys_Mode
 	lda UI_Mode
 	bne Handle_Keys_NotSelector
 	jmp Selector_Keys					; 0 = selector

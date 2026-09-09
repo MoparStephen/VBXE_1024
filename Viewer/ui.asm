@@ -50,6 +50,7 @@
 .def	KEY_Q			= $2F
 .def	KEY_S			= $3E
 .def	KEY_D			= $3A
+.def	KEY_F			= $38			; toggle text font (CGA <-> Atari)
 .def	KEY_P			= $0A
 .def	KEY_I			= $0D
 .def	KEY_COMMA		= $20			; "," - shorter slideshow delay
@@ -1955,5 +1956,5 @@ UI_Str_Loc			dta c'Location: ',0
 UI_Str_Empty		dta c'(no images found here)',0
 UI_Str_Delay		dta c'Slideshow delay: ',0
 UI_Str_DelayHint	dta c's    , shorter    . longer',0
-UI_Str_Legend		dta c'Up/Dn move  ENTER open  S slide  D drive  P pal  I info  Q quit',0
+UI_Str_Legend		dta c'Up/Dn move  ENTER open  S slide  D drive  P pal  I info  F font  Q quit',0
 UI_Str_DriveTitle	dta c'Scan drive',0

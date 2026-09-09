@@ -66,37 +66,76 @@ Text_Init
 	ldx #TEXT_DEF_BG
 	jsr Text_SetPen						; sets Txt_Attr
 
-	jsr Text_Load_Font					; embedded CGA.F08 -> VRAM TEXT_FONT_VRAM
+	jsr Text_Load_Fonts					; embedded CGA.F08 + ATARI.F08 -> VRAM bank $22
 	jmp Text_Clear						; blank the screen RAM, then rts
 
 ;-----------------------------------------------------------------------------
-; Text_Load_Font - copy the 2048-byte CGA font from the .xex into VRAM bank
-; TEXT_FONT_BANK ($22 -> $022000) through the $2000 window.  The font is
-; embedded rather than streamed from disk so the viewer never depends on
-; CGA.F08 being present on whatever disk it happens to boot from.
+; Text_Load_Fonts - copy both embedded 2048-byte fonts into VRAM bank
+; TEXT_FONT_BANK ($22) through the $2000 window: CGA.F08 -> $022000 (CHBASE
+; $44), ATARI.F08 -> $022800 (CHBASE $45).  Fonts are embedded rather than
+; streamed from disk so the viewer never depends on a font file being on
+; whatever disk it happens to boot from.  F (Handle_Keys) flips XDL_Text's
+; CHBASE byte between the two.
 ;-----------------------------------------------------------------------------
-Text_Load_Font
+Text_Load_Fonts
 	lda #TEXT_FONT_BANK | MEMAC_GLOBAL_ENABLE
 	vbsta VBXE_MA_BSEL					; map VRAM bank $22 into $2000-$2FFF
+
 	lda #<Text_Font_Data
 	sta Ptr_Lo
 	lda #>Text_Font_Data
-	sta Ptr_Hi							; source: the embedded font
-	lda #<VBXE_WINDOW
+	sta Ptr_Hi
+	lda #<VBXE_WINDOW					; -> VBXE $022000  (CGA)
 	sta Reg1
 	lda #>VBXE_WINDOW
-	sta Reg2							; dest: the mapped window
-	ldx #$08							; 8 pages = 2048 bytes
+	sta Reg2
+	jsr Text_Copy_2K
+
+	lda #<Atari_Font_Data
+	sta Ptr_Lo
+	lda #>Atari_Font_Data
+	sta Ptr_Hi
+	lda #<[VBXE_WINDOW + $800]			; -> VBXE $022800  (Atari)
+	sta Reg1
+	lda #>[VBXE_WINDOW + $800]
+	sta Reg2
+	jsr Text_Copy_2K
+
+	lda #MEMAC_GLOBAL_DISABLE
+	vbsta VBXE_MA_BSEL
+	rts
+
+; Copy 2048 bytes (Ptr_Lo/Hi) -> (Reg1/Reg2), 8 pages.
+Text_Copy_2K
+	ldx #$08
 	ldy #$00
-Text_Load_Font_L1
+Text_Copy_2K_L1
 	lda (Ptr_Lo),y
 	sta (Reg1),y
 	iny
-	bne Text_Load_Font_L1
+	bne Text_Copy_2K_L1
 	inc Ptr_Hi
 	inc Reg2
 	dex
-	bne Text_Load_Font_L1
+	bne Text_Copy_2K_L1
+	rts
+
+;-----------------------------------------------------------------------------
+; Toggle_Font - flip the text screen between the CGA ($44) and Atari ($45)
+; font by rewriting the one XDLC_CHBASE byte in XDL_Text (VBXE $00029).  The
+; VBXE re-reads the XDL each frame, so the change shows on the next frame with
+; no redraw.  Called from Handle_Keys on the F key, from any screen.
+;-----------------------------------------------------------------------------
+Toggle_Font
+	lda Font_Sel
+	eor #$01
+	sta Font_Sel
+	clc
+	adc #TEXT_CHBASE					; 0 -> $44 (CGA) / 1 -> $45 (Atari)
+	tax									; hold it - vbsta clobbers A (and Y)
+	lda #MEMAC_GLOBAL_ENABLE				; map VBXE bank $00 into the $2000 window
+	vbsta VBXE_MA_BSEL
+	stx XDL_Text + 8					; XDLC_CHBASE byte, offset 8 in XDL_Text
 	lda #MEMAC_GLOBAL_DISABLE
 	vbsta VBXE_MA_BSEL
 	rts
@@ -601,4 +640,18 @@ Text_Font_Data
 Text_Font_Data_End
 	.if Text_Font_Data_End - Text_Font_Data != 2048
 		.error "CGA.F08 must be exactly 2048 bytes"
+	.endif
+
+;-----------------------------------------------------------------------------
+; The Atari OS character set, embedded in the .xex.  Re-ordered from the ROM's
+; ATASCII/internal glyph order into ASCII order (glyph index = raw ASCII byte,
+; matching CGA.F08 and Text_PutStrAt), with glyphs $80-$FF the bitwise inverse
+; of $00-$7F.  256 glyphs x 8x8 1bpp = 2048 bytes.  ATARI-raw.F08 keeps the
+; original 1024-byte ROM dump.  Loaded to VRAM $022800 by Text_Load_Fonts.
+;-----------------------------------------------------------------------------
+Atari_Font_Data
+	ins 'Assets/ATARI.F08'
+Atari_Font_Data_End
+	.if Atari_Font_Data_End - Atari_Font_Data != 2048
+		.error "ATARI.F08 must be exactly 2048 bytes"
 	.endif
