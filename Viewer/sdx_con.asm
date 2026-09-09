@@ -9,9 +9,10 @@
 ;                            remembers whether it was in extended mode, and
 ;                            drops it to the standard 40-column OS editor.
 ; SDX_Console_Restore      - call once just before jmp (DOSVEC). If a soft
-;                            console is present the loader screen is cleared off
-;                            it; if it was in 64/80-column mode at startup that
-;                            mode is also put back. No soft console -> no-op.
+;                            console was present at startup, re-assert its
+;                            startup mode (40 or 64/80 col) so it re-inits and
+;                            redraws - cursor included - then clear the loader
+;                            screen off it. No soft console -> no-op.
 ;
 ; Mechanism - SDX 4.50 Programmer's/User Guide, section 6.9 "Using the CON:
 ; Drivers in Own Programs":
@@ -84,13 +85,13 @@ SDX_Console_Restore
 	lda SDX_Con_Func						; 0 = no soft console at startup -> no-op
 	beq SDX_Console_Restore_Done
 
-	lda SDX_Con_WasExt
-	beq SDX_Console_Restore_Clear			; soft console was already 40-col - don't
-											;   re-enable, but still wipe our text off it
-	lda #SDX_CON_ENABLE						; AUX2 = 128 -> re-enable extended mode
-	jsr SDX_Con_ModeCall
-SDX_Console_Restore_Clear
-	jsr SDX_Con_ClearScreen					; clear the loader screen either way
+	lda SDX_Con_WasExt						; $00 -> re-assert 40-col, $80 -> re-enable 64/80.
+	jsr SDX_Con_ModeCall					;   Re-issuing the XIO either way makes the soft
+											;   console re-init and redraw - including its
+											;   cursor.  Restoring CRSINH alone does NOT bring
+											;   the cursor back after the demo trashed the
+											;   display, so the 40-col path needs this too.
+	jsr SDX_Con_ClearScreen					; wipe the loader screen off it
 SDX_Console_Restore_Done
 	rts
 
