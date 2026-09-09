@@ -8,9 +8,10 @@
 ; SDX_Console_Save_And_40  - call once at startup. Detects the soft console,
 ;                            remembers whether it was in extended mode, and
 ;                            drops it to the standard 40-column OS editor.
-; SDX_Console_Restore      - call once just before jmp (DOSVEC). If the soft
-;                            console was in 64/80-column mode at startup, it is
-;                            put back; otherwise nothing happens.
+; SDX_Console_Restore      - call once just before jmp (DOSVEC). If a soft
+;                            console is present the loader screen is cleared off
+;                            it; if it was in 64/80-column mode at startup that
+;                            mode is also put back. No soft console -> no-op.
 ;
 ; Mechanism - SDX 4.50 Programmer's/User Guide, section 6.9 "Using the CON:
 ; Drivers in Own Programs":
@@ -80,11 +81,16 @@ SDX_Console_Save_Done
 ; SDX_Console_Restore
 ;-----------------------------------------------------------------------------
 SDX_Console_Restore
+	lda SDX_Con_Func						; 0 = no soft console at startup -> no-op
+	beq SDX_Console_Restore_Done
+
 	lda SDX_Con_WasExt
-	beq SDX_Console_Restore_Done			; started in 40-col / no soft console
+	beq SDX_Console_Restore_Clear			; soft console was already 40-col - don't
+											;   re-enable, but still wipe our text off it
 	lda #SDX_CON_ENABLE						; AUX2 = 128 -> re-enable extended mode
 	jsr SDX_Con_ModeCall
-	jsr SDX_Con_ClearScreen
+SDX_Console_Restore_Clear
+	jsr SDX_Con_ClearScreen					; clear the loader screen either way
 SDX_Console_Restore_Done
 	rts
 
