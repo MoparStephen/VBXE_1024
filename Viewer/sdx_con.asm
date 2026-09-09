@@ -9,10 +9,11 @@
 ;                            remembers whether it was in extended mode, and
 ;                            drops it to the standard 40-column OS editor.
 ; SDX_Console_Restore      - call once just before jmp (DOSVEC). If a soft
-;                            console was present at startup, re-assert its
-;                            startup mode (40 or 64/80 col) so it re-inits and
-;                            redraws - cursor included - then clear the loader
-;                            screen off it. No soft console -> no-op.
+;                            console was present at startup, drive it through a
+;                            real mode transition back to its startup mode (a
+;                            40->64/80->40 bounce if it started at 40) so it
+;                            re-inits and repaints - cursor included - then home
+;                            the cursor and Clear Screen. No soft console -> no-op.
 ;
 ; Mechanism - SDX 4.50 Programmer's/User Guide, section 6.9 "Using the CON:
 ; Drivers in Own Programs":
@@ -86,14 +87,22 @@ SDX_Console_Restore
 	lda SDX_Con_Func						; 0 = no soft console at startup -> no-op
 	beq SDX_Console_Restore_Done
 
-	lda SDX_Con_WasExt						; $00 -> re-assert 40-col, $80 -> re-enable 64/80
+	; The console only re-inits (and repaints - cursor included) on a REAL mode
+	; transition; a same-mode re-apply or a lone Clear Screen does nothing, and
+	; the cursor then stays dark until the first full-screen op (a DIR).  The
+	; was-64/80 path gets a transition for free - the demo ran in 40-col, so
+	; restoring 64/80 IS one.  The was-40 path had no transition at all, so
+	; force a round trip: bounce through the extended mode and back to 40.
+	lda SDX_Con_WasExt
+	bne SDX_Console_Restore_SetMode			; was 64/80 -> restoring it is the transition
+	lda #SDX_CON_ENABLE						; was 40 -> up to 64/80...
+	jsr SDX_Con_ModeCall
+	lda #$00								; ...and back down: a real transition now
+SDX_Console_Restore_SetMode
 	jsr SDX_Con_ModeCall
 
-	; SDX 4.50 User Guide 6.9.3: before quitting to DOS the driver's internal
-	; state must be reset by homing the cursor coords and THEN sending Clear
-	; Screen (125).  The mode call alone leaves the cursor block undrawn -
-	; CRSINH is already 0 but nothing has repainted it - until the console does
-	; a full-screen operation (the user sees it come back on the first DIR).
+	; SDX 4.50 User Guide 6.9.3: home the cursor coords, THEN send Clear Screen
+	; (125), to reset the driver's internal state before handing back to DOS.
 	lda #$00
 	sta ROWCRS
 	sta COLCRS
@@ -101,7 +110,7 @@ SDX_Console_Restore
 	sta OLDROW
 	sta OLDCOL
 	sta OLDCOL+1
-	jsr SDX_Con_ClearScreen					; ASCII 125 - resyncs the driver, redraws cursor
+	jsr SDX_Con_ClearScreen
 SDX_Console_Restore_Done
 	rts
 
