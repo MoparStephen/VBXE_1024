@@ -8,14 +8,15 @@
 ; SDX_Console_Save_And_40  - call once at startup. Detects the soft console,
 ;                            remembers whether it was in extended mode, and
 ;                            drops it to the standard 40-column OS editor.
-; SDX_Console_Restore      - call once just before jmp (DOSVEC). If a soft
-;                            console was present at startup, put it back in its
-;                            startup mode, then churn a screenful of EOLs
-;                            through it and Clear Screen.  The churn is what
-;                            actually repaints the cursor: the driver only
-;                            redraws it after sustained editor I/O (the symptom
-;                            was "cursor dark until you type DIR").  No soft
-;                            console -> no-op.
+; SDX_Console_Restore      - call once just before jmp (DOSVEC). Homes the
+;                            cursor and clears the screen so DOS gets a clean
+;                            editor.  If a soft console was present at startup,
+;                            first put it back in its startup mode and issue
+;                            XIO 32 so it rebuilds its display list, screen
+;                            memory and internal pointers - without that the
+;                            cursor stays dark until a DIR / the BREAK key
+;                            (both of which trigger the same driver rebuild).
+;                            The caller must have restored RAMTOP first.
 ;
 ; Mechanism - SDX 4.50 Programmer's/User Guide, section 6.9 "Using the CON:
 ; Drivers in Own Programs":
@@ -87,24 +88,19 @@ SDX_Console_Save_Done
 ; SDX_Console_Restore
 ;-----------------------------------------------------------------------------
 SDX_Console_Restore
-	lda SDX_Con_Func						; 0 = no soft console at startup -> no-op
-	beq SDX_Console_Restore_Done
+	lda SDX_Con_Func						; soft console present at startup?
+	beq SDX_Console_Restore_Clear			; no - just clear the screen for DOS
 
-	lda SDX_Con_WasExt						; back to the startup mode (0 = 40, $80 = 64/80)
+	lda SDX_Con_WasExt						; yes - back to the startup mode (0=40, $80=64/80)
 	jsr SDX_Con_ModeCall
 
-	; Everything driver-level (mode re-apply, a mode round trip, XIO, homing the
-	; cursor coords, a single Clear Screen) leaves the cursor block dark until
-	; the console does sustained editor I/O - the user sees it come back the
-	; moment they type DIR.  So do that here: churn a screenful of EOLs through
-	; the editor to force the scroll/redraw, then clear.
-	ldy #30
-SDX_Console_Restore_Churn
-	lda #$9B								; EOL
-	jsr SDX_Con_PutByte
-	dey
-	bne SDX_Console_Restore_Churn
+	jsr SDX_Con_Xio32						; the driver relocates its display list + screen
+											;   memory and rebuilds its internal pointers.
+											;   This is what a DIR / the BREAK key trigger,
+											;   and the only thing that repaints the cursor
+											;   after the demo ran (RAMTOP is back by now).
 
+SDX_Console_Restore_Clear
 	; SDX 4.50 User Guide 6.9.3: home the cursor coords, THEN send Clear Screen.
 	lda #$00
 	sta ROWCRS
@@ -119,14 +115,25 @@ SDX_Console_Restore_Done
 	rts
 
 ;-----------------------------------------------------------------------------
-; SDX_Con_ModeCall - issue XIO <SDX_Con_Func>,#0,12,A,"E:"
-;   A = AUX2 (0 = disable extended console, 128 = enable)
+; SDX_Con_Xio32   - XIO 32,#0,12,0,"E:"  - tell the soft console to move its
+;                   display list + screen memory and fix its internal pointers.
+; SDX_Con_ModeCall - XIO <SDX_Con_Func>,#0,12,A,"E:"   A = AUX2 (0 disable
+;                   extended console, 128 enable).  Shares the CIO tail.
 ;-----------------------------------------------------------------------------
+SDX_Con_Xio32
+	ldx #SDX_CON_IOCB
+	lda #$20								; XIO 32
+	sta ICCOM,x
+	lda #$00
+	sta ICAX2,x
+	jmp SDX_Con_XioTail
+
 SDX_Con_ModeCall
 	ldx #SDX_CON_IOCB
 	sta ICAX2,x
 	lda SDX_Con_Func
 	sta ICCOM,x
+SDX_Con_XioTail
 	lda #SDX_CON_RW
 	sta ICAX1,x
 	lda #<SDX_Con_EDev

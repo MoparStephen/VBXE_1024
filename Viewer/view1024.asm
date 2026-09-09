@@ -525,6 +525,21 @@ Read_Key_Done
 	sta CH								; Clear last key pressed
 	rts									; Else return to caller
 Exit
+; Restore the OS state Step_1 / Check_RAMTOP changed, BEFORE Cleanup_Exit runs
+; SDX_Console_Restore (its XIO 32 wants the real RAMTOP back).  Lives here, not
+; in the resident Cleanup_Exit, which is page-fenced below $3300 and full - the
+; init-time abort paths that jmp straight to Cleanup_Exit simply skip this.
+	lda CRSINH_OLD
+	sta CRSINH							; Restore Cursor
+	lda COLOR1_OLD						; Restore the editor colours Step_1 changed
+	sta COLOR1
+	lda COLOR2_OLD
+	sta COLOR2
+	lda COLOR4_OLD
+	sta COLOR4
+	lda RAMTOP_OLD						; Give the SDX soft console its top-of-RAM back
+	sta RAMTOP
+	sta RAMSIZ
 	jmp Cleanup_Exit					; Clean up and exit (accounts for any long branch issues)
 
 ;-----------------------------------------------------------------------------

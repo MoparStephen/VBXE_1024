@@ -1,4 +1,11 @@
 .def	NUM_DOTS						= $06
+
+; OS state Step_1 / Check_RAMTOP change and the Exit path restores (COLOR2_OLD
+; is declared in view1024.asm alongside the other _OLD saves).
+.var	RAMTOP_OLD		.byte = $4E2	; Check_RAMTOP forces RAMTOP to $C0; SDX soft console needs its own
+.var	COLOR1_OLD		.byte = $4E3	; Step_1 recolours COLOR1 for the loader
+.var	COLOR4_OLD		.byte = $4E4	; parity with the racer's exit path
+
 ;-----------------------------------------------------------------------------
 ; Initialization
 ;-----------------------------------------------------------------------------
@@ -23,6 +30,11 @@
 	lda COLOR2
 	sta COLOR2_OLD						; Save COLOR2 so we can restore it later
 
+	lda COLOR1
+	sta COLOR1_OLD						; Step_1 recolours COLOR1 for the loader
+	lda COLOR4
+	sta COLOR4_OLD						; parity with the racer's exit path
+
 	tsx									; X now holds the SP
 	stx SP_REG_OLD						; Save SP so we can restore it later
 
@@ -31,6 +43,10 @@
 
 	lda SDLSTL+1
 	sta SDLSTH_OLD
+
+	lda RAMTOP
+	sta RAMTOP_OLD						; Check_RAMTOP forces RAMTOP to $C0; the SDX
+										;   soft console reserves its own top of RAM
 
 ; Determine and save the Video Format
 	lda #$00
