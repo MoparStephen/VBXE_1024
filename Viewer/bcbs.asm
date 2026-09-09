@@ -51,3 +51,86 @@ BLT_CLEAR_SCREEN
 	dta $77								; Zoom (BLT_ZOOMY = 7, BLT_ZOOMX = 7 so 8Y*8X)
 	dta $00								; Pattern feature
 	dta $00								; Control (Mode 0 with NEXT bit Cleared)
+
+; Zero-fill the 80x30 VBXE text screen ($23000 - $242BF, 4800 bytes).  Constant-
+; source fast fill: And mask 0 makes the source a constant equal to the Xor mask
+; and the blitter skips the source fetch - about 2x faster than a copy (FX manual
+; "The Blitter and constant source data").  Xor $00 -> blank glyph + transparent
+; attribute in every cell.  MODE 0, NEXT clear.  Kicked by Text_Clear.
+BLT_CLEAR_TEXT
+	dta $00,$00,$00						; Source address (unused - constant source)
+	dta $00,$00							; Source step y (unused)
+	dta $00								; Source step x (unused)
+	dta $00,$30,$02						; Destination address ($023000 = TEXT_SCREEN_VRAM)
+	dta a(TEXT_PITCH)					; Destination step y (160 - next text row)
+	dta $01								; Destination step x (1)
+	dta a(TEXT_PITCH-1)					; Width-1  (159 -> 160 bytes per row)
+	dta TEXT_ROWS-1						; Height-1 (29 -> 30 rows)
+	dta $00								; And mask (0 -> constant source)
+	dta $00								; Xor mask (fill value: $00)
+	dta $00								; Collision and mask
+	dta $00								; Zoom
+	dta $00								; Pattern feature
+	dta $00								; Control (Mode 0 with NEXT bit Cleared)
+
+; Recolour a rectangular region of the text screen - floods the attribute (odd)
+; bytes only (Destination step x = 2).  Constant-source fast fill (And 0).
+; Text_FillColour patches Destination address, Width-1, Height-1 and Xor mask
+; before each kick.
+BLT_FILL_COLOUR
+	dta $00,$00,$00						; Source address (unused - constant source)
+	dta $00,$00							; Source step y (unused)
+	dta $00								; Source step x (unused)
+	dta $01,$30,$02						; Destination address ($023001; PATCHED - attr byte of cell)
+	dta a(TEXT_PITCH)					; Destination step y (160 - next text row)
+	dta $02								; Destination step x (2 - attribute bytes only)
+	dta a(TEXT_COLS-1)					; Width-1  (79 -> 80 cells; PATCHED)
+	dta TEXT_ROWS-1						; Height-1 (29; PATCHED)
+	dta $00								; And mask (0 -> constant source)
+	dta $00								; Xor mask (attribute value; PATCHED)
+	dta $00								; Collision and mask
+	dta $00								; Zoom
+	dta $00								; Pattern feature
+	dta $00								; Control (Mode 0 with NEXT bit Cleared)
+
+; Draw a window of the off-screen mono page (MONO_PAGE_VRAM, 1 glyph byte per
+; column, MONO_PAGE_STRIDE bytes/row) onto the text screen.  This first link is
+; a real copy (And $FF, MODE 0) writing glyph bytes into the even screen bytes
+; (Destination step x = 2); NEXT is set so it chains into BLT_FILL_COLOUR_MONO,
+; which floods the attribute bytes with one palette index.  Text_BlitMonoPage
+; patches Source address + Height-1 (both links), Destination address (both) and
+; the Xor colour (link 2).
+BLT_DRAW_TEXT_MONO
+	dta $00,$70,$02						; Source address ($027000 = MONO_PAGE_VRAM; PATCHED)
+	dta a(MONO_PAGE_STRIDE)				; Source step y (128 - next page row)
+	dta $01								; Source step x (1 - packed glyph bytes)
+	dta $00,$30,$02						; Destination address ($023000 = TEXT_SCREEN_VRAM; PATCHED)
+	dta a(TEXT_PITCH)					; Destination step y (160 - next text row)
+	dta $02								; Destination step x (2 - glyph bytes only)
+	dta a(TEXT_COLS-1)					; Width-1  (79 -> 80 columns)
+	dta TEXT_ROWS-1						; Height-1 (29; PATCHED by Text_BlitMonoPage)
+	dta $FF								; And mask ($FF -> straight copy)
+	dta $00								; Xor mask
+	dta $00								; Collision and mask
+	dta $00								; Zoom
+	dta $00								; Pattern feature
+	dta %00001000						; Control (Mode 0, NEXT bit SET -> chains)
+
+; Chained after BLT_DRAW_TEXT_MONO: constant-source fast fill of the attribute
+; (odd) bytes with one palette index.  Text_BlitMonoPage patches Destination
+; address, Height-1 and the Xor colour before each kick.
+BLT_FILL_COLOUR_MONO
+	dta $00,$00,$00						; Source address (unused - constant source)
+	dta $00,$00							; Source step y (unused)
+	dta $00								; Source step x (unused)
+	dta $01,$30,$02						; Destination address ($023001; PATCHED - attr byte)
+	dta a(TEXT_PITCH)					; Destination step y (160 - next text row)
+	dta $02								; Destination step x (2 - attribute bytes only)
+	dta a(TEXT_COLS-1)					; Width-1  (79 -> 80 cells)
+	dta TEXT_ROWS-1						; Height-1 (29; PATCHED by Text_BlitMonoPage)
+	dta $00								; And mask (0 -> constant source)
+	dta $0F								; Xor mask (palette index / colour; PATCHED)
+	dta $00								; Collision and mask
+	dta $00								; Zoom
+	dta $00								; Pattern feature
+	dta $00								; Control (Mode 0 with NEXT bit Cleared)

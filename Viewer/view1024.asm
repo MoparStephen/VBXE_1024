@@ -6,7 +6,7 @@
 ; Load Address = 
 ; Run Address = 
 ; VBXE:
-;    XDLs            = $00000 - $00020
+;    XDLs            = $00000 - $0002D (image attribute + image normal + text)
 ;    BCBs            = $00100 - $001FF
 ;    NTSC_Palette    = $00200 - $004FF (Used to restore Palette 0 on program exit)
 ;    PAL_Palette     = $00500 - $006FF (Used to restore Palette 0 on program exit)
@@ -14,8 +14,15 @@
 ;    CRAM_Buffer     = $14000 - $1657F (Compressed palette bytes)
 ;    CRAM            = $17000 - $205FF (Colour Ram)
 ;    Palette_Buffers = $21000 - $21FFF (Temp 4kB buffer for loading palettes)
+;    Text font       = $22000 - $227FF (CGA.F08, VBXE text mode - see text80.asm)
+;    Text screen RAM = $23000 - $242BF (80x30 {glyph,attr} cells)
+;    .nfo raw text   = $25000 - $26FFF (bank $25/$26: verbatim .NFO file bytes)
+;    Mono text page  = $27000 - $2EFFF (banks $27-$2E: reformatted mono glyphs,
+;                      MONO_PAGE_STRIDE bytes/row - .nfo body + list bodies,
+;                      blitted to the text screen by Text_BlitMonoPage)
 ;    Image name list = $40000 - $40FFF (bank $40: up to MAX_IMAGES=255 base
-;                      names, 8 bytes each, built at startup by Scan_Images)
+;                      names, 8 bytes each, built by Rescan_Images / ui.asm)
+;    Dir browser list= $41000 - $41FFF (bank $41: folder-browser entries)
 ;
 ; MAX_IMAGES is a hard design ceiling of 255 - each image is a ~90kB
 ; .PAL/.MAP/.RAW set, so 255 far exceeds any real slideshow, and a one-byte
@@ -62,10 +69,36 @@
 .var DOSINIH_OLD		.byte = $488	; Save the DOSINI Pointer
 .var Video_Flag			.byte = $489	; PAL = 0, NTSC = 1
 .var File_Index			.byte = $48A	; 0-based image ordinal (0 .. ImageCount-1)
-.var ImageCount			.word = $48B	; Images found by Scan_Images (hi byte always 0)
-.var Path_Buf			:16 .byte = $48D	; Built "D:NAME.EXT",$00 for LoadData ($48D-$49C)
-.var Dir_IOCB			.byte = $49D	; IOCB used by Build_Image_List (init only)
-.var Dir_Line_Buf		:$28 .byte = $600	; One GET RECORD dir line, init only ($600-$627)
+.var ImageCount			.word = $48B	; Images found by Rescan_Images (hi byte always 0)
+.var Path_Buf			:56 .byte = $48D	; Built "D[n]:PATH>NAME.EXT",$00 for LoadData ($48D-$4C4)
+.var Dir_IOCB			.byte = $4C5	; IOCB used by Build_Image_List
+; --- viewer UI state (ui.asm) ---
+.var UI_Mode			.byte = $4C6	; 0 = selector, 1 = image view, 2 = slideshow
+.var Sel_Index			.byte = $4C7	; highlighted list entry (0-based)
+.var Sel_Top			.byte = $4C8	; list index of the first visible row (scroll)
+.var Slide_Secs			.byte = $4C9	; slideshow delay, seconds (1..30)
+.var Slide_FrameCtr		.word = $4CA	; slideshow countdown, frames
+.var Scan_Drive			.byte = $4CC	; '1'..'8', or $00 for a bare "D:"
+.var Name_Row_Buf		:12 .byte = $4CD	; one name record, NUL-terminated, for drawing
+.var Brow_Count			.byte = $4D9	; folder browser: entry count
+.var Brow_Index			.byte = $4DA	; folder browser: highlighted entry
+.var Brow_Top			.byte = $4DB	; folder browser: scroll offset
+.var Nfo_Top			.word = $4DC	; info viewer: first visible line (0-based)
+.var Nfo_LineCount		.word = $4DE	; info viewer: total lines in the loaded .nfo
+;	$4E0 to $4FF free
+.var Dir_Line_Buf		:$28 .byte = $600	; One GET RECORD dir line ($600-$627)
+.var Scan_Path			:$28 .byte = $628	; subdirectory part, ">DIR>DIR>" or empty ($628-$64F)
+.var Scan_Spec			:$30 .byte = $650	; assembled "D[n]:PATH*.MAP",$9B ($650-$67F)
+.var Txt_Line			:$30 .byte = $680	; scratch line assembled for Text_PutStrAt ($680-$6AF)
+.var Folder_Saved_Path	:$28 .byte = $6B7	; Scan_Path saved on entering the folder browser, restored by ESC-cancel ($6B7-$6DE).  NOT shared with Txt_Line: every screen draw rewrites Txt_Line, so it cannot hold a value across the browser session.
+;	$6E0 to $6FF free (text80.asm uses $6B0-$6B6)
+; Info viewer (.nfo) line buffer + walk pointers.  Overlays Scan_Spec+Txt_Line
+; ($650-$6AF): both are idle whenever UI_Mode = 4, and Selector_Draw rebuilds
+; Txt_Line / the next scan rebuilds Scan_Spec on the way out.
+.var NfoLineBuf			:81 .byte = $650	; one .nfo line, NUL-terminated, for Text_PutStrAt ($650-$6A0)
+.var Nfo_WalkLo			.byte = $6A1	; .nfo window walk pointer, low
+.var Nfo_WalkHi			.byte = $6A2	; .nfo window walk pointer, high
+.var Nfo_WalkBank		.byte = $6A3	; .nfo VBXE bank currently mapped ($25 or $26)
 
 ;-----------------------------------------------------------------------------
 ; Defines go here
@@ -76,12 +109,33 @@
 .def	VBXE_WINDOW_SIZE_8k				= $2000
 .def	LOAD_ADDRESS					= VBXE_WINDOW + VBXE_WINDOW_SIZE_4k
 
-; Image name list (built at startup by Scan_Images - see init_vbxe.asm)
+; Image name list (built by Rescan_Images - see ui.asm)
 .def	IMAGE_BANK						= $40	; VBXE bank holding the name list
 .def	MAX_IMAGES						= 255	; Hard ceiling - see Memory Map note
 .def	ImageNames						= VBXE_WINDOW	; List base once IMAGE_BANK is mapped
 .def	ImageNames_End					= ImageNames + (MAX_IMAGES * 8)
 .def	Dir_Line_Len					= $28	; Max length of one dir GET RECORD line
+
+; VBXE text screen (text80.asm + XDL_Text in xdl.asm - these MUST agree).
+; Chosen clear of the image framebuffer/CRAM ($01000-$205FF), palette buffer
+; ($21000), the name list ($40000) and the dir browser ($41000).
+.def	TEXT_FONT_VRAM					= $22000	; CGA.F08 (2048 bytes) lands here
+.def	TEXT_FONT_BANK					= TEXT_FONT_VRAM / $1000	; = $22  (LoadData target bank)
+.def	TEXT_CHBASE						= TEXT_FONT_VRAM / $800	; = $44  (XDL_Text CHBASE byte)
+.def	TEXT_SCREEN_VRAM				= $23000	; 80x30 {glyph,attr} cells = 4800 bytes
+.def	TEXT_SCREEN_BANK				= TEXT_SCREEN_VRAM / $1000	; = $23  (first bank of screen RAM)
+.def	TEXT_COLS						= 80
+.def	TEXT_ROWS						= 30
+.def	TEXT_PITCH						= TEXT_COLS * 2	; $A0 = 160  (XDL_Text OVSTEP)
+.def	TEXT_SCREEN_BYTES				= TEXT_ROWS * TEXT_PITCH	; $12C0 = 4800
+
+; Off-screen mono text page: one glyph byte per column, fixed stride.  Filled by
+; Info_Format_Page (.nfo) / the list draw (selector, folder) and blitted to the
+; text screen by Text_BlitMonoPage (BLT_DRAW_TEXT_MONO).  Stride $80 divides 4K
+; so no row ever straddles a VBXE bank - the CPU row-writer never has to split.
+.def	MONO_PAGE_VRAM					= $27000	; 8 banks ($27000-$2EFFF), above the .nfo raw banks
+.def	MONO_PAGE_BANK					= MONO_PAGE_VRAM / $1000	; = $27
+.def	MONO_PAGE_STRIDE				= $80		; 128 bytes/row (32 rows per 4K bank)
 
 ; BCB field byte offsets
 .def	Src_Adr0						= $00
@@ -90,6 +144,11 @@
 .def	Dest_Adr0						= $06
 .def	Dest_Adr1						= $07
 .def	Dest_Adr2						= $08
+.def	Blt_W0							= $0C	; Width-1  low byte
+.def	Blt_W1							= $0D	; Width-1  bit 8
+.def	Blt_H							= $0E	; Height-1
+.def	Blt_And							= $0F	; And mask (0 = constant source)
+.def	Blt_Xor							= $10	; Xor mask (= fill value when And = 0)
 .def	Blt_Ctrl						= $14
 
 ; Temp debug stuff
@@ -196,25 +255,27 @@ Restore_Palette0_Done
 ;-----------------------------------------------------------------------------
 start
 ; Initialization code can go here
-
-	lda #$00							; Setup VBXE for displaying picture data
-	vbsta VBXE_XDL_ADR0					; But don't show the overlay just yet!
-	vbsta VBXE_XDL_ADR2
-	vbsta VBXE_XDL_ADR1
+	jsr Text_Init						; Build the 80-column text screen (text80.asm)
 
 	lda #$00
-	sta SDMCTL							; Turn ANTIC DMA off
+	sta Scan_Drive						; Default scan location = "D:" (current drive)
+	sta Scan_Path						; No subdirectory
+	lda #$05
+	sta Slide_Secs						; Default slideshow delay, seconds
+
+	lda #$00
+	sta SDMCTL							; Turn ANTIC DMA off - VBXE owns the display
 
 	lda #%00000011						; XDL,XCOLOR Enabled and transparent color index 0
 	vbsta VBXE_VIDEO_CONTROL
 
 	lda #$FF							; Must set priority when using Attribute Map
-	vbsta VBXE_P0						; because VBXE defaults PO-P$ to #$00 on power-up
+	vbsta VBXE_P0						; because VBXE defaults P0-P3 to #$00 on power-up
 
-	lda #$00
-	sta File_Index						; Start at index 0
-	tax
-	jsr Load_Image
+	jsr Text_Activate					; show the text XDL now (Rescan_Images can be slow)
+
+	jsr Rescan_Images					; Scan Scan_Drive/Scan_Path, sort the list
+	jsr Enter_Selector					; Show the file selector
 
 main
 ; All done - now loop forever
@@ -222,6 +283,7 @@ main
 	sta ATRACT							; Disable Attract Mode
 
 	jsr Wait_For_Sync					; Wait for VSYNC - this calls keyboard handler
+	jsr Slideshow_Tick					; Advance the slideshow, if one is running
 	jmp main
 
 ; Set RUN Vector
@@ -353,6 +415,25 @@ Load_Image_Done
 ; Handle_Keys
 ;-----------------------------------------------------------------------------
 Handle_Keys
+; Dispatch on the current UI mode - the selector, slideshow and folder browser
+; each have their own key set (ui.asm); mode 1 (image view) uses the set below.
+	lda UI_Mode
+	bne Handle_Keys_NotSelector
+	jmp Selector_Keys					; 0 = selector
+Handle_Keys_NotSelector
+	cmp #$02
+	bne Handle_Keys_NotSlide
+	jmp Slideshow_Keys					; 2 = slideshow
+Handle_Keys_NotSlide
+	cmp #$03
+	bne Handle_Keys_NotFolder
+	jmp Folder_Keys						; 3 = folder browser
+Handle_Keys_NotFolder
+	cmp #$04
+	bne Handle_Keys_ImageView
+	jmp Info_Keys						; 4 = info viewer (.nfo)
+Handle_Keys_ImageView
+
 ; If present, the next 3 lines will allow a "jump to exit" on a specific key press
 	lda CH
 	cmp #$2F							; Press Q to quit
@@ -361,7 +442,7 @@ Handle_Keys
 	beq Handle_Space
 	cmp #$34							; Backspace - previous image
 	beq Handle_Backspace
-	cmp #$1C							; Esc - return to viewer UI (stub)
+	cmp #$1C							; Esc - back to the file selector
 	beq Handle_Escape
 	cmp #$32							; 0
 	beq Handle_0
@@ -387,7 +468,8 @@ Handle_Backspace
 	jmp Read_Key_Done
 
 Handle_Escape
-; TODO: enter the viewer UI once it exists - stubbed to a no-op for now
+	jsr Selector_Sync_Cursor				; highlight follows Space/BkSp navigation
+	jsr Enter_Selector					; Leave the image, return to the file selector
 	jmp Read_Key_Done
 
 Handle_0
@@ -452,7 +534,7 @@ Decrement_Image_Valid
 ;-----------------------------------------------------------------------------
 ; Set_Palette
 ;  X register contains Palette #
-;  XDL_Normal + $08 = the byte we need to change
+;  XDL_Image_Normal + $08 = the byte we need to change
 ;  XDL OV PALETTE bits 5,4 need changed (00 to 11), bit 0 always needs on
 ;-----------------------------------------------------------------------------
 Set_Palette
@@ -475,7 +557,7 @@ Set_Palette
 	rts
 
 ;-----------------------------------------------------------------------------
-; Disable_Colour_Map (Point XDL to XDL_Normal)
+; Disable_Colour_Map (Point XDL to XDL_Image_Normal)
 ;-----------------------------------------------------------------------------
 Disable_Colour_Map
 	lda #$00							; Setup VBXE for displaying picture data
@@ -487,7 +569,7 @@ Disable_Colour_Map
 	rts
 
 ;-----------------------------------------------------------------------------
-; Enable_Colour_Map (Point XDL to XDL_Attribute)
+; Enable_Colour_Map (Point XDL to XDL_Image_Attribute)
 ;-----------------------------------------------------------------------------
 Enable_Colour_Map
 	lda #$00							; Setup VBXE for displaying picture data
@@ -503,12 +585,14 @@ Enable_Colour_Map
 
 ;-----------------------------------------------------------------------------
 ; Build_Filename
-;  In:  A          = 0 -> .PAL, 1 -> .MAP, 2 -> .RAW
+;  In:  A          = 0 -> .PAL, 1 -> .MAP, 2 -> .RAW, 3 -> .NFO
 ;       File_Index = image ordinal
-;  Out: FileNamePtr -> Path_Buf holding  "D:" + base(<=8) + "." + ext + $00
+;  Out: FileNamePtr -> Path_Buf holding
+;         "D[n]:" + Scan_Path + base(<=8) + "." + ext + $00
 ;       IMAGE_BANK unmapped (MEMAC_GLOBAL_DISABLE) on return
-;  The base name is the space-padded 8-byte record Scan_Images stored in
-;  IMAGE_BANK; copying stops at the first space.
+;  The base name is the space-padded 8-byte record Rescan_Images stored in
+;  IMAGE_BANK; copying stops at the first space.  Emit_Path_Prefix (ui.asm)
+;  writes the "D[n]:" + Scan_Path part and returns X = the next Path_Buf index.
 ;-----------------------------------------------------------------------------
 Build_Filename
 	sta Reg2							; Reg2 = extension selector
@@ -532,15 +616,11 @@ Build_Filename
 	adc #>ImageNames
 	sta Name_Ptr + $01
 
+	jsr Emit_Path_Prefix				; Path_Buf = "D[n]:" + Scan_Path, X = cursor
+
 	lda #IMAGE_BANK | MEMAC_GLOBAL_ENABLE
 	vbsta VBXE_MA_BSEL					; Map the name list into the $2000 window
 
-	lda #'D'
-	sta Path_Buf
-	lda #':'
-	sta Path_Buf + $01
-
-	ldx #$02							; X = write index into Path_Buf
 	ldy #$00							; Y = read index into the 8-byte record
 Build_Filename_Base
 	lda (Name_Ptr),y
@@ -585,14 +665,13 @@ Build_Filename_Ext
 	rts
 
 Ext_Table
-	dta c'PALMAPRAW'
+	dta c'PALMAPRAWNFO'					; selector 0=PAL 1=MAP 2=RAW 3=NFO
 
 ;-----------------------------------------------------------------------------
 ; Sort_Image_List - in-place alphabetical (lexicographic) selection sort of
 ; the ImageCount 8-byte space-padded records in IMAGE_BANK.
-; NOT CALLED YET - hook is the commented "jsr Sort_Image_List" in Scan_Images
-; (init_vbxe.asm). Resident and self-contained so a future viewer UI can also
-; call it at runtime. O(n^2) byte compares; trivial at MAX_IMAGES = 255.
+; Called from Rescan_Images (ui.asm) after every scan. O(n^2) byte compares;
+; trivial at MAX_IMAGES = 255.
 ; Clobbers A/X/Y, Reg2..Reg8, Name_Ptr, Sort_Ptr, Path_Buf[0..7].
 ;-----------------------------------------------------------------------------
 Sort_Image_List
@@ -732,6 +811,12 @@ Sort_IndexToOffset
 	adc #>ImageNames
 	sta Reg8
 	rts
+
+;-----------------------------------------------------------------------------
+; Viewer UI (main segment)
+;-----------------------------------------------------------------------------
+	icl 'text80.asm'					; VBXE 80-column text screen + font + palette
+	icl 'ui.asm'						; File selector, slideshow, directory scan
 
 ;-----------------------------------------------------------------------------
 ;
