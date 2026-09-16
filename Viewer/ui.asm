@@ -16,9 +16,15 @@
 ;           3 = drive picker (D-key save-under overlay)   4 = info viewer (.nfo)
 ;=============================================================================
 
-.def	UI_VISROWS		= 24			; filename rows visible at once (rows 3..26)
-.def	UI_FIRSTROW		= 3				; first screen row of the list
-; row 27 = slideshow delay, row 28 = key legend, row 29 = bottom margin
+.def	UI_COLS			= 8				; grid columns (items/row) - a power of 2
+										; keeps row=index>>3 / col=index&7 cheap
+.def	UI_VISROWS		= 15			; grid rows visible at once
+.def	UI_FIRSTROW		= 3				; first screen row of the grid
+.def	UI_GRIDCOL0		= 0				; first screen column of the grid (Sel_ColX base)
+; UI_FIRSTROW / UI_GRIDCOL0 are the only placement knobs - final chrome
+; (title/status/legend rows, margins) is being redesigned separately.
+; row 26 = status line (Src: ...), row 27 = slideshow delay, row 28 = key
+; legend, row 29 = bottom margin
 .def	UI_SLIDE_MIN	= 1
 .def	UI_SLIDE_MAX	= 30
 ; VBXE text-mode colour byte: bits 0-6 = foreground palette-0 entry (0-127),
@@ -32,13 +38,13 @@
 .def	UI_PEN_HI		= $0F			; highlighted   : hue 1 gold,  luma 14
 .def	UI_PEN_DIR		= $62			; directory/".." : hue $C green, luma 4
 
-.def	NFO_BANK		= $25			; VBXE bank(s) the .nfo text streams into (up to 2)
 .def	NFO_TOPROW		= 0				; info viewer: first screen row of the scroll region
 .def	NFO_VISROWS		= 30			; info viewer: visible text rows (full screen)
 ; (raise NFO_TOPROW / drop NFO_VISROWS once the fixed logo area is designed)
 ; NFO_VISROWS must equal TEXT_ROWS while there is no logo band, so the blit
 ; overwrites every row - anything less leaves the selector's legend on the tail.
-.def	NFO_MAX_LINES	= 240			; cap on reformatted .nfo rows (fits banks $27-$2E)
+.def	NFO_MAX_LINES	= 127			; cap on displayed .NFO records; NFO_BUF_VRAM (5 banks)
+									; holds 128 * 160, the 128th slot being the $00 sentinel
 
 ; --- CH key codes (POKEY, no modifier).  Matches the bare-CH style in
 ;     Handle_Keys (Q $2F, Space $21, BkSp $34, Esc $1C, digits ...).
@@ -55,6 +61,8 @@
 .def	KEY_I			= $0D
 .def	KEY_COMMA		= $20			; "," - shorter slideshow delay
 .def	KEY_DOT			= $22			; "." - longer slideshow delay
+.def	KEY_LEFT		= $8E			; Ctrl+"-" (bare KEY_UP $0E | CTRL bit $80)
+.def	KEY_RIGHT		= $8F			; Ctrl+"=" (bare KEY_DOWN $0F | CTRL bit $80)
 
 ;-----------------------------------------------------------------------------
 ; TXT_AT row, col, strlabel  -  draw a string via the text API
@@ -96,6 +104,9 @@ Rescan_Images
 	tax									; X = file count
 	lda FileStart
 	jsr Sort_Range						; *.MAP files A-Z
+
+	jsr Nfo_Name_ClearCache				; drop the status-line name slots - list changed
+	jsr Nfo_Name_LoadManifest			; refill them from this folder's IMAGES.LST (if any)
 
 	lda #$00
 	sta Sel_Index
@@ -155,8 +166,21 @@ Build_Browse_Spec_L1
 	bcc Build_Browse_Spec_L1
 	rts
 
-Build_Spec_MapWild	dta c'*.MAP',$9B
-Build_Spec_AnyWild	dta c'*.*',$9B
+Build_Manifest_Spec						; ... + "IMAGES.LST" + EOL  (status-line names)
+	jsr Build_Spec_Prefix
+	ldy #$00
+Build_Manifest_Spec_L1
+	lda Build_Spec_ManifestName,y
+	sta Scan_Spec,x
+	inx
+	iny
+	cpy #$0B
+	bcc Build_Manifest_Spec_L1
+	rts
+
+Build_Spec_MapWild		dta c'*.MAP',$9B
+Build_Spec_AnyWild		dta c'*.*',$9B
+Build_Spec_ManifestName	dta c'IMAGES.LST',$9B
 
 ;-----------------------------------------------------------------------------
 ; Build_Image_List - rebuild the selector list in IMAGE_BANK through the $2000
@@ -580,7 +604,8 @@ Selector_Draw
 	TXT_AT 27, 2, UI_Str_Delay
 	TXT_AT 27, 23, UI_Str_DelayHint
 	TXT_AT 28, 2, UI_Str_Legend
-	jmp Selector_DrawDelay				; the delay value at col 19, then rts
+	jsr Selector_DrawDelay				; the delay value at col 19
+	jmp Selector_DrawStatus				; row 26: the highlighted image's source name
 
 ;-----------------------------------------------------------------------------
 Selector_DrawList
@@ -588,18 +613,18 @@ Selector_DrawList
 	ora ImageCount+1
 	bne Selector_DrawList_Have
 	jsr UI_Pen_Normal
-	TXT_AT UI_FIRSTROW, 4, UI_Str_Empty
+	TXT_AT UI_FIRSTROW, UI_GRIDCOL0, UI_Str_Empty
 	rts
 Selector_DrawList_Have
 	lda #$00
-	sta Reg5							; Reg5 = visible row 0..VISROWS-1
+	sta Reg5							; Reg5 = cell index within the window, 0..VISROWS*COLS-1
 Selector_DrawList_L1
 	lda Reg5
-	cmp #UI_VISROWS
+	cmp #[UI_VISROWS*UI_COLS]
 	bcs Selector_DrawList_Tail
 	clc
 	adc Sel_Top
-	sta Reg6							; Reg6 = list index for this row
+	sta Reg6							; Reg6 = list index for this cell
 	cmp ImageCount
 	bcs Selector_DrawList_Tail			; past the end of the list
 
@@ -612,9 +637,18 @@ Selector_DrawList_L1
 	jsr UI_Format_Row					; Name_Row_Buf -> fixed 10-char field
 
 	lda Reg5
+	lsr
+	lsr
+	lsr								; A = grid row = cell index / UI_COLS
 	clc
 	adc #UI_FIRSTROW
 	sta Txt_Row
+	lda Reg5
+	and #[UI_COLS-1]					; A = grid column = cell index MOD UI_COLS
+	tax
+	lda Sel_ColX,x
+	sta Txt_Col
+
 	lda Reg6
 	cmp Sel_Index
 	bne Selector_DrawList_NotHi
@@ -630,7 +664,7 @@ Selector_DrawList_Put
 	jmp Selector_DrawList_L1
 
 Selector_DrawList_Tail
-; list has rows but none are *.MAP files -> note it under the last entry
+; list has rows but none are *.MAP files -> note it one row below the last entry
 	lda FileStart
 	cmp ImageCount
 	bcc Selector_DrawList_Done			; some files present
@@ -638,14 +672,21 @@ Selector_DrawList_Tail
 	beq Selector_DrawList_Done			; wholly empty -> UI_Str_Empty already drawn
 	lda ImageCount
 	sec
-	sbc Sel_Top							; rows from the top of the window
+	sbc #$01							; A = index of the last occupied cell
+	sec
+	sbc Sel_Top							; A = that index, relative to the window top
+	lsr
+	lsr
+	lsr								; A = relative grid row of the last item
+	clc
+	adc #$01							; A = relative row of the note (one row below)
 	cmp #UI_VISROWS
-	bcs Selector_DrawList_Done			; tail row is off-screen
+	bcs Selector_DrawList_Done			; note's row is off-screen
 	clc
 	adc #UI_FIRSTROW
 	sta Txt_Row
 	jsr UI_Pen_Normal
-	lda #$04
+	lda Sel_ColX						; column 0 of the grid
 	sta Txt_Col
 	lda #<UI_Str_Empty
 	sta Txt_Ptr
@@ -656,26 +697,37 @@ Selector_DrawList_Done
 	rts
 
 ;-----------------------------------------------------------------------------
-; Selector_HiRow - A = list index.  Recolours just that row's 8 name cells
+; Selector_HiRow - A = list index.  Recolours just that cell's name field
 ; (attribute bytes only, via the blitter - no glyph redraw), highlighted if the
-; index == Sel_Index, else normal.  No-op if the row isn't on screen.  Used by
-; the up/down keys: a cursor move only changes which row carries the bar.
+; index == Sel_Index, else normal.  No-op if the cell isn't on screen.  Used by
+; the nav keys: a cursor move only changes which cell carries the highlight.
 ;-----------------------------------------------------------------------------
 Selector_HiRow
 	sta Reg6							; Reg6 = list index
-	cmp Sel_Top
-	bcc Selector_HiRow_Skip				; above the window
+	cmp ImageCount
+	bcs Selector_HiRow_Skip				; past the end of the list
+	lsr
+	lsr
+	lsr
+	sta Reg3							; Reg3 = item_row (index / UI_COLS)
+	lda Sel_Top
+	lsr
+	lsr
+	lsr								; A = top_row (Sel_Top / UI_COLS)
+	sta Reg1							; Reg1 = top_row
+	lda Reg3
 	sec
-	sbc Sel_Top
+	sbc Reg1							; A = item_row - top_row
+	bcc Selector_HiRow_Skip				; item_row < top_row - above the window
 	cmp #UI_VISROWS
 	bcs Selector_HiRow_Skip				; below the window
 	clc
 	adc #UI_FIRSTROW
 	sta Txt_Row
 	lda Reg6
-	cmp ImageCount
-	bcs Selector_HiRow_Skip				; past the end of the list
-	lda #4
+	and #[UI_COLS-1]					; A = grid column = index MOD UI_COLS
+	tax
+	lda Sel_ColX,x
 	sta Txt_Col
 	lda #9
 	sta Reg1							; width-1 = 10 cells ("<NAME....>")
@@ -724,14 +776,290 @@ Selector_DrawDelay_Pad2
 	TXT_AT 27, 19, Txt_Line
 	rts
 
+;=============================================================================
+; Selector status line (row 26) - the highlighted image's original long source
+; filename.  It is not on the Atari disk (8.3 short names only); it lives in the
+; image's .NFO as record 1, the "Input                : <name>" line.  Reading a
+; whole .NFO per row stuttered a fresh directory, so instead the converter
+; writes all the names once into "IMAGES.LST" (8-byte key + name per record)
+; beside the images.  Nfo_Name_LoadManifest slurps that in one pass on every
+; Rescan_Images into NFO_NAME_VRAM (NFO_NAME_SLOT bytes/ordinal); the draw path
+; is then a pure VRAM read.  No IMAGES.LST -> every slot stays $00 -> the line
+; is simply blank.
+;=============================================================================
+
+;-----------------------------------------------------------------------------
+; Nfo_Name_ClearCache - blitter-wipe NFO_NAME_VRAM to $00 (every slot "no
+; name").  Kicks BLT_NFO_NAME_CLEAR and waits (Nfo_Name_LoadManifest fills
+; after).
+;-----------------------------------------------------------------------------
+Nfo_Name_ClearCache
+	lda #BLT_NFO_NAME_CLEAR-BLT_CLEAR
+	vbsta VBXE_BL_ADR0
+	lda #$00
+	vbsta VBXE_BL_ADR2
+	lda #$01
+	vbsta VBXE_BL_ADR1
+Nfo_Name_ClearCache_L1
+	vblda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Nfo_Name_ClearCache_L1
+	lda #$01
+	vbsta VBXE_BLITTER_START
+Nfo_Name_ClearCache_L2
+	vblda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Nfo_Name_ClearCache_L2
+	rts
+
+;-----------------------------------------------------------------------------
+; Selector_DrawStatus - repaint row 26 for the current Sel_Index.  Blank for a
+; directory / ".." row or an empty list; "Src: <name>" for a *.MAP row whose
+; slot was filled from IMAGES.LST.  Pure VRAM read - no file I/O.
+;-----------------------------------------------------------------------------
+Selector_DrawStatus
+	jsr UI_Pen_Normal
+	lda ImageCount
+	ora ImageCount+1
+	beq Selector_DrawStatus_Blank
+	lda Sel_Index
+	jsr UI_RowType
+	bne Selector_DrawStatus_Blank		; dir / ".." -> no source name
+	lda Sel_Index
+	sec
+	sbc FileStart						; ordinal into the *.MAP group
+	sta Nfo_Name_Ord
+	jsr Nfo_Name_MapSlot				; Ptr_Lo/Hi -> slot, bank $2A..$2D mapped
+	jsr Nfo_Name_Emit					; Path_Buf = name padded to NFO_NAME_CAP + NUL
+	lda #26
+	sta Txt_Row
+	lda #$00
+	sta Txt_Col
+	lda #<UI_Str_Src
+	sta Txt_Ptr
+	lda #>UI_Str_Src
+	sta Txt_Ptr + $01
+	jsr Text_PutStrAt					; "Src: " at col 0
+	lda #$05
+	sta Txt_Col
+	lda #<Path_Buf
+	sta Txt_Ptr
+	lda #>Path_Buf
+	sta Txt_Ptr + $01
+	jmp Text_PutStrAt					; the padded name from col 5 (tail)
+Selector_DrawStatus_Blank
+	lda #26
+	sta Txt_Row
+	lda #$00
+	sta Txt_Col
+	lda #<UI_Str_StatusBlank
+	sta Txt_Ptr
+	lda #>UI_Str_StatusBlank
+	sta Txt_Ptr + $01
+	jmp Text_PutStrAt					; 53 spaces (tail)
+
+;-----------------------------------------------------------------------------
+; Nfo_Name_MapSlot - Nfo_Name_Ord -> Ptr_Lo/Hi = the slot's $2000-window
+; address, its VBXE bank ($2A..$2D) mapped in.  slot byte offset = Ord * 64:
+; bank = $2A + (Ord >> 6), window page = $20 + ((Ord >> 2) & 15),
+; window low = (Ord & 3) << 6.  (64 divides 4K, so a slot never straddles.)
+;-----------------------------------------------------------------------------
+Nfo_Name_MapSlot
+	lda Nfo_Name_Ord
+	asl
+	asl
+	asl
+	asl
+	asl
+	asl									; A = (Ord & 3) << 6
+	sta Ptr_Lo
+	lda Nfo_Name_Ord
+	lsr
+	lsr
+	and #$0F							; (Ord >> 2) & 15
+	clc
+	adc #>VBXE_WINDOW					; -> $20..$2F
+	sta Ptr_Hi
+	lda Nfo_Name_Ord
+	lsr
+	lsr
+	lsr
+	lsr
+	lsr
+	lsr									; Ord >> 6  (0..3)
+	clc
+	adc #NFO_NAME_BANK
+	ora #MEMAC_GLOBAL_ENABLE
+	vbsta VBXE_MA_BSEL
+	rts
+
+;-----------------------------------------------------------------------------
+; Nfo_Name_Emit - the slot Nfo_Name_MapSlot just mapped (at Ptr_Lo/Hi) in.
+; Leaves Path_Buf[0..NFO_NAME_CAP-1] = the name (or all spaces if the slot
+; byte 0 is < $21, i.e. "no name") + Path_Buf[NFO_NAME_CAP] = $00.  Window
+; unmapped on return.
+;-----------------------------------------------------------------------------
+Nfo_Name_Emit
+	ldy #$00
+	lda (Ptr_Lo),y
+	cmp #$21
+	bcc Nfo_Name_Emit_Pad				; $00 -> all spaces
+Nfo_Name_Emit_Copy
+	lda (Ptr_Lo),y
+	beq Nfo_Name_Emit_Pad
+	sta Path_Buf,y
+	iny
+	cpy #NFO_NAME_CAP
+	bcc Nfo_Name_Emit_Copy
+	bcs Nfo_Name_Emit_Term
+Nfo_Name_Emit_Pad
+	lda #$20
+Nfo_Name_Emit_PadL
+	cpy #NFO_NAME_CAP
+	bcs Nfo_Name_Emit_Term
+	sta Path_Buf,y
+	iny
+	bne Nfo_Name_Emit_PadL				; always (Y < NFO_NAME_CAP)
+Nfo_Name_Emit_Term
+	lda #$00
+	sta Path_Buf + NFO_NAME_CAP
+	lda #MEMAC_GLOBAL_DISABLE
+	vbsta VBXE_MA_BSEL
+	rts
+
+;-----------------------------------------------------------------------------
+; Nfo_Name_LoadManifest - open "D[n]:PATH IMAGES.LST", and for every record
+; (8-byte key + source name + $9B) store the name into the matching *.MAP
+; row's slot.  Called from Rescan_Images right after Nfo_Name_ClearCache.
+; A missing / unreadable file just leaves every slot $00 (blank status line).
+;-----------------------------------------------------------------------------
+Nfo_Name_LoadManifest
+	jsr Build_Manifest_Spec				; Scan_Spec = "D[n]:PATH" + "IMAGES.LST" + $9B
+	jsr Find_First_IOCB
+	cpy #$01
+	bne Nfo_Name_LoadManifest_Done		; no free IOCB
+	stx Dir_IOCB
+	lda #CIO_read						; AUX1 = 4 : plain file, read
+	sta ICAX1,x
+	lda #$00
+	sta ICAX2,x
+	lda #<Scan_Spec
+	sta ICBAL,x
+	lda #>Scan_Spec
+	sta ICBAH,x
+	lda #CIO_open
+	sta ICCOM,x
+	jsr CIOV
+	bmi Nfo_Name_LoadManifest_Done		; no IMAGES.LST here
+
+Nfo_Name_LoadManifest_Line
+	ldx Dir_IOCB
+	lda #CIO_gettext
+	sta ICCOM,x
+	lda #<Nfo_Name_Line
+	sta ICBAL,x
+	lda #>Nfo_Name_Line
+	sta ICBAH,x
+	lda #58								; buffer length (8 key + 48 name + $9B, rounded)
+	sta ICBLL,x
+	lda #$00
+	sta ICBLH,x
+	jsr CIOV
+	bmi Nfo_Name_LoadManifest_Close		; EOF / error / record over 58 bytes
+
+	jsr Nfo_Name_Match					; key = Nfo_Name_Line[0..7]  -> A = ordinal
+	bcs Nfo_Name_LoadManifest_Line		; no matching *.MAP row - drop the line
+	sta Nfo_Name_Ord
+	jsr Nfo_Name_MapSlot				; Ptr_Lo/Hi -> slot, bank $2A..$2D mapped
+	ldy #$00
+Nfo_Name_LoadManifest_Copy
+	lda Nfo_Name_Line + 8,y
+	cmp #$9B
+	beq Nfo_Name_LoadManifest_CopyEnd	; end of record
+	cmp #$20
+	bcc Nfo_Name_LoadManifest_CopyEnd	; NUL / control -> stop
+	sta (Ptr_Lo),y
+	iny
+	cpy #NFO_NAME_CAP
+	bcc Nfo_Name_LoadManifest_Copy
+Nfo_Name_LoadManifest_CopyEnd
+	lda #$00
+	sta (Ptr_Lo),y						; NUL-terminate (Y may be 0 -> "no name")
+	lda #MEMAC_GLOBAL_DISABLE
+	vbsta VBXE_MA_BSEL
+	jmp Nfo_Name_LoadManifest_Line
+
+Nfo_Name_LoadManifest_Close
+	ldx Dir_IOCB
+	lda #CIO_close
+	sta ICCOM,x
+	jsr CIOV
+Nfo_Name_LoadManifest_Done
+	rts
+
+;-----------------------------------------------------------------------------
+; Nfo_Name_Match - the 8-byte key at Nfo_Name_Line in.  Linear-scans the *.MAP
+; group of the name list (rows FileStart .. ImageCount-1) in IMAGE_BANK for a
+; byte-exact match.  Returns A = ordinal (row - FileStart), C=0 on a hit;
+; C=1 and A undefined if none.  Maps + unmaps IMAGE_BANK itself.
+;-----------------------------------------------------------------------------
+Nfo_Name_Match
+	lda #IMAGE_BANK | MEMAC_GLOBAL_ENABLE
+	vbsta VBXE_MA_BSEL
+	lda #$00
+	sta Reg1							; Reg1 = ordinal under test
+Nfo_Name_Match_Row
+	lda FileStart
+	clc
+	adc Reg1
+	cmp ImageCount						; FileStart + ord >= ImageCount -> exhausted
+	bcs Nfo_Name_Match_None
+; Ptr_Lo/Hi = ImageNames + (FileStart + ord) * 8
+	sta Reg2							; Reg2 = row index
+	lda #$00
+	sta Ptr_Hi
+	lda Reg2
+	asl
+	rol Ptr_Hi
+	asl
+	rol Ptr_Hi
+	asl
+	rol Ptr_Hi							; A:Ptr_Hi = row * 8
+	clc
+	adc #<ImageNames
+	sta Ptr_Lo
+	lda Ptr_Hi
+	adc #>ImageNames
+	sta Ptr_Hi
+	ldy #$00
+Nfo_Name_Match_Cmp
+	lda (Ptr_Lo),y
+	cmp Nfo_Name_Line,y
+	bne Nfo_Name_Match_Next
+	iny
+	cpy #$08
+	bcc Nfo_Name_Match_Cmp
+	lda #MEMAC_GLOBAL_DISABLE			; all 8 equal -> hit
+	vbsta VBXE_MA_BSEL
+	lda Reg1
+	clc
+	rts
+Nfo_Name_Match_Next
+	inc Reg1
+	bne Nfo_Name_Match_Row				; ord wraps past 255 -> give up
+Nfo_Name_Match_None
+	lda #MEMAC_GLOBAL_DISABLE
+	vbsta VBXE_MA_BSEL
+	sec
+	rts
+
 ;-----------------------------------------------------------------------------
 ; UI_DrawNameRow - A = pen code (0 file / 1 highlighted / 2 directory or "..").
-; Draws Name_Row_Buf (already formatted by UI_Format_Row) at col 4 of Txt_Row.
+; Draws Name_Row_Buf (already formatted by UI_Format_Row) at Txt_Row/Txt_Col -
+; the caller (Selector_DrawList) sets both before calling; this only picks the pen.
 ;-----------------------------------------------------------------------------
 UI_DrawNameRow
 	tax									; X = pen code
-	lda #4
-	sta Txt_Col
 	cpx #$01
 	bne UI_DrawNameRow_1
 	jsr UI_Pen_Invert
@@ -977,8 +1305,16 @@ Selector_Keys
 	jmp Sel_Key_Down
 SelK_1
 	cmp #KEY_UP
-	bne SelK_2
+	bne SelK_1a
 	jmp Sel_Key_Up
+SelK_1a
+	cmp #KEY_LEFT
+	bne SelK_1b
+	jmp Sel_Key_Left
+SelK_1b
+	cmp #KEY_RIGHT
+	bne SelK_2
+	jmp Sel_Key_Right
 SelK_2
 	cmp #KEY_RETURN
 	bne SelK_3
@@ -1018,53 +1354,110 @@ Sel_Redraw
 	jsr Selector_Draw
 	jmp Read_Key_Done
 
+; Sel_Key_Down/Up/Left/Right - each validates and clamps the move, then hands
+; the new index to Sel_Nav_Apply.  Because the list is one flat, row-major
+; array, Left/Right wrapping across a row boundary needs no extra logic -
+; it's just Sel_Index +/- 1.
 Sel_Key_Down
+	lda ImageCount
+	ora ImageCount+1
+	beq Sel_Key_Nav_Done				; empty list
+	lda Sel_Index
+	clc
+	adc #UI_COLS
+	cmp ImageCount
+	bcs Sel_Key_Nav_Done				; no cell directly below - clamp
+	jmp Sel_Nav_Apply
+
+Sel_Key_Up
+	lda Sel_Index
+	cmp #UI_COLS
+	bcc Sel_Key_Nav_Done				; already in the top grid row
+	sec
+	sbc #UI_COLS
+	jmp Sel_Nav_Apply
+
+Sel_Key_Left
+	lda Sel_Index
+	beq Sel_Key_Nav_Done				; already at the first item
+	sec
+	sbc #$01
+	jmp Sel_Nav_Apply
+
+Sel_Key_Right
 	lda ImageCount
 	ora ImageCount+1
 	beq Sel_Key_Nav_Done				; empty list
 	ldx Sel_Index
 	inx
 	cpx ImageCount
-	bcs Sel_Key_Nav_Done				; already on the last entry
+	bcs Sel_Key_Nav_Done				; already at the last item
+	txa
+	jmp Sel_Nav_Apply
+
+;-----------------------------------------------------------------------------
+; Sel_Nav_Apply - A = new Sel_Index (already range-checked by the caller).
+; Common tail for the four nav keys: scrolls (full repaint) if the move
+; crosses the visible window, else just re-colours the old and new cells;
+; always repaints the status line, then returns to the key loop.
+;-----------------------------------------------------------------------------
+Sel_Nav_Apply
+	pha									; stash the new index
 	lda Sel_Index
-	sta Reg3							; Reg3 = old (now un-highlighted) index
-	stx Sel_Index
-	txa									; T = Sel_Index - (VISROWS-1)
-	sec
-	sbc #[UI_VISROWS-1]
-	bcc Sel_Key_Down_Rows				; T negative -> still visible
+	sta Reg8							; Reg8 = old index (survives the calls below)
+	pla
+	sta Sel_Index
+	jsr Sel_Top_For_Index				; A = the Sel_Top that keeps Sel_Index visible
 	cmp Sel_Top
-	bcc Sel_Key_Down_Rows
-	beq Sel_Key_Down_Rows
-	sta Sel_Top							; scrolled -> repaint the whole list in place
+	beq Sel_Nav_Apply_Rows				; unchanged -> no scroll, cheap 2-cell update
+	sta Sel_Top							; scrolled -> repaint the whole grid in place
 	jsr Selector_DrawList
-	jmp Read_Key_Done
-Sel_Key_Down_Rows
-	lda Reg3
-	jsr Selector_HiRow					; un-highlight the row we left
+	jmp Sel_Key_Nav_Done
+Sel_Nav_Apply_Rows
+	lda Reg8
+	jsr Selector_HiRow					; un-highlight the cell we left
 	lda Sel_Index
-	jsr Selector_HiRow					; highlight the row we moved to
+	jsr Selector_HiRow					; highlight the cell we moved to
 Sel_Key_Nav_Done
+	jsr Selector_DrawStatus				; row 26: source name of the new row
 	jmp Read_Key_Done
 
-Sel_Key_Up
-	lda Sel_Index
-	beq Sel_Key_Nav_Done				; already at the top
-	sta Reg3							; Reg3 = old (now un-highlighted) index
+;-----------------------------------------------------------------------------
+; Sel_Top_For_Index - A = target list index -> A = the Sel_Top that keeps
+; that index inside the visible UI_VISROWS x UI_COLS window, scrolling by
+; whole grid rows from the CURRENT Sel_Top.  Read-only - caller compares
+; against Sel_Top and stores it.  Clobbers X, Reg1.
+;-----------------------------------------------------------------------------
+Sel_Top_For_Index
+	lsr
+	lsr
+	lsr
+	sta Reg1							; Reg1 = target item_row
+	lda Sel_Top
+	lsr
+	lsr
+	lsr								; A = current top_row
+	cmp Reg1
+	bcc Sel_Top_FI_MaybeDown			; top_row < item_row
+	beq Sel_Top_FI_Unchanged			; top_row == item_row - already the top row
+	lda Reg1							; top_row > item_row - scroll up: new top_row = item_row
+	jmp Sel_Top_FI_Scale
+Sel_Top_FI_MaybeDown
+	clc
+	adc #[UI_VISROWS-1]					; A = bottom row of the current window
+	cmp Reg1
+	bcs Sel_Top_FI_Unchanged			; bottom_row >= item_row - still visible
+	lda Reg1							; scroll down: new top_row = item_row - (VISROWS-1)
 	sec
-	sbc #$01
-	sta Sel_Index
-	cmp Sel_Top
-	bcs Sel_Key_Up_Rows					; still visible
-	sta Sel_Top							; scrolled -> repaint the whole list in place
-	jsr Selector_DrawList
-	jmp Read_Key_Done
-Sel_Key_Up_Rows
-	lda Reg3
-	jsr Selector_HiRow
-	lda Sel_Index
-	jsr Selector_HiRow
-	jmp Read_Key_Done
+	sbc #[UI_VISROWS-1]
+Sel_Top_FI_Scale
+	asl
+	asl
+	asl								; row -> Sel_Top (* UI_COLS)
+	rts
+Sel_Top_FI_Unchanged
+	lda Sel_Top
+	rts
 
 Sel_RD					; near trampoline for the conditional branches below
 	jmp Sel_Redraw
@@ -1314,7 +1707,7 @@ View_Selected
 ; Space / Backspace (image view) and the slideshow move File_Index while an
 ; image is on screen; call this before returning to the selector so its
 ; highlight follows the picture you were actually looking at, scrolling the
-; list if the entry is off-screen.  Mirrors Sel_Key_Down's scroll math.
+; grid if the entry is off-screen.  Shares Sel_Top_For_Index with the nav keys.
 ;-----------------------------------------------------------------------------
 Selector_Sync_Cursor
 	lda ImageCount
@@ -1328,19 +1721,8 @@ Selector_Sync_Cursor
 	sbc #$01
 Selector_Sync_Set
 	sta Sel_Index
-	cmp Sel_Top
-	bcs Selector_Sync_Bottom			; index >= Sel_Top - check the far edge
-	sta Sel_Top							; scrolled up off the top
-	rts
-Selector_Sync_Bottom
-	sec
-	sbc #[UI_VISROWS-1]					; T = Sel_Index - (VISROWS-1)
-	bcc Selector_Sync_Done				; T negative -> already visible
-	cmp Sel_Top
-	bcc Selector_Sync_Done
-	beq Selector_Sync_Done
-	sta Sel_Top							; scrolled down off the bottom
-Selector_Sync_Done
+	jsr Sel_Top_For_Index				; A = the Sel_Top that keeps Sel_Index visible
+	sta Sel_Top
 	rts
 Selector_Sync_Zero
 	lda #$00
@@ -1366,7 +1748,7 @@ Selector_Handle_I
 	sta File_Index
 	lda #$03							; ext selector 3 = .NFO
 	jsr Build_Filename					; FileNamePtr -> "D[n]:PATH<base>.NFO",0
-	jsr Info_Load						; stream into NFO_BANK, count lines
+	jsr Info_Load						; stream into NFO_BUF_VRAM, count records
 	lda LoadStatus
 	beq Selector_Handle_I_Ret			; OPEN failed (no .nfo) - selector stays up
 	lda #$00
@@ -1458,237 +1840,87 @@ Slideshow_Reload_Done
 	rts
 
 ;=============================================================================
-; Info viewer  (UI_Mode = 4) - shows "<image>.NFO" verbatim, monochrome,
-; scrollable.  The text is streamed into NFO_BANK (up to 2 VBXE banks); the
-; first $00 byte past the file marks the end (the banks are wiped first).
+; Info viewer  (UI_Mode = 4) - shows "<image>.NFO" on the 80-col text screen,
+; scrollable.  The .NFO file IS the byte image of that screen: fixed 160-byte
+; line records of 80 {glyph,attr} cell pairs (attr $07), no terminators, one
+; all-$00 record marking end-of-text.  Info_Load streams it verbatim into
+; NFO_BUF_VRAM (banks $25-$29); Info_Draw blits an NFO_VISROWS window of it with
+; one BLT_NFO_DRAW copy per scroll - no reformat, no re-walk.
 ;=============================================================================
 
 ;-----------------------------------------------------------------------------
-; Info_Load - wipe NFO_BANK / NFO_BANK+1, stream FileNamePtr into them via
-; LoadData, then count lines.  LoadStatus (fileio.lib) = 0 if the OPEN failed.
+; Info_Load - stream FileNamePtr into NFO_BUF_VRAM via LoadData, then count the
+; line records.  LoadStatus (fileio.lib) = 0 if the OPEN failed.  No pre-wipe:
+; the converter's trailing $00 record stops Info_Count_Lines before any stale
+; tail from a previous, longer .NFO, and the scroll clamp keeps those records
+; off screen.
 ;-----------------------------------------------------------------------------
 Info_Load
-	lda #NFO_BANK
-	sta Nfo_WalkBank
-Info_Load_ClearMap
-	lda Nfo_WalkBank
-	ora #MEMAC_GLOBAL_ENABLE
-	vbsta VBXE_MA_BSEL
-	lda #<VBXE_WINDOW
-	sta Ptr_Lo
-	lda #>VBXE_WINDOW
-	sta Ptr_Hi
-	ldx #$10							; 16 pages = one 4K bank
-	lda #$00
-	tay
-Info_Load_ClearPage
-	sta (Ptr_Lo),y
-	iny
-	bne Info_Load_ClearPage
-	inc Ptr_Hi
-	dex
-	bne Info_Load_ClearPage
-	inc Nfo_WalkBank
-	lda Nfo_WalkBank
-	cmp #NFO_BANK + 2
-	bcc Info_Load_ClearMap
-	lda #MEMAC_GLOBAL_DISABLE
-	vbsta VBXE_MA_BSEL
-
-	lda #NFO_BANK
+	lda #NFO_BUF_BANK
 	sta BankIndex
 	jsr LoadData						; FileNamePtr was set by Build_Filename
 	lda LoadStatus
 	beq Info_Load_Ret					; OPEN failed - Selector_Handle_I bails
-	jsr Info_Format_Page				; reformat -> MONO_PAGE, sets Nfo_LineCount
+	jsr Info_Count_Lines				; sets Nfo_LineCount
 Info_Load_Ret
 	rts
 
 ;-----------------------------------------------------------------------------
-; Info_Walk_Advance - Ptr_Lo/Hi += 1, stepping to NFO_BANK+1 at the $3000 edge
-; and re-mapping the window.  Returns C=1 if the 2-bank cap was hit (caller
-; treats that as end-of-text), C=0 otherwise.
+; Info_Count_Lines - walk the loaded buffer in TEXT_PITCH (160-byte) steps and
+; count records whose first byte is non-zero, stopping at the $00 sentinel or
+; at NFO_MAX_LINES (127).  Leaves Nfo_LineCount (word; hi byte stays 0).
+; Ptr_Lo/Hi is the $2000-window pointer, Nfo_WalkBank the mapped bank; a
+; 160-byte step straddles a bank every ~25 records, handled inline.
 ;-----------------------------------------------------------------------------
-Info_Walk_Advance
-	inc Ptr_Lo
-	bne Info_Walk_OK
-	inc Ptr_Hi
-	lda Ptr_Hi
-	cmp #>VBXE_WINDOW + $10
-	bcc Info_Walk_OK
-	inc Nfo_WalkBank
-	lda Nfo_WalkBank
-	cmp #NFO_BANK + 2
-	bcs Info_Walk_Cap
-	lda Nfo_WalkBank
-	ora #MEMAC_GLOBAL_ENABLE
-	vbsta VBXE_MA_BSEL
-	lda #<VBXE_WINDOW
-	sta Ptr_Lo
-	lda #>VBXE_WINDOW
-	sta Ptr_Hi
-Info_Walk_OK
-	clc
-	rts
-Info_Walk_Cap
-	sec
-	rts
-
-;-----------------------------------------------------------------------------
-; Info_Format_Page - walk the raw .nfo (already streamed into NFO_BANK/+1) line
-; by line, writing each line space-padded to TEXT_COLS bytes into MONO_PAGE
-; (MONO_PAGE_STRIDE bytes/row), capped at NFO_MAX_LINES.  Leaves the row total
-; in Nfo_LineCount.  Window left unmapped.
-;-----------------------------------------------------------------------------
-Info_Format_Page
+Info_Count_Lines
 	lda #$00
 	sta Nfo_LineCount
 	sta Nfo_LineCount + $01
-	lda #NFO_BANK
+	lda #NFO_BUF_BANK
 	sta Nfo_WalkBank
 	ora #MEMAC_GLOBAL_ENABLE
 	vbsta VBXE_MA_BSEL
 	lda #<VBXE_WINDOW
-	sta Nfo_WalkLo
 	sta Ptr_Lo
 	lda #>VBXE_WINDOW
-	sta Nfo_WalkHi
 	sta Ptr_Hi
+Info_Count_L1
 	ldy #$00
 	lda (Ptr_Lo),y
-	bne Info_Fmt_Loop					; non-empty .nfo
-	jmp Info_Fmt_Done					; empty .nfo -> 0 rows
-Info_Fmt_Loop
-	jsr Info_Copy_Line					; NfoLineBuf <- line; Reg7 = last-line flag
-	lda NfoLineBuf
-	bne Info_Fmt_Write
-	lda Reg7
-	bne Info_Fmt_Done					; trailing empty line - do not count it
-Info_Fmt_Write
-	jsr Info_Write_PageRow				; NfoLineBuf -> MONO_PAGE row Nfo_LineCount
+	beq Info_Count_Done					; $00 first byte -> sentinel / end of text
 	inc Nfo_LineCount
-	bne Info_Fmt_NC
-	inc Nfo_LineCount + $01
-Info_Fmt_NC
-	lda Reg7
-	bne Info_Fmt_Done					; that was the last line
-	lda Nfo_LineCount + $01
-	bne Info_Fmt_Done					; > 255 rows (paranoia)
 	lda Nfo_LineCount
 	cmp #NFO_MAX_LINES
-	bcs Info_Fmt_Done					; hit the row cap
-	lda Nfo_WalkBank					; re-map the walk bank for the next Info_Copy_Line
+	bcs Info_Count_Done					; hit the record cap
+	lda Ptr_Lo							; Ptr += TEXT_PITCH
+	clc
+	adc #TEXT_PITCH
+	sta Ptr_Lo
+	bcc Info_Count_L1
+	inc Ptr_Hi
+	lda Ptr_Hi
+	cmp #>VBXE_WINDOW + $10				; crossed out of the 4K window ($30xx)?
+	bcc Info_Count_L1
+	sbc #$10							; C=1 from the cmp -> back to $20xx-$2Fxx
+	sta Ptr_Hi
+	inc Nfo_WalkBank					; and map the next NFO buffer bank
+	lda Nfo_WalkBank
 	ora #MEMAC_GLOBAL_ENABLE
 	vbsta VBXE_MA_BSEL
-	jmp Info_Fmt_Loop
-Info_Fmt_Done
+	jmp Info_Count_L1
+Info_Count_Done
 	lda #MEMAC_GLOBAL_DISABLE
 	vbsta VBXE_MA_BSEL
 	rts
 
 ;-----------------------------------------------------------------------------
-; Info_Write_PageRow - write NfoLineBuf (NUL-terminated, <= TEXT_COLS chars),
-; space-padded to TEXT_COLS bytes, into MONO_PAGE at row Nfo_LineCount.  Maps a
-; MONO_PAGE bank into the $2000 window; the caller re-maps the walk bank after.
-; Requires Nfo_LineCount < NFO_MAX_LINES (< 256), so the 80-byte row cannot
-; straddle a bank (MONO_PAGE_STRIDE 128 divides the 4K bank).
-;-----------------------------------------------------------------------------
-Info_Write_PageRow
-	lda Nfo_LineCount
-	pha									; keep the row number
-	lsr									; row >> 5  -> MONO_PAGE bank offset
-	lsr
-	lsr
-	lsr
-	lsr
-	clc
-	adc #MONO_PAGE_BANK
-	ora #MEMAC_GLOBAL_ENABLE
-	vbsta VBXE_MA_BSEL
-	pla
-	and #$1F							; row & 31
-	lsr									; (row & 31) >> 1  -> window page offset
-	pha
-	lda #$00
-	ror									; row bit 0 -> bit 7  ->  $00 / $80
-	sta Ptr_Lo
-	pla
-	clc
-	adc #>VBXE_WINDOW					; + $20   ->  window ptr = $2000 + (row & 31)*128
-	sta Ptr_Hi
-	ldx #$00							; X != 0 once we are padding
-	ldy #$00
-Info_WPR_L1
-	txa
-	bne Info_WPR_Pad
-	lda NfoLineBuf,y
-	bne Info_WPR_Store
-	inx									; NUL -> pad the rest of the row with spaces
-Info_WPR_Pad
-	lda #$20
-Info_WPR_Store
-	sta (Ptr_Lo),y
-	iny
-	cpy #TEXT_COLS
-	bne Info_WPR_L1
-	rts
-
-;-----------------------------------------------------------------------------
-; Info_Copy_Line - copy the line at Nfo_WalkLo/Hi (window already mapped to
-; Nfo_WalkBank) into NfoLineBuf, NUL-terminated, clipped at TEXT_COLS.  Steps
-; the walk pointer past the trailing EOL.  Reg7 = 1 if this was the last line.
-; X = dest column.
-;-----------------------------------------------------------------------------
-Info_Copy_Line
-	lda Nfo_WalkLo
-	sta Ptr_Lo
-	lda Nfo_WalkHi
-	sta Ptr_Hi
-	lda #$00
-	sta Reg7
-	ldx #$00
-Info_Copy_L1
-	ldy #$00
-	lda (Ptr_Lo),y
-	beq Info_Copy_EOF
-	cmp #$9B
-	beq Info_Copy_EOL
-	cmp #$0A
-	beq Info_Copy_EOL
-	cmp #$0D
-	beq Info_Copy_Skip					; ignore CR
-	cpx #TEXT_COLS
-	bcs Info_Copy_Skip					; clip past column 80
-	sta NfoLineBuf,x
-	inx
-Info_Copy_Skip
-	jsr Info_Walk_Advance
-	bcc Info_Copy_L1
-Info_Copy_EOF
-	lda #$01
-	sta Reg7
-	jmp Info_Copy_Fin
-Info_Copy_EOL
-	jsr Info_Walk_Advance				; consume the EOL
-	bcc Info_Copy_Fin
-	lda #$01
-	sta Reg7
-Info_Copy_Fin
-	lda #$00
-	sta NfoLineBuf,x
-	lda Ptr_Lo
-	sta Nfo_WalkLo
-	lda Ptr_Hi
-	sta Nfo_WalkHi
-	rts
-
-;-----------------------------------------------------------------------------
-; Info_Draw - blit an NFO_VISROWS window of MONO_PAGE (starting at row Nfo_Top)
-; onto the text screen in one blitter chain - no per-key re-walk.  When the
-; whole .nfo is shorter than the window, clear first and blit only real rows.
+; Info_Draw - blit an NFO_VISROWS window of the NFO buffer (from line record
+; Nfo_Top) onto the text screen with one BLT_NFO_DRAW copy - no re-walk.  When
+; the whole .NFO is shorter than the window, clear first and blit only the
+; records that exist.
 ;-----------------------------------------------------------------------------
 Info_Draw
-; Reg6:Reg5 = Nfo_LineCount - Nfo_Top   (rows available; >= 0 by scroll invariant)
+; Reg6:Reg5 = Nfo_LineCount - Nfo_Top   (records available; >= 0 by scroll invariant)
 	sec
 	lda Nfo_LineCount
 	sbc Nfo_Top
@@ -1702,7 +1934,7 @@ Info_Draw
 	lda Reg5
 	cmp #NFO_VISROWS
 	bcs Info_Draw_Full
-; short document: clear, then blit only the rows that exist
+; short document: clear, then blit only the records that exist
 	lda Reg5
 	sta Reg4
 	jsr Text_Clear
@@ -1714,23 +1946,51 @@ Info_Draw_Full
 	lda #NFO_VISROWS-1
 	sta Reg4
 Info_Draw_Blit
-; source = MONO_PAGE_VRAM + Nfo_Top * MONO_PAGE_STRIDE (128)
-	lda Nfo_Top
-	lsr									; Nfo_Top >> 1
-	sta Reg2
+; Reg2:Reg1 = Nfo_Top * TEXT_PITCH  (Nfo_Top <= NFO_MAX_LINES-NFO_VISROWS, < $5000)
 	lda #$00
-	ror									; Nfo_Top bit 0 -> bit 7  ->  $00 / $80
-	sta Reg1							; source offset low
+	sta Reg1
+	sta Reg2
+	ldx Nfo_Top
+	beq Info_Draw_Patch
+Info_Draw_MulL
+	lda Reg1
+	clc
+	adc #TEXT_PITCH
+	sta Reg1
+	bcc Info_Draw_MulNC
+	inc Reg2
+Info_Draw_MulNC
+	dex
+	bne Info_Draw_MulL
+Info_Draw_Patch
+	lda #MEMAC_GLOBAL_ENABLE				; map VBXE bank $00 -> $2000 window (patch the BCB)
+	vbsta VBXE_MA_BSEL
+	lda Reg1
+	sta BLT_NFO_DRAW + Src_Adr0			; source lo  = offset lo
 	lda Reg2
 	clc
-	adc #$70							; + $70  (low 16 bits of MONO_PAGE_VRAM = $7000)
-	sta Reg2							; source offset mid
-	lda #$02							; bits 16-18 of MONO_PAGE_VRAM
-	sta Reg3
-	lda #NFO_TOPROW
-	sta Txt_Row
-	lda #UI_PEN_FG
-	jsr Text_BlitMonoPage
+	adc #$50							; + $50  (low 16 bits of NFO_BUF_VRAM = $5000)
+	sta BLT_NFO_DRAW + Src_Adr1			; source mid ; source hi stays $02 (Reg2 max $3D, no carry)
+	lda Reg4
+	sta BLT_NFO_DRAW + Blt_H
+	lda #MEMAC_GLOBAL_DISABLE
+	vbsta VBXE_MA_BSEL
+	lda #BLT_NFO_DRAW-BLT_CLEAR
+	vbsta VBXE_BL_ADR0					; point the blitter at BLT_NFO_DRAW
+	lda #$00
+	vbsta VBXE_BL_ADR2
+	lda #$01
+	vbsta VBXE_BL_ADR1
+Info_Draw_L1
+	vblda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Info_Draw_L1					; wait for any prior blit
+	lda #$01
+	vbsta VBXE_BLITTER_START
+Info_Draw_L2
+	vblda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Info_Draw_L2					; wait for the copy to finish
 Info_Draw_Ret
 	rts
 
@@ -1958,3 +2218,13 @@ UI_Str_Delay		dta c'Slideshow delay: ',0
 UI_Str_DelayHint	dta c's    , shorter    . longer',0
 UI_Str_Legend		dta c'Up/Dn move  ENTER open  S slide  D drive  P pal  I info  F font  Q quit',0
 UI_Str_DriveTitle	dta c'Scan drive',0
+UI_Str_Src			dta c'Src: ',0
+UI_Str_StatusBlank	dta c'                                                     ',0	; 53 spaces (Src: + NFO_NAME_CAP)
+
+;-----------------------------------------------------------------------------
+; Sel_ColX - screen column for grid column c (0..UI_COLS-1), 10-char cells.
+; Indexed by (list index AND [UI_COLS-1]).  Relocate the whole grid by
+; changing UI_GRIDCOL0 alone.
+;-----------------------------------------------------------------------------
+Sel_ColX	dta UI_GRIDCOL0+0, UI_GRIDCOL0+10, UI_GRIDCOL0+20, UI_GRIDCOL0+30
+			dta UI_GRIDCOL0+40, UI_GRIDCOL0+50, UI_GRIDCOL0+60, UI_GRIDCOL0+70
