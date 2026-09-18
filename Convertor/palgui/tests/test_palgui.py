@@ -24,7 +24,7 @@ import sys
 import tempfile
 import unittest
 
-from palgui import jobs, presets, review, runner, snapshot, summary
+from palgui import imageslst, jobs, presets, review, runner, snapshot, summary
 from palgui.settings import (DITHERS, FILTERS, FITS, RESIZE_FIXED,
                             Settings, split_command_line)
 
@@ -1226,6 +1226,89 @@ class TestEndToEnd(unittest.TestCase):
                 self.assertEqual(ba, bb, '%s differs' % key)
         finally:
             shutil.rmtree(other, ignore_errors=True)
+
+
+class TestImagesLst(unittest.TestCase):
+    """imageslst.scan / build - the IMAGES.LST manifest the viewer reads."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix='palgui-lst-')
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def _touch(self, name, data=b''):
+        path = os.path.join(self.dir, name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'wb') as f:
+            f.write(data)
+        return path
+
+    @staticmethod
+    def _nfo(input_name):
+        """A 2-record .NFO whose record 1 is the Input line, like palettize4."""
+        banner = ('=' * 31 + 'palettize_4 report' + '=' * 31)[:80].ljust(80)
+        rec1 = ('%-21s: %s' % ('Input', input_name))[:80].ljust(80)
+        out = bytearray()
+        for line in (banner, rec1):
+            for ch in line:
+                out.append(ord(ch) & 0xFF)
+                out.append(0x07)
+        return bytes(out)
+
+    def test_scan_recovers_names_and_sorts_by_key(self):
+        self._touch('IMG1.map')
+        self._touch('IMG1.nfo', self._nfo('sunset_beach.png'))
+        self._touch('IMG0.map')
+        self._touch('IMG0.nfo', self._nfo('photo_of_a_cat.jpg'))
+        self._touch('IMG2.map')                       # bare - falls back to stem
+        self._touch(os.path.join('sub', 'IMG3.map'))  # one level down
+        self._touch(os.path.join('sub', 'IMG3_report.txt'),
+                    ('banner\n%-21s: dragon_lores.bmp\n'
+                     % 'Input').encode('latin-1'))
+
+        rows = imageslst.scan(self.dir)
+        self.assertEqual([k for k, _ in rows],
+                         ['IMG0    ', 'IMG1    ', 'IMG2    ', 'IMG3    '])
+        self.assertEqual([n for _, n in rows],
+                         ['photo_of_a_cat.jpg', 'sunset_beach.png',
+                          'IMG2', 'dragon_lores.bmp'])
+
+    def test_build_is_9b_terminated_keyed_records(self):
+        self._touch('IMG0.map')
+        self._touch('IMG0.nfo', self._nfo('photo_of_a_cat.jpg'))
+        data = imageslst.build(self.dir)
+        self.assertEqual(data.count(imageslst.EOL), 1)
+        self.assertEqual(data[:imageslst.KEY_LEN], b'IMG0    ')
+        self.assertIn(b'photo_of_a_cat.jpg', data)
+        self.assertEqual(data[-1], imageslst.EOL)
+
+    def test_long_name_is_clipped_to_the_cap(self):
+        self._touch('IMG0.map')
+        self._touch('IMG0.nfo', self._nfo('x' * 90))
+        (key, name), = imageslst.scan(self.dir)
+        self.assertEqual(len(name), imageslst.NAME_CAP)
+
+    def test_write_defaults_into_the_folder(self):
+        self._touch('IMG0.map')
+        path, count = imageslst.write(self.dir)
+        self.assertEqual(path, os.path.join(self.dir, 'images.lst'))
+        self.assertEqual(count, 1)
+        self.assertTrue(os.path.isfile(path))
+
+    def test_key_matches_the_disk_short_name(self):
+        """Spaces dropped and the gap closed; '_' kept - like the disk step.
+
+        'Charger 01.map' -> CHARGER0.MAP, 'Chrome_cr.map' -> CHROME_C.MAP,
+        'FJ_Marceline_300.map' -> FJ_MARCE.MAP on the Atari.
+        """
+        self._touch('Charger 01.map')
+        self._touch('Chrome_cr.map')
+        self._touch('FJ_Marceline_300.map')
+        rows = dict(imageslst.scan(self.dir))
+        self.assertIn('CHARGER0', rows)
+        self.assertIn('CHROME_C', rows)
+        self.assertIn('FJ_MARCE', rows)
 
 
 if __name__ == '__main__':

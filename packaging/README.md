@@ -1,7 +1,9 @@
-# Standalone Windows build
+# Standalone build
 
-Turns the converter and its GUI into a folder a non-technical Windows user can
-unzip and double-click - no Python, no `pip`, no `PATH`, no venv.
+Turns the converter and its GUI into a folder a non-technical user can
+unpack and double-click - no Python, no `pip`, no `PATH`, no venv. Windows
+(`build_app.ps1` -> `.zip`) and Linux (`build_app.sh` -> `.tar.gz`) share one
+PyInstaller spec.
 
 ## What comes out
 
@@ -42,6 +44,34 @@ venv currently uses - is bleeding-edge for PyInstaller and not a supported build
 target here. The frozen app carries its own Python, so this is independent of
 whatever you run from source.
 
+## Build it on Linux
+
+```bash
+./build_app.sh                 # from the repo root
+./build_app.sh --clean         # nuke .venv-build / build / dist first
+PYTHON=python3.11 ./build_app.sh
+```
+
+Same five steps as `build_app.ps1`, same shared spec. Out comes
+`VBXE PAL Studio v<version>-linux.tar.gz` wrapping the identical layout, with
+`VBXE PAL Studio` and `palettize4` as extension-less ELF binaries.
+
+**It cannot be cross-built.** PyInstaller bundles the *host* OS's Python and
+native libraries, so a Linux binary has to be produced on Linux - there is no
+Windows -> Linux path. Without a Linux machine, let CI do it (below).
+
+Linux notes:
+
+- Built on the GitHub `ubuntu-latest` runner, so it needs a glibc distro at
+  least as new as that runner (Ubuntu 24.04 as of writing). It will not run on
+  musl (Alpine).
+- The GUI needs a desktop session (X11 or Wayland). `palettize4` is headless and
+  runs anywhere.
+- `tar xzf` should preserve the executable bit; if not,
+  `chmod +x "VBXE PAL Studio/VBXE PAL Studio" "VBXE PAL Studio/palettize4"`.
+- No AppImage, no `.deb`, unsigned - same "unpack it somewhere writable" model as
+  Windows.
+
 ## Release it
 
 Push a tag:
@@ -51,9 +81,11 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-`.github/workflows/release.yml` builds on `windows-latest` and attaches the zip
-to a GitHub Release. `workflow_dispatch` also lets you run it by hand from the
-Actions tab (artifact only, no Release).
+`.github/workflows/release.yml` has two jobs - `build-windows` (`windows-latest`)
+and `build-linux` (`ubuntu-latest`, which also smoke-tests the frozen binaries) -
+and each attaches its archive to the same GitHub Release, so the tag ends up with
+both the `.zip` and the `-linux.tar.gz`. `workflow_dispatch` also lets you run it
+by hand from the Actions tab (artifacts only, no Release).
 
 ## Files here
 
@@ -77,6 +109,11 @@ Actions tab (artifact only, no Release).
   '...PySide6/plugins' does not exist!` in the PySide6 hook, then succeed on a
   `-Clean` rebuild against the same versions. If you hit it, rerun with
   `pwsh ./build_app.ps1 -Clean`.
+- **"Access to the path '...\_internal\PySide6\...qoffscreen.dll' is denied"**
+  means a process is holding `dist\VBXE PAL Studio\_internal\**` open - almost
+  always a **running `VBXE PAL Studio.exe`** (an Explorer preview pane or an
+  antivirus scan can also do it). Close it and rerun. `build_app.ps1` now
+  checks for a running instance up front and says so.
 - **Build on Python 3.10-3.13.** PyInstaller 6.x + PySide6 6.11 are not reliable
   on 3.14 (the version the source venv uses). `build_app.ps1` picks a supported
   interpreter automatically; the CI workflow pins 3.12.

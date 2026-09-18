@@ -37,7 +37,10 @@ or --name)
   {name}.map     one byte per cell, palette id (0-3) * 16 -> 0,16,32,48; row-major
   {name}_preview.png   reconstruction as the hardware would show it
   {name}_palettes.png  swatch sheet of the palettes
-  {name}_report.txt    statistics and any quality warnings
+  {name}_report.txt    statistics and any quality warnings (human-readable, fixed 80-col layout)
+  {name}.nfo           the same report as the Atari viewer's "About" screen eats it:
+                       fixed 160-byte line records of 80 {glyph,attr} cell pairs
+                       (attr $07), no terminators, one all-$00 record marks the end
 """
 
 import argparse, os, sys, json
@@ -555,6 +558,8 @@ def main():
 
     # ---- load (+ optional resample) + extract master colours --------------
     img = Image.open(args.input).convert("RGB")
+    orig_w, orig_h = img.size            # source dimensions before any resample
+    src_colours = int(np.unique(np.asarray(img).reshape(-1, 3), axis=0).shape[0])
     pad_mask = None
     if args.resize:
         img, pad_mask = resize_image(img, _parse_wh(args.resize), args.filter,
@@ -836,6 +841,15 @@ def main():
 
     # ---- write files --------------------------------------------------------
     base = args.name if args.name else os.path.splitext(os.path.basename(args.input))[0]
+    # The Atari viewer (SpartaDOS X) only sees 8.3 short names, so the .map/.raw
+    # /.pal/.nfo set has to be renamed to something like IMG0.* when it is staged
+    # onto the disk.  Warn if the base is not already 8.3-safe - a mismatch there
+    # is the most common way the About screen ends up loading the wrong .nfo.
+    _bad = set(base) - set("abcdefghijklmnopqrstuvwxyz"
+                           "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
+    if len(base) > 8 or _bad:
+        sys.stderr.write("warning: output base %r is not an 8.3 short name - "
+                         "the Atari viewer (SDX) needs e.g. --name IMG0\n" % base)
     # {base}.raw : one byte per pixel, row-major
     out_idx.tofile(os.path.join(args.out, base + ".raw"))
     # {base}#.pal : 256 entries x (R,G,B) = 768 bytes each
@@ -856,63 +870,76 @@ def main():
             sheet[b*sw:(b+1)*sw, s*sw:(s+1)*sw] = pal_rgb[b, s]
     Image.fromarray(sheet, "RGB").save(os.path.join(args.out, base + "_palettes.png"))
 
-    # ---- report -------------------------------------------------------------
+    # ---- report -----------------------------------------------------------
+    # Fixed 80-column layout: label padded to 21, then ": ", value at col 24;
+    # wrapped lines align under the value (23 spaces).  This drives the Atari
+    # viewer's "About" screen, so the layout must stay stable and parseable -
+    # see Convertor/out/Sample_report.txt for the canonical form.
     total_px = H * W
     unique_out = len(np.unique(out_rgb.reshape(-1, 3), axis=0))
+
+    def row(label, value):
+        return f"{label:<21}: {value}"
+
+    def cont(text):
+        return " " * 23 + text
+
     lines = []
-    lines.append("palettize4 report")
-    lines.append("=" * 48)
-    lines.append(f"input            : {args.input}")
-    lines.append(f"dimensions       : {W} x {H}  ({total_px} px)")
+    lines.append("=" * 31 + "palettize_4 report" + "=" * 31)   # 80-col banner
+    lines.append(row("Input", os.path.basename(args.input)))
+    lines.append(row("Dimensions", f"{orig_w} x {orig_h}  ({orig_w*orig_h} px)"))
     if args.resize:
-        lines.append(f"resampled        : -> {args.resize} via {args.filter} (fit={args.fit}"
-                     + (f", display-aspect={args.display_aspect}" if args.fit != "stretch" else "") + ")")
-    lines.append(f"cell width       : {cell_w} px  ->  {cells_per_line} cells/line, {cells_per_line*H} cells")
-    lines.append(f"palettes x slots : {NP} x {args.slots}  (usable {cap}/palette"
-                 + (", slot 0 = transparent" if args.reserve0 else "") + ")")
+        lines.append(row("Resampled", f"{W}x{H} via {args.filter} (fit={args.fit}"
+                     + (f", display-aspect={args.display_aspect}" if args.fit != "stretch" else "") + ")"))
+    else:
+        lines.append(row("Resampled", f"none (native {W}x{H})"))
+    lines.append(row("Cell width", f"{cell_w} px  ->  {cells_per_line} cells/line "
+                     f"* {H} lines = {cells_per_line*H} cells"))
+    lines.append(row("Palettes x slots", f"{NP} x {args.slots}  (usable {cap}/palette"
+                 + (", slot 0 = transparent" if args.reserve0 else "") + ")"))
     if int(transparent.sum()):
-        lines.append(f"transparent px   : {int(transparent.sum())} letterbox/pillarbox -> index 0")
-    if prequant:
-        lines.append(f"pre-quantized    : source exceeded {NP*cap} colours -> reduced to {N}")
-    lines.append(f"master colours   : {N}")
-    lines.append(f"output colours   : {unique_out}  (distinct RGB on screen)")
-    lines.append(f"components        : {ncomp}  (largest = {max_comp})")
+        lines.append(row("Transparent px", f"{int(transparent.sum())} letterbox/pillarbox -> index 0"))
+    if prequant and src_colours > N:
+        lines.append(row("Pre-quantized", f"{src_colours} source colours -> reduced to {N}"))
+    else:
+        lines.append(row("Pre-quantized", f"{src_colours} source colours"))
+    lines.append(row("Master colours", N))
+    lines.append(row("Output colours", f"{unique_out}  (distinct RGB on screen)"))
     lines.append("")
+    lines.append(row("Strategy", strategy))
     if lossless:
-        lines.append("RESULT: LOSSLESS  - components packed into "
+        lines.append(f"{'RESULT: LOSSLESS':<23}components packed into "
                      f"{NP} palettes with no colour loss.")
     else:
         pct = 100.0 * sub_pixels / total_px
         mean_err = (sub_err_sum / sub_pixels) if sub_pixels else 0.0
-        lines.append(f"strategy         : {strategy}")
-        lines.append("RESULT: LOSSY     - cells could not be partitioned cleanly.")
-        lines.append(f"  recoloured pixels  : {sub_pixels} ({pct:.3f}% of image)")
-        lines.append(f"  mean OKLab error   : {mean_err:.4f}  (on recoloured pixels only)")
+        lines.append(f"{'RESULT: LOSSY':<23}cells could not be partitioned cleanly.")
+        lines.append(row("  recoloured pixels", f"{sub_pixels} ({pct:.3f}% of image)"))
+        lines.append(row("  mean OKLab error", f"{mean_err:.4f}  (on recoloured pixels only)"))
         if max_comp > cap and strategy.startswith("fidelity"):
-            lines.append(f"  note: a single component needs {max_comp} colours (> {cap}); "
-                         "raise --color-bias (e.g. 0.5 or 1.0) to recover more colours.")
+            lines.append(f"  note: a single component needs {max_comp} colours (> {cap});")
+            lines.append("  raise --color-bias (e.g. 0.5 or 1.0) to recover more colours.")
     lines.append("")
-    lines.append("accuracy vs the ideal (what the 8-px cell rule cost):")
-    lines.append(f"  the ideal here = this source resized and reduced to {N} "
-                 "colours, with no cell restriction applied")
+    lines.append("Accuracy vs the ideal (what the 8-px cell rule cost):")
+    lines.append(row("  the ideal here =",
+                     f"this source {'resized and ' if args.resize else ''}reduced to {N} colours"))
+    lines.append(cont("with no cell restriction applied"))
     seam = acc["seam_index"]
-    lines.append(f"  identical pixels   : {acc['identical_pixels']} / "
-                 f"{acc['compared_pixels']}  ({acc['identical_pct']:.2f}% of "
-                 "opaque px)")
-    lines.append(f"  RMSE (sRGB)        : {acc['rgb_rmse']:.2f}"
-                 "     <- the norm distance")
-    lines.append("  PSNR               : "
-                 + ("identical - the cell rule cost nothing"
-                    if acc["psnr_db"] is None else f"{acc['psnr_db']:.1f} dB"))
-    lines.append(f"  mean OKLab error   : {acc['mean_oklab_error']:.4f}"
-                 "  (every pixel, not just the recoloured ones)")
-    lines.append(f"  worst OKLab error  : {acc['max_oklab_error']:.4f}")
-    lines.append(f"  cells damaged      : {acc['cells_damaged']} / "
-                 f"{acc['cells_compared']}  ({acc['cells_damaged_pct']:.1f}%)")
-    lines.append("  cell seams         : "
-                 + ("n/a (no column detail to measure)" if seam is None else
-                    f"{seam:.2f}x  (1.00 = the cell grid added no visible "
-                    "seam; RMSE and PSNR above cannot see this)"))
+    lines.append(row("  identical pixels", f"{acc['identical_pixels']} / "
+                     f"{acc['compared_pixels']}  ({acc['identical_pct']:.2f}% of opaque px)"))
+    lines.append(row("  RMSE (sRGB)", f"{acc['rgb_rmse']:.2f}     <- the norm distance"))
+    lines.append(row("  PSNR", "identical - the cell rule cost nothing"
+                     if acc["psnr_db"] is None else f"{acc['psnr_db']:.1f} dB"))
+    lines.append(row("  mean OKLab error",
+                     f"{acc['mean_oklab_error']:.4f}  (every pixel, not just the recoloured ones)"))
+    lines.append(row("  worst OKLab error", f"{acc['max_oklab_error']:.4f}"))
+    lines.append(row("  cells damaged", f"{acc['cells_damaged']} / "
+                     f"{acc['cells_compared']}  ({acc['cells_damaged_pct']:.1f}%)"))
+    if seam is None:
+        lines.append(row("  cell seams", "n/a (no column detail to measure)"))
+    else:
+        lines.append(row("  cell seams", f"{seam:.2f}x  (the cell grid added no visible seam)"))
+        lines.append(cont("RMSE and PSNR above cannot see this"))
     lines.append("")
     # how many palettes each colour appears in (to find entries unique to one)
     pal_count = np.zeros(N, dtype=np.int32)
@@ -922,19 +949,41 @@ def main():
     all_pal_colors = set().union(*final_colors) if NP else set()
     total_entries = sum(len(final_colors[b]) for b in range(NP))
     duplicated = total_entries - len(all_pal_colors)
-    lines.append("per-palette colour usage:")
     per_palette = []
+    parts = []                              # "Pn: <colours unique to palette n>"
     for b in range(NP):
         uniq_b = sum(1 for c in final_colors[b] if pal_count[c] == 1)
         per_palette.append({"colours": len(final_colors[b]), "unique_to_palette": uniq_b})
-        lines.append(f"  palette {b}: {len(final_colors[b]):4d} / {cap} colours"
-                     f"  ({uniq_b:4d} unique to this palette)")
+        parts.append(f"P{b}: {uniq_b}")
+    lines.append(row("Per-palette colours", " ".join(parts) + f" / {cap} colours"))
     lines.append(f"  duplicated across palettes: {duplicated} "
                  f"entr{'y' if duplicated == 1 else 'ies'} "
                  f"({len(all_pal_colors)} distinct colours in all palettes)")
     report = "\n".join(lines)
     with open(os.path.join(args.out, base + "_report.txt"), "w") as f:
         f.write(report + "\n")
+
+    # ---- the same report as a viewer-native .nfo -------------------------
+    # The Atari viewer blits this straight onto its 80-col VBXE text screen,
+    # so the file IS that screen's byte image: fixed 160-byte line records,
+    # 80 cells of {glyph, attr=$07}, space-padded, no line terminators; a
+    # trailing all-$00 record marks end-of-text.  Every report line is <= 80
+    # chars by construction (row()/cont() above) - assert it so a later edit
+    # to the layout can't silently produce an unreadable About screen.
+    NFO_COLS, NFO_MAX_LINES = 80, 127
+    if len(lines) > NFO_MAX_LINES:
+        raise SystemExit("report is %d lines, over the .nfo viewer cap of %d"
+                         % (len(lines), NFO_MAX_LINES))
+    # The screen is 80 columns; the .txt keeps full-length lines, the binary
+    # .nfo clips each record to fit (a long Input filename is the usual cause).
+    nfo = bytearray()
+    for ln in lines:
+        for ch in ln[:NFO_COLS].ljust(NFO_COLS):
+            nfo.append(ord(ch) & 0xFF)
+            nfo.append(0x07)
+    nfo.extend(b"\x00" * (NFO_COLS * 2))          # end-of-text sentinel record
+    with open(os.path.join(args.out, base + ".nfo"), "wb") as f:
+        f.write(nfo)
 
     # ---- machine-readable stats (sidecar JSON, always written) -------------
     eff_bias = 1.0 if args.max_colors else max(0.0, min(1.0, args.color_bias))
@@ -943,6 +992,8 @@ def main():
         "name": base,
         "out_dir": args.out,
         "width": W, "height": H, "pixels": total_px,
+        "source_width": orig_w, "source_height": orig_h,
+        "source_colours": src_colours,
         "cell_width": cell_w, "cells_per_line": cells_per_line,
         "cells": cells_per_line * H,
         "palettes": NP, "slots": args.slots, "usable_per_palette": cap,
@@ -977,6 +1028,7 @@ def main():
             "preview": base + "_preview.png",
             "palettes_png": base + "_palettes.png",
             "report": base + "_report.txt",
+            "nfo": base + ".nfo",
             "stats": base + "_stats.json",
         },
     }

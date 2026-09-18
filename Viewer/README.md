@@ -21,6 +21,25 @@ for the three `LoadData` calls in `Load_Image`. Navigation:
 `Sort_Image_List` (alphabetical, in place) is written but **not wired in** - the
 list is left in disk order for now; a future UI can enable the sort.
 
+### `IMAGES.LST` - long filenames on the selector status line
+
+The Atari disk only holds 8.3 short names, so the original source filename
+(`isabelle_fuhrman_eyes.jpg`) is lost from `IMG0.MAP`. If an `IMAGES.LST` file
+sits in the same directory as the images, the selector reads it once per
+directory scan (`Nfo_Name_LoadManifest`) and shows `Src: <name>` on row 26 for
+the highlighted image. Each record is an 8-byte key (the `.MAP` base name as
+it lands on the Atari disk - illegal chars like space stripped, `_` kept,
+upper-cased, first 8, space-padded) + the source name + `$9B`; the viewer
+matches a record to a row by that key, so extra or out-of-order records are
+harmless.
+No `IMAGES.LST` -> the line is just blank.
+
+Build it with **`build_images_lst.py <folder>`** or the converter GUI's
+**File > Build images.lst...**. Run it on the folder you build the disk image
+from, after any renaming to `IMGn`, so the keys match the on-disk names. The
+names themselves come from each image's `.NFO` record 1 (the converter's
+`Input : <name>` line).
+
 **`MAX_IMAGES` = 255, by design.** Each image is a ~90 kB `.PAL`/`.MAP`/`.RAW`
 set, so 255 already far exceeds any realistic slideshow on one partition, and a
 single-byte count keeps every navigation and sort loop small. There is no plan

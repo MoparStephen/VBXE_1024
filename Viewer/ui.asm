@@ -10,21 +10,32 @@
 ; silently collapses to a zero-page hit - the $53 / VBXE_BLITTER_BUSY hang).
 ; vbsta/vblda clobber Y in auto mode: no live Y is held across one below.
 ;
-; Screen model (text80.asm): 80 columns x 30 rows, Palette 0.
+; Screen model (text80.asm): 80 columns x TEXT_ROWS(23) rows, Palette 0 - the
+; menu/info XDL (xdl.asm) displays this ONE buffer as two on-screen bands (a
+; graphics banner sits above it, a 1-line separator between the bands, see
+; xdl.asm for the full 240-scanline layout).  Selector row map:
+;   row 0            Location: <path>
+;   row 1            blank
+;   rows 2-16 (15)   scrolling grid (UI_FIRSTROW/UI_VISROWS below)
+;   rows 17-19       spare/margin (blank)
+;   row 20 (TEXT_MAIN_ROWS+0)   status line (Src: ...)
+;   row 21 (TEXT_MAIN_ROWS+1)   slideshow delay
+;   row 22 (TEXT_MAIN_ROWS+2)   key legend
+; The info viewer uses rows 0..TEXT_MAIN_ROWS-1 for scrollable content and
+; row TEXT_MAIN_ROWS for a single fixed hint line - see NFO_VISROWS below.
 ;
 ; UI_Mode:  0 = selector   1 = image view   2 = slideshow
 ;           3 = drive picker (D-key save-under overlay)   4 = info viewer (.nfo)
+;           5 = quit-confirm (Q-key save-under overlay, selector only)
 ;=============================================================================
 
 .def	UI_COLS			= 8				; grid columns (items/row) - a power of 2
 										; keeps row=index>>3 / col=index&7 cheap
 .def	UI_VISROWS		= 15			; grid rows visible at once
-.def	UI_FIRSTROW		= 3				; first screen row of the grid
+.def	UI_FIRSTROW		= 2				; first screen row of the grid
 .def	UI_GRIDCOL0		= 0				; first screen column of the grid (Sel_ColX base)
-; UI_FIRSTROW / UI_GRIDCOL0 are the only placement knobs - final chrome
-; (title/status/legend rows, margins) is being redesigned separately.
-; row 26 = status line (Src: ...), row 27 = slideshow delay, row 28 = key
-; legend, row 29 = bottom margin
+; UI_FIRSTROW / UI_GRIDCOL0 are the only placement knobs - see the row map
+; above for the rest of the selector's chrome (status/delay/legend rows).
 .def	UI_SLIDE_MIN	= 1
 .def	UI_SLIDE_MAX	= 30
 ; VBXE text-mode colour byte: bits 0-6 = foreground palette-0 entry (0-127),
@@ -39,10 +50,12 @@
 .def	UI_PEN_DIR		= $62			; directory/".." : hue $C green, luma 4
 
 .def	NFO_TOPROW		= 0				; info viewer: first screen row of the scroll region
-.def	NFO_VISROWS		= 30			; info viewer: visible text rows (full screen)
-; (raise NFO_TOPROW / drop NFO_VISROWS once the fixed logo area is designed)
-; NFO_VISROWS must equal TEXT_ROWS while there is no logo band, so the blit
-; overwrites every row - anything less leaves the selector's legend on the tail.
+.def	NFO_VISROWS		= TEXT_MAIN_ROWS	; info viewer: visible text rows (main band only)
+; The logo band is real now (the menu XDL's graphics group, see xdl.asm) - it
+; lives in its own VRAM, not stolen text rows, so NFO_TOPROW stays 0.
+; NFO_VISROWS must equal TEXT_MAIN_ROWS (not the full TEXT_ROWS buffer): the
+; blit overwrites every row it touches, and rows TEXT_MAIN_ROWS..TEXT_ROWS-1
+; hold the separate static footer hint line - the NFO blit must not touch it.
 .def	NFO_MAX_LINES	= 127			; cap on displayed .NFO records; NFO_BUF_VRAM (5 banks)
 									; holds 128 * 160, the 128th slot being the $00 sentinel
 
@@ -61,6 +74,8 @@
 .def	KEY_I			= $0D
 .def	KEY_COMMA		= $20			; "," - shorter slideshow delay
 .def	KEY_DOT			= $22			; "." - longer slideshow delay
+.def	KEY_Y			= $2B			; quit-confirm: yes (verified via Altirra CH readback)
+.def	KEY_N			= $23			; quit-confirm: no  (verified via Altirra CH readback)
 .def	KEY_LEFT		= $8E			; Ctrl+"-" (bare KEY_UP $0E | CTRL bit $80)
 .def	KEY_RIGHT		= $8F			; Ctrl+"=" (bare KEY_DOWN $0F | CTRL bit $80)
 
@@ -467,13 +482,18 @@ Emit_Path_Prefix_Done
 ;=============================================================================
 
 ;-----------------------------------------------------------------------------
-; Enter_Selector - restore Palette 0 for text, show the text screen, draw it.
-; Reached from start: (jsr) and from Handle_Escape (jsr) - always returns.
+; Enter_Selector - restore Palette 0 for text, refresh the menu banner's
+; palette registers 1-3 (Load_Image overwrites them for every real image
+; viewed in between - a cheap resident-VRAM-to-register copy, no disk access;
+; see Apply_Menu_Banner_Palette in view1024.asm), show the text screen, draw
+; it.  Reached from start: (jsr), Handle_Escape (jsr), Slide_Key_Stop (jsr)
+; and Info_Key_Leave (jsr) - always returns.
 ;-----------------------------------------------------------------------------
 Enter_Selector
 	jsr Restore_Palette0				; standard PAL/NTSC master palette -> set 0
 	jsr UI_Apply_TextPalette			; ...then de-interleave it for text mode
-	jsr Text_Activate					; point the XDL at the text screen
+	jsr Apply_Menu_Banner_Palette		; refresh the banner's palette registers 1-3
+	jsr Text_Activate					; point the XDL at the menu/info screen
 	lda #$00
 	sta UI_Mode
 	jsr Selector_Draw
@@ -586,26 +606,19 @@ UI_Apply_TP_Pass_Next
 Selector_Draw
 	jsr Text_Clear
 	jsr UI_Pen_Normal
-	TXT_AT 0, 2, UI_Str_Title
-	TXT_AT 0, 40, UI_Str_Images
-	lda ImageCount
-	sec
-	sbc FileStart						; count the *.MAP rows only, not ".."/dirs
-	jsr Put_U8_Dec_Line
-	TXT_AT 0, 48, Txt_Line
-
-	TXT_AT 1, 2, UI_Str_Loc
+	TXT_AT 0, 2, UI_Str_Loc
 	jsr UI_Build_LocLine
-	TXT_AT 1, 12, Txt_Line
+	TXT_AT 0, 12, Txt_Line
+											; row 1 stays blank - see the row map above
 
 	jsr Selector_DrawList
 
 	jsr UI_Pen_Normal
-	TXT_AT 27, 2, UI_Str_Delay
-	TXT_AT 27, 23, UI_Str_DelayHint
-	TXT_AT 28, 2, UI_Str_Legend
+	TXT_AT 21, 2, UI_Str_Delay
+	TXT_AT 21, 23, UI_Str_DelayHint
+	TXT_AT 22, 2, UI_Str_Legend
 	jsr Selector_DrawDelay				; the delay value at col 19
-	jmp Selector_DrawStatus				; row 26: the highlighted image's source name
+	jmp Selector_DrawStatus				; row 20: the highlighted image's source name
 
 ;-----------------------------------------------------------------------------
 Selector_DrawList
@@ -751,7 +764,7 @@ Selector_HiRow_Skip
 	rts
 
 ;-----------------------------------------------------------------------------
-; Selector_DrawDelay - repaint just the slideshow-delay value (row 27, col 19).
+; Selector_DrawDelay - repaint just the slideshow-delay value (row 21, col 19).
 ; A 3-char field so 10 -> 9 doesn't leave a stale digit.
 ;-----------------------------------------------------------------------------
 Selector_DrawDelay
@@ -773,11 +786,11 @@ Selector_DrawDelay_Pad2
 	bcc Selector_DrawDelay_Pad2
 	lda #$00
 	sta Txt_Line,x
-	TXT_AT 27, 19, Txt_Line
+	TXT_AT 21, 19, Txt_Line
 	rts
 
 ;=============================================================================
-; Selector status line (row 26) - the highlighted image's original long source
+; Selector status line (row 20) - the highlighted image's original long source
 ; filename.  It is not on the Atari disk (8.3 short names only); it lives in the
 ; image's .NFO as record 1, the "Input                : <name>" line.  Reading a
 ; whole .NFO per row stuttered a fresh directory, so instead the converter
@@ -813,7 +826,7 @@ Nfo_Name_ClearCache_L2
 	rts
 
 ;-----------------------------------------------------------------------------
-; Selector_DrawStatus - repaint row 26 for the current Sel_Index.  Blank for a
+; Selector_DrawStatus - repaint row 20 for the current Sel_Index.  Blank for a
 ; directory / ".." row or an empty list; "Src: <name>" for a *.MAP row whose
 ; slot was filled from IMAGES.LST.  Pure VRAM read - no file I/O.
 ;-----------------------------------------------------------------------------
@@ -831,7 +844,7 @@ Selector_DrawStatus
 	sta Nfo_Name_Ord
 	jsr Nfo_Name_MapSlot				; Ptr_Lo/Hi -> slot, bank $2A..$2D mapped
 	jsr Nfo_Name_Emit					; Path_Buf = name padded to NFO_NAME_CAP + NUL
-	lda #26
+	lda #20
 	sta Txt_Row
 	lda #$00
 	sta Txt_Col
@@ -848,7 +861,7 @@ Selector_DrawStatus
 	sta Txt_Ptr + $01
 	jmp Text_PutStrAt					; the padded name from col 5 (tail)
 Selector_DrawStatus_Blank
-	lda #26
+	lda #20
 	sta Txt_Row
 	lda #$00
 	sta Txt_Col
@@ -1419,7 +1432,7 @@ Sel_Nav_Apply_Rows
 	lda Sel_Index
 	jsr Selector_HiRow					; highlight the cell we moved to
 Sel_Key_Nav_Done
-	jsr Selector_DrawStatus				; row 26: source name of the new row
+	jsr Selector_DrawStatus				; row 20: source name of the new row
 	jmp Read_Key_Done
 
 ;-----------------------------------------------------------------------------
@@ -1668,17 +1681,13 @@ Drive_Keys_Commit
 	jmp Read_Key_Done
 DrvK_3
 	cmp #KEY_ESC
-	bne DrvK_4
+	bne Drive_Keys_Ret
 	jsr Drive_Win_Geom
 	jsr Text_Window_Restore
 	lda #$00
 	sta UI_Mode
 	jmp Read_Key_Done
-DrvK_4
-	cmp #KEY_Q
-	bne Drive_Keys_Ret
-	jmp Exit
-Drive_Keys_Ret
+Drive_Keys_Ret							; Q does not quit here - Selector only
 	jmp Read_Key_Done
 
 Sel_Key_P
@@ -1687,8 +1696,74 @@ Sel_Key_P
 Sel_Key_I
 	jsr Selector_Handle_I
 	jmp Read_Key_Done
+;-----------------------------------------------------------------------------
+; Sel_Key_Quit - open the "Q" quit-confirm overlay: stash the covered
+; rectangle, frame it, show the prompt, and hand control to Quit_Confirm_Keys
+; (UI_Mode 5).  Q is only ever recognized here - every other screen ignores
+; it - so quitting always passes through this confirmation.
+;-----------------------------------------------------------------------------
 Sel_Key_Quit
-	jmp Exit
+	jsr UI_Pen_Normal
+	jsr Quit_Win_Geom
+	jsr Text_Window_Save				; keep the grid underneath intact
+	jsr Text_Window_Frame
+
+	lda #QUIT_WIN_ROW+1					; prompt on the first interior row
+	sta Txt_Row
+	lda #QUIT_WIN_COL+2
+	sta Txt_Col
+	lda #<UI_Str_QuitConfirm
+	sta Txt_Ptr
+	lda #>UI_Str_QuitConfirm
+	sta Txt_Ptr + $01
+	jsr Text_PutStrAt
+
+	lda #QUIT_WIN_ROW+3					; (Y/N) hint, one blank row below
+	sta Txt_Row
+	lda #QUIT_WIN_COL+2
+	sta Txt_Col
+	lda #<UI_Str_QuitHint
+	sta Txt_Ptr
+	lda #>UI_Str_QuitHint
+	sta Txt_Ptr + $01
+	jsr Text_PutStrAt
+
+	lda #$05
+	sta UI_Mode
+	jmp Read_Key_Done
+
+; Txt_Row / Txt_Col / Reg1 (width-1) / Reg2 (height-1) for the quit-confirm window
+Quit_Win_Geom
+	lda #QUIT_WIN_ROW
+	sta Txt_Row
+	lda #QUIT_WIN_COL
+	sta Txt_Col
+	lda #QUIT_WIN_W-1
+	sta Reg1
+	lda #QUIT_WIN_H-1
+	sta Reg2
+	rts
+
+;=============================================================================
+; Quit-confirm popup keys  (UI_Mode = 5) - Selector only
+;=============================================================================
+Quit_Confirm_Keys
+	lda CH
+	cmp #KEY_Y
+	bne Quit_Confirm_NotY
+	jmp Exit							; confirmed - actually quit
+Quit_Confirm_NotY
+	cmp #KEY_N
+	beq Quit_Confirm_Cancel
+	cmp #KEY_ESC
+	beq Quit_Confirm_Cancel
+	jmp Read_Key_Done					; anything else - ignore
+Quit_Confirm_Cancel
+	jsr Quit_Win_Geom
+	jsr Text_Window_Restore
+	lda #$00
+	sta UI_Mode
+	jmp Read_Key_Done
 
 ;-----------------------------------------------------------------------------
 ; View_Selected - show Sel_Index as a full image (attribute-map path).
@@ -1754,23 +1829,34 @@ Selector_Handle_I
 	lda #$00
 	sta Nfo_Top
 	sta Nfo_Top + $01
+	jsr Text_Clear						; wipe the selector's grid/status/delay/legend
 	jsr Info_Draw
+	jsr Info_DrawFooter					; fixed "Esc.../Up-Down..." hint line
 	lda #$04
 	sta UI_Mode
 Selector_Handle_I_Ret
 	rts
 
+;-----------------------------------------------------------------------------
+; Info_DrawFooter - draw the info viewer's single fixed hint line in the
+; footer band, on its 3rd/last row (row TEXT_MAIN_ROWS+2, i.e. row 22).
+; Called once on entry to Info mode; the footer band's other two rows stay
+; blank for this screen.
+;-----------------------------------------------------------------------------
+Info_DrawFooter
+	jsr UI_Pen_Normal
+	TXT_AT TEXT_MAIN_ROWS+2, 2, UI_Str_InfoHint
+	rts
+
 ;=============================================================================
 ; Slideshow  (UI_Mode = 2)
 ;=============================================================================
-Slideshow_Keys
+Slideshow_Keys						; Q does not quit here - Selector only
 	lda CH
 	cmp #KEY_ESC
 	beq Slide_Key_Stop
 	cmp #KEY_SPACE
 	beq Slide_Key_Next
-	cmp #KEY_Q
-	beq Slide_Key_Quit
 	jmp Read_Key_Done
 Slide_Key_Stop
 	jsr Selector_Sync_Cursor				; highlight follows the image on screen
@@ -1781,8 +1867,6 @@ Slide_Key_Next
 	jsr Increment_Image
 	jsr Slideshow_Reload_Counter
 	jmp Read_Key_Done
-Slide_Key_Quit
-	jmp Exit
 
 ;-----------------------------------------------------------------------------
 ; Slideshow_Tick - called from main every frame.  Counts Slide_FrameCtr down
@@ -2035,15 +2119,11 @@ InfK_3
 	cmp #KEY_DOT
 	bne InfK_4
 	jmp Info_Key_PageDown
-InfK_4
+InfK_4							; Q does not quit here - Selector only
 	cmp #KEY_ESC
 	beq Info_Key_Leave
 	cmp #KEY_I
 	beq Info_Key_Leave
-	cmp #KEY_Q
-	bne InfK_None
-	jmp Exit
-InfK_None
 	jmp Read_Key_Done
 Info_Key_Leave
 	jsr Enter_Selector
@@ -2210,14 +2290,15 @@ Path_Pop_Done
 ;=============================================================================
 ; UI strings  (ATASCII; the text renderer maps to internal codes)
 ;=============================================================================
-UI_Str_Title		dta c'1024 Colour Picture Viewer',0
-UI_Str_Images		dta c'Images: ',0
 UI_Str_Loc			dta c'Location: ',0
 UI_Str_Empty		dta c'(no images found here)',0
 UI_Str_Delay		dta c'Slideshow delay: ',0
 UI_Str_DelayHint	dta c's    , shorter    . longer',0
 UI_Str_Legend		dta c'Up/Dn move  ENTER open  S slide  D drive  P pal  I info  F font  Q quit',0
+UI_Str_InfoHint		dta c'Esc to go back, Up/Down to scroll',0
 UI_Str_DriveTitle	dta c'Scan drive',0
+UI_Str_QuitConfirm	dta c'Are you sure to Quit',0
+UI_Str_QuitHint		dta c'(Y/N)',0
 UI_Str_Src			dta c'Src: ',0
 UI_Str_StatusBlank	dta c'                                                     ',0	; 53 spaces (Src: + NFO_NAME_CAP)
 

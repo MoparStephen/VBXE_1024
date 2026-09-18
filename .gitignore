@@ -5,8 +5,9 @@ __pycache__/
 # Converter output: generated, and one preview run can add dozens of files.
 /Convertor/out/
 
-# Standalone Windows build (build_app.ps1 / PyInstaller)
+# Standalone build (build_app.ps1 / build_app.sh / PyInstaller)
 /.venv-build/
 /build/
 /dist/
 /VBXE PAL Studio v*.zip
+/VBXE PAL Studio v*-linux.tar.gz

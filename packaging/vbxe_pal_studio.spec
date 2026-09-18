@@ -8,16 +8,20 @@
 
 MERGE() strips everything the CLI analysis shares with the GUI analysis, so the
 converter exe rides on the GUI's _internal/ instead of shipping its own copy of
-scipy.  build_app.ps1 drives this; see packaging/README.md.
+scipy.  build_app.ps1 (Windows) / build_app.sh (Linux) drive this - on Linux the
+two binaries have no .exe suffix; see packaging/README.md.
 """
 
 import os
+import sys
 
 from PyInstaller.utils.hooks import collect_all
 
 REPO = os.path.dirname(os.path.abspath(SPECPATH))          # noqa: F821 (PyInstaller global)
 CONVERTOR = os.path.join(REPO, 'Convertor')
-ICON = os.path.join(REPO, 'packaging', 'app.ico')
+# app.ico is a Windows resource; PyInstaller only warns and ignores it on Linux,
+# so hand it over only where it means something.
+ICON = os.path.join(REPO, 'packaging', 'app.ico') if sys.platform == 'win32' else None
 
 # scipy is the fragile one to freeze - grab it whole rather than chase
 # submodules.  numpy / Pillow / PySide6 all have solid built-in hooks.

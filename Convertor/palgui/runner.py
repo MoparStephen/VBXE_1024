@@ -30,11 +30,17 @@ from . import summary
 
 #: FROZEN (a PyInstaller build) vs RUN FROM SOURCE.  Frozen, there is no
 #: palettize4.py on disk and sys.executable is the GUI exe rather than a Python
-#: interpreter: the converter ships as a sibling palettize4.exe, and the folder
+#: interpreter: the converter ships as a sibling palettize4(.exe), and the folder
 #: the app was unzipped into is the anchor for a relative --out.  From source,
 #: palettize4.py sits one directory up from this package and sys.executable is
 #: the venv's Python.
 FROZEN = getattr(sys, 'frozen', False)
+
+#: The frozen converter's file name.  PyInstaller names it after the EXE()
+#: `name=` in the spec ('palettize4'), plus '.exe' on Windows and nothing on
+#: Linux/macOS - so this has to be chosen by platform, not hard-coded.
+CONVERTER_EXE = 'palettize4.exe' if os.name == 'nt' else 'palettize4'
+
 if FROZEN:
     APPDIR = os.path.dirname(os.path.abspath(sys.executable))
     CONVERTOR = APPDIR
@@ -112,16 +118,16 @@ def script_path():
 def converter_argv():
     """The command prefix that runs the converter.
 
-    Frozen: [<appdir>\\palettize4.exe] - there is no interpreter to invoke and
+    Frozen: [<appdir>/palettize4(.exe)] - there is no interpreter to invoke and
     no .py to hand it, the build ships the converter as its own exe.
     From source: [sys.executable, palettize4.py] - the same interpreter running
     the GUI, for the reason in the module docstring (not a bare `python`).
     """
     if FROZEN:
-        exe = os.path.join(APPDIR, 'palettize4.exe')
+        exe = os.path.join(APPDIR, CONVERTER_EXE)
         if not os.path.isfile(exe):
-            raise RunError('palettize4.exe is not next to the app (looked in %s)'
-                           % APPDIR)
+            raise RunError('%s is not next to the app (looked in %s)'
+                           % (CONVERTER_EXE, APPDIR))
         return [exe]
     return [sys.executable, script_path()]
 

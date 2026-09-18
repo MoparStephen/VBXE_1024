@@ -16,8 +16,8 @@
 ; bit 7 = 0 -> transparent background, 1 -> opaque/coloured background.
 ;
 ; TEXT_FONT_VRAM / TEXT_SCREEN_VRAM / TEXT_PITCH / TEXT_CHBASE live in
-; view1024.asm's .def block and are shared with XDL_Text (xdl.asm) so the two
-; halves cannot drift.
+; view1024.asm's .def block and are shared with XDL_MainMenu (xdl.asm) so the
+; two halves cannot drift.
 ;
 ; __VBXE_AUTO__ IS DEFINED IN THIS REPO.  Every VBXE_* register hit goes through
 ; vbsta / vblda; writes to VBXE_WINDOW ($2000..$2FFF) are plain stores (real
@@ -26,22 +26,21 @@
 ;
 ; PUBLIC API (called by ui.asm):
 ;   Text_Init        stream CGA.F08 into VRAM once; blank the screen RAM.
-;   Text_Activate    point VBXE_XDL_ADR0/1/2 at XDL_Text.
+;   Text_Activate    point VBXE_XDL_ADR0/1/2 at XDL_MainMenu.
 ;   Text_Deactivate  point them back at XDL_Image_Attribute (offset 0).
-;   Text_Clear       blitter zero-fill of the 80x30 cells (blank + transparent).
+;   Text_Clear       blitter zero-fill of the 80 x TEXT_ROWS cells (blank +
+;                    transparent) - ONE contiguous buffer backing both the
+;                    XDL's main-content and footer text bands, see xdl.asm.
 ;   Text_FillColour  blitter recolour of a cell rectangle: Txt_Row/Txt_Col =
 ;                    top-left, Reg1 = width-1 (cells), Reg2 = height-1 (rows),
 ;                    A = attribute byte.  Floods the attribute bytes only.
-;   Text_BlitMonoPage  blitter-draw a window of the off-screen mono page:
-;                    Reg1/2/3 = 24-bit page source, Txt_Row = top row, Reg4 =
-;                    height-1, A = colour.  Glyphs copied + attributes flooded.
 ;   Text_SetPen      A = fg palette entry (0-127), X = bg (0 transparent /
 ;                    non-zero opaque)  -> Make_Attr -> Txt_Attr.
 ;   Text_PutStrAt    draw the $00-terminated ASCII string at Txt_Ptr, from cell
 ;                    (Txt_Col, Txt_Row).
 ;
 ; INPUT VARIABLES (set by ui.asm before the call):
-;   Txt_Row .byte  0..29    Txt_Col .byte  0..79    Txt_Ptr .word  -> string
+;   Txt_Row .byte  0..(TEXT_ROWS-1)    Txt_Col .byte  0..79    Txt_Ptr .word  -> string
 ;=============================================================================
 
 ; --- placeholder tuning knobs (Stephen finalises with Make_Attr / the XDL) ---
@@ -74,8 +73,8 @@ Text_Init
 ; TEXT_FONT_BANK ($22) through the $2000 window: CGA.F08 -> $022000 (CHBASE
 ; $44), ATARI.F08 -> $022800 (CHBASE $45).  Fonts are embedded rather than
 ; streamed from disk so the viewer never depends on a font file being on
-; whatever disk it happens to boot from.  F (Handle_Keys) flips XDL_Text's
-; CHBASE byte between the two.
+; whatever disk it happens to boot from.  F (Handle_Keys) flips XDL_MainMenu's
+; two CHBASE bytes (main + footer text blocks) between the two.
 ;-----------------------------------------------------------------------------
 Text_Load_Fonts
 	lda #TEXT_FONT_BANK | MEMAC_GLOBAL_ENABLE
@@ -122,9 +121,10 @@ Text_Copy_2K_L1
 
 ;-----------------------------------------------------------------------------
 ; Toggle_Font - flip the text screen between the CGA ($44) and Atari ($45)
-; font by rewriting the one XDLC_CHBASE byte in XDL_Text (VBXE $00029).  The
-; VBXE re-reads the XDL each frame, so the change shows on the next frame with
-; no redraw.  Called from Handle_Keys on the F key, from any screen.
+; font by rewriting the two XDLC_CHBASE bytes (main + footer text blocks) in
+; XDL_MainMenu.  The VBXE re-reads the XDL each frame, so the change shows on
+; the next frame with no redraw.  Called from Handle_Keys on the F key, from
+; any screen.
 ;-----------------------------------------------------------------------------
 Toggle_Font
 	lda Font_Sel
@@ -135,7 +135,8 @@ Toggle_Font
 	tax									; hold it - vbsta clobbers A (and Y)
 	lda #MEMAC_GLOBAL_ENABLE				; map VBXE bank $00 into the $2000 window
 	vbsta VBXE_MA_BSEL
-	stx XDL_Text + 8					; XDLC_CHBASE byte, offset 8 in XDL_Text
+	stx XDL_MainMenu_CHBase				; main-block XDLC_CHBASE byte
+	stx XDL_MainMenu_CHBase2				; footer-block XDLC_CHBASE byte
 	lda #MEMAC_GLOBAL_DISABLE
 	vbsta VBXE_MA_BSEL
 	rts
@@ -144,9 +145,9 @@ Toggle_Font
 ; Text_Activate / Text_Deactivate - swap the displayed XDL.
 ;-----------------------------------------------------------------------------
 Text_Activate
-	lda #<[XDL_Text - VBXE_WINDOW]		; XDL_Text is org'd at VBXE_WINDOW -> VRAM $0000
+	lda #<[XDL_MainMenu - VBXE_WINDOW]	; XDL_MainMenu is org'd at VBXE_WINDOW -> VRAM $0000
 	vbsta VBXE_XDL_ADR0
-	lda #>[XDL_Text - VBXE_WINDOW]
+	lda #>[XDL_MainMenu - VBXE_WINDOW]
 	vbsta VBXE_XDL_ADR1
 	lda #$00
 	vbsta VBXE_XDL_ADR2
@@ -278,85 +279,6 @@ Text_FillColour_L2
 	vblda VBXE_BLITTER_BUSY
 	cmp #$00
 	bne Text_FillColour_L2				; Wait for it to complete
-	rts
-
-;-----------------------------------------------------------------------------
-; Text_BlitMonoPage - draw a window of the off-screen mono page onto the text
-; screen: glyphs copied, then attributes flooded with one palette index.
-; Inputs:  Reg1/Reg2/Reg3 = 24-bit source address in the mono page
-;          Txt_Row        = top text row for the window (col is always 0)
-;          Reg4           = height-1 (rows - 1)
-;          A              = fill colour / palette index
-; Patches BLT_DRAW_TEXT_MONO + BLT_FILL_COLOUR_MONO, kicks the 2-link chain and
-; waits for it to finish (callers redraw straight after).
-;-----------------------------------------------------------------------------
-Text_BlitMonoPage
-	sta Reg5							; Reg5 = fill colour
-; Reg7:Reg6 = Txt_Row * TEXT_PITCH  (dest byte offset, column 0)
-	lda #$00
-	sta Reg6
-	sta Reg7
-	ldx Txt_Row
-	beq Text_BlitMonoPage_Patch
-Text_BlitMonoPage_RowL
-	lda Reg6
-	clc
-	adc #TEXT_PITCH
-	sta Reg6
-	bcc Text_BlitMonoPage_RowNC
-	inc Reg7
-Text_BlitMonoPage_RowNC
-	dex
-	bne Text_BlitMonoPage_RowL
-Text_BlitMonoPage_Patch
-	lda #MEMAC_GLOBAL_ENABLE				; map VBXE bank $00 -> $2000 window
-	vbsta VBXE_MA_BSEL
-; --- link 1 (glyph copy) : source + dest + height -------------------------
-	lda Reg1
-	sta BLT_DRAW_TEXT_MONO + Src_Adr0
-	lda Reg2
-	sta BLT_DRAW_TEXT_MONO + Src_Adr1
-	lda Reg3
-	sta BLT_DRAW_TEXT_MONO + Src_Adr2
-	lda Reg6
-	sta BLT_DRAW_TEXT_MONO + Dest_Adr0	; dest lo  = offset lo
-	lda Reg7
-	clc
-	adc #$30							; + $30  (low 16 bits of TEXT_SCREEN_VRAM)
-	sta BLT_DRAW_TEXT_MONO + Dest_Adr1	; dest mid ; dest hi stays $02
-	lda Reg4
-	sta BLT_DRAW_TEXT_MONO + Blt_H
-; --- link 2 (attribute fill) : dest+1 + height + colour ------------------
-	lda Reg6
-	clc
-	adc #$01
-	sta BLT_FILL_COLOUR_MONO + Dest_Adr0	; dest lo  = offset lo + 1
-	lda Reg7
-	adc #$30							; + $30 (+ carry from the +1 above)
-	sta BLT_FILL_COLOUR_MONO + Dest_Adr1
-	lda Reg4
-	sta BLT_FILL_COLOUR_MONO + Blt_H
-	lda Reg5
-	sta BLT_FILL_COLOUR_MONO + Blt_Xor
-	lda #MEMAC_GLOBAL_DISABLE
-	vbsta VBXE_MA_BSEL
-; --- kick the chain -----------------------------------------------------
-	lda #BLT_DRAW_TEXT_MONO-BLT_CLEAR
-	vbsta VBXE_BL_ADR0
-	lda #$00
-	vbsta VBXE_BL_ADR2
-	lda #$01
-	vbsta VBXE_BL_ADR1
-Text_BlitMonoPage_L1
-	vblda VBXE_BLITTER_BUSY
-	cmp #$00
-	bne Text_BlitMonoPage_L1			; wait for any prior blit
-	lda #$01
-	vbsta VBXE_BLITTER_START
-Text_BlitMonoPage_L2
-	vblda VBXE_BLITTER_BUSY
-	cmp #$00
-	bne Text_BlitMonoPage_L2			; wait for the whole chain (NEXT set on link 1)
 	rts
 
 ;-----------------------------------------------------------------------------

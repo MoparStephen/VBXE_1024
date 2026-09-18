@@ -500,19 +500,67 @@ the input filename without its extension (e.g. `dragon.png` → `dragon`):
 | `{name}.map`    | cells × height bytes | One byte per cell: palette id (0–3) **× 16** → `0,16,32,48`. Sequential row-major. |
 | `{name}_preview.png` | —                    | Reconstruction as the hardware would display it.            |
 | `{name}_palettes.png` | —                    | Swatch sheet of all palettes (visual reference).            |
-| `{name}_report.txt` | —                    | Stats: components, lossless/lossy, substitution error, etc. |
+| `{name}_report.txt` | —                    | Human-readable stats: colour counts, lossless/lossy, substitution error, etc. Fixed 80-column layout (see below). |
+| `{name}.nfo`     | records × 160 bytes  | The same report as the Atari viewer's **"About" screen** consumes it — see below. |
 | `{name}_stats.json` | —                    | The same stats, machine-readable (for tools / a GUI).       |
 
 `{name}_preview.png`, `{name}_palettes.png`, and `{name}_report.txt` are references for inspection
 and are not part of the data the hardware consumes.
 
+### The report — `_report.txt` and `.nfo`
+
+`{name}_report.txt` is a plain-text summary of the conversion in a **fixed
+80-column layout** — every line is `Label : value`, wrapped continuation lines
+align under the value, and no line exceeds 80 characters. The first line is the
+banner
+`===============================palettize_4 report===============================`,
+and each field is identified by the label before the `:`.
+
+`{name}.nfo` is the **same report** re-encoded as the byte image of the Atari
+viewer's 80-column VBXE text screen, so the viewer can blit it straight to the
+display with no parsing. It is a run of fixed **160-byte line records**: 80
+`{glyph, attr}` cell pairs, `glyph` = the ASCII byte, `attr` = `$07` (bright
+white, transparent background), space-padded, **no line terminators**. One
+final all-`$00` record marks end-of-text. This layout is a contract with
+`Viewer/view1024.asm` (`NFO_BUF_VRAM`, `BLT_NFO_DRAW`); a report line longer
+than 80 chars (usually a long `Input` filename) is clipped to 80 in the `.nfo`
+— `_report.txt` keeps the full line.
+
+| Field | Meaning |
+|-------|---------|
+| `Input` | Source image filename (basename only). |
+| `Dimensions` | Pixel size of the **source file**, before any resample. |
+| `Resampled` | Working size the packer ran at, the filter, and the fit mode — or `none (native WxH)` when `--resize` was not used. |
+| `Cell width` | `cell_w` px per attribute cell, and the resulting cell grid (`cells/line × lines`). |
+| `Palettes x slots` | Palette count × slots each, and the usable slots per palette (255 when slot 0 is reserved transparent). |
+| `Pre-quantized` | Distinct colours in the source file. `-> reduced to N` is appended only when that count exceeds the master budget, i.e. a genuine pre-quantisation happened (resampling a small-palette source can still push the *working* image over budget without this note). |
+| `Master colours` | Colours going into the packer after any pre-quantisation — the pool it distributes across the four palettes. |
+| `Output colours` | Distinct RGB values actually visible in the packed result. `Output < Master` means colours were merged away to cross-palette duplication (see [Maximizing colour count](#maximizing-colour-count)). |
+| `Strategy` | `lossless`, or `fidelity (bias b)` / `balanced (bias b)` for Phase B (see [`--color-bias`](#maximizing-colour-count)). |
+| `RESULT: LOSSLESS / LOSSY` | Whether any pixel had to be recoloured. |
+| `recoloured pixels` / `mean OKLab error` | (LOSSY only) How many pixels were substituted and the mean perceptual error over *just those* pixels. |
+| `Accuracy vs the ideal` block | What the 8-pixel cell rule cost, measured against the same image quantised to the same colours with **no** cell restriction — see [Maximizing colour count](#maximizing-colour-count). `not measured in this conversion` on reports migrated from the older `_report.txt` format. |
+| `Per-palette colours` | `P0: n P1: n P2: n P3: n / cap colours` — per palette, how many of its colours appear in **no other** palette; `cap` is the usable slots per palette (255 or 256). The following `duplicated across palettes` line gives the total distinct colours across all four and how many palette entries are duplicates. |
+
+### `IMAGES.LST` — long filenames for the viewer's selector
+
+The Atari disk only holds 8.3 short names, so `IMG0.MAP` no longer carries the
+original `Input` filename. `build_images_lst.py <folder>` (also the GUI's
+**File ▸ Build images.lst**) scans a folder of output, pulls each `Input` name
+from the sibling `.nfo`, and writes `images.lst` — one `$9B`-terminated record
+of an 8-byte base-name key plus that filename. Drop it next to the images on
+the disk and the viewer shows `Src: <name>` on the selector status line. It is
+purely cosmetic and entirely optional.
+
 ### Scripting / batch use
 For driving the converter from a GUI or batch script, use `--quiet` to silence the
 text report and read `{name}_stats.json` (always written) for results, or use
 `--json` to print the same stats object to stdout. Keys include `output_colours`,
-`master_colours`, `recoloured_pixels`, `recoloured_pct`, `mean_oklab_error`,
-`strategy`, `color_bias`, `coherence`, `duplicated_across_palettes`, `lossless`,
-`per_palette`, and a `files` map of every output filename produced.
+`master_colours`, `source_colours`, `source_width`, `source_height`,
+`recoloured_pixels`, `recoloured_pct`, `mean_oklab_error`, `components`,
+`largest_component`, `strategy`, `color_bias`, `coherence`,
+`duplicated_across_palettes`, `lossless`, `per_palette`, and a `files` map of
+every output filename produced.
 
 `ideal_vs_output` is a nested object holding the accuracy block described
 above: `compared_pixels`, `identical_pixels`, `identical_pct`, `rgb_rmse`,

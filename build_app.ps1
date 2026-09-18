@@ -45,6 +45,26 @@ $PresetSrc = Join-Path $Root "Convertor\palgui\presets"
 
 function Write-Step($msg) { Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
 
+# A running app (or an Explorer preview / antivirus scan) keeps a handle on
+# dist\VBXE PAL Studio\_internal\**, and then Remove-Item -Force still fails with
+# a raw "Access to the path '...qoffscreen.dll' is denied".  Check + explain.
+function Assert-NotRunning {
+    $p = Get-Process -Name $AppName -ErrorAction SilentlyContinue
+    if ($p) {
+        throw ("$AppName is running (PID $($p.Id -join ', ')); close it before " +
+               "(re)building - it locks files under dist\.")
+    }
+}
+function Remove-Tree($path) {
+    if (-not (Test-Path $path)) { return }
+    try { Remove-Item -Recurse -Force $path }
+    catch {
+        throw ("could not clear '$path' - a running app, an Explorer preview " +
+               "window, or an antivirus scan is holding a file open there. " +
+               "Close it (or reboot) and retry.  Original error: $_")
+    }
+}
+
 # --- version, straight out of the package -----------------------------------
 $initPy = Join-Path $Root "Convertor\palgui\__init__.py"
 $verLine = Select-String -Path $initPy -Pattern "__version__\s*=\s*['""]([^'""]+)['""]" | Select-Object -First 1
@@ -53,10 +73,11 @@ $Version = $verLine.Matches[0].Groups[1].Value
 Write-Host "VBXE PAL Studio v$Version" -ForegroundColor Green
 
 # --- clean ----------------------------------------------------------------------
+Assert-NotRunning
 if ($Clean) {
     Write-Step "Clean"
     foreach ($d in @($VenvDir, $BuildDir, $DistDir)) {
-        if (Test-Path $d) { Remove-Item -Recurse -Force $d; Write-Host "removed $d" }
+        if (Test-Path $d) { Remove-Tree $d; Write-Host "removed $d" }
     }
 }
 
@@ -97,7 +118,8 @@ if ($LASTEXITCODE -ne 0) { throw "pip install failed" }
 
 # --- PyInstaller -----------------------------------------------------------------
 Write-Step "PyInstaller"
-if (Test-Path $AppDir) { Remove-Item -Recurse -Force $AppDir }
+Assert-NotRunning
+Remove-Tree $AppDir
 & $VenvPy -m PyInstaller --clean --noconfirm `
     --distpath $DistDir --workpath $BuildDir `
     $Spec | Out-Host

@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QDialog,
                                QPlainTextEdit, QScrollArea, QToolBar,
                                QVBoxLayout)
 
-from .. import jobs, presets, runner, snapshot, summary
+from .. import imageslst, jobs, presets, runner, snapshot, summary
 from . import theme
 from .compare import FLIP, SIDE_BY_SIDE, ComparePane
 from .imageview import FIT
@@ -216,6 +216,9 @@ class MainWindow(QMainWindow):
         self._act(m, 'Copy command line', 'Ctrl+Shift+C', self._copy_command,
                   'Put the equivalent palettize4.py command on the clipboard')
         self._act(m, 'Open output folder', '', self._open_output)
+        self._act(m, 'Build images.lst...', '', self._build_images_lst,
+                  'Scan a folder of converted images and write the images.lst '
+                  'manifest the Atari viewer reads for long filenames')
         m.addSeparator()
         self._act(m, 'Quit', QKeySequence.Quit, self.close)
 
@@ -1077,6 +1080,28 @@ class MainWindow(QMainWindow):
                 subprocess.Popen(['xdg-open', out])  # noqa: S603,S607
         except Exception as exc:                     # noqa: BLE001 - shown
             self._say('could not open %s: %s' % (out, exc), theme.ERR)
+
+    def _build_images_lst(self):
+        """Scan a folder of .MAP/.NFO output and write its images.lst manifest.
+
+        RUN IT ON THE STAGING FOLDER.  The keys are the 8.3 base names the
+        viewer sees on the disk, so point this at the folder you build the ATR
+        from - not necessarily the same as out/<image>/.
+        """
+        start = runner.resolve(self.options.to_settings().out)
+        if not os.path.isdir(start):
+            start = str(runner.CONVERTOR)
+        where = QFileDialog.getExistingDirectory(
+            self, 'Folder to index for images.lst', start)
+        if not where:
+            return
+        try:
+            path, count = imageslst.write(where)
+        except Exception as exc:                      # noqa: BLE001 - shown
+            self._show_text('images.lst failed', repr(exc))
+            return
+        self._say('%s - %d entr%s' % (path, count,
+                                      'y' if count == 1 else 'ies'))
 
     def _say(self, text, colour=None):
         self.status.setText(text)

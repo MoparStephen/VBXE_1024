@@ -378,7 +378,7 @@ def _selftest(argv):
         sys.exit('selftest FAILED: stepping did not load the options panel')
     if not w.compare.result.has_image():
         sys.exit('selftest FAILED: stepping put no picture in the pane')
-    if 'palettize4 report' not in w.stats.report.toPlainText():
+    if 'palettize_4 report' not in w.stats.report.toPlainText():
         sys.exit('selftest FAILED: the Report tab did not follow the step')
     if w.stale:
         sys.exit('selftest FAILED: a freshly loaded preview reads as stale')

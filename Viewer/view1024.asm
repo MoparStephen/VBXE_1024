@@ -6,7 +6,8 @@
 ; Load Address = 
 ; Run Address = 
 ; VBXE:
-;    XDLs            = $00000 - $0002D (image attribute + image normal + text)
+;    XDLs            = $00000 - $00068 (image attribute + image normal +
+;                      XDL_MainMenu's 8 chained blocks, well clear of $00100)
 ;    BCBs            = $00100 - $001FF
 ;    NTSC_Palette    = $00200 - $004FF (256 RGB triplets; restores Palette 0 on exit)
 ;    PAL_Palette     = $00500 - $007FF (256 RGB triplets; restores Palette 0 on exit)
@@ -16,13 +17,38 @@
 ;    CRAM            = $17000 - $205FF (Colour Ram)
 ;    Palette_Buffers = $21000 - $21FFF (Temp 4kB buffer for loading palettes)
 ;    Text fonts      = $22000 - $22FFF (CGA.F08 @ $22000 / ATARI.F08 @ $22800;
-;                      F toggles XDL_Text CHBASE between them - see text80.asm)
-;    Text screen RAM = $23000 - $242BF (80x30 {glyph,attr} cells)
-;    .nfo raw text   = $25000 - $26FFF (bank $25/$26: verbatim .NFO file bytes)
-;    Mono text page  = $27000 - $2EFFF (banks $27-$2E: reformatted mono glyphs,
-;                      MONO_PAGE_STRIDE bytes/row - .nfo body + list bodies,
-;                      blitted to the text screen by Text_BlitMonoPage)
-;    Text win save   = $2F000 - $2FFFF (WIN_SAVE_VRAM: save-under for the D window)
+;                      F toggles XDL_MainMenu's two CHBASE bytes between them -
+;                      see text80.asm)
+;    Text screen RAM = $23000 - $23E5F (23 rows x 160 {glyph,attr} bytes = 3680;
+;                      ONE contiguous buffer for both text bands of the menu/
+;                      info XDL - rows 0-19 = main content, rows 20-22 = footer,
+;                      the on-screen gap between them is a display-time-only XDL
+;                      gap, not a VRAM gap - see TEXT_MAIN_ROWS/TEXT_FOOTER_ROWS)
+;    Menu banner     = $30000 - $32CFF (banks $30-$32: MENU_BANNER_VRAM, 36 rows
+;                      x 320 bytes, attribute-mapped, static logo/banner for the
+;                      Main Menu + Info XDL's graphics band)
+;    Menu separator  = $33000 - $3309F (MENU_SEP_VRAM: 1 row x 160 bytes, lo-res
+;                      no-attribute-map divider line, shared by both separator
+;                      bands of the menu/info XDL)
+;    Menu banner pal = $34000 - $34BFF (MENU_BANNER_PAL_VRAM: the banner's .PAL
+;                      bytes, resident - registers 1-3 are refreshed from here
+;                      on every Enter_Selector with no disk access; see
+;                      Apply_Menu_Banner_Palette)
+;    Menu banner map = $35000 - $3667F (MENU_BANNER_MAP_VRAM: the banner's
+;                      expanded attribute map, resident, dedicated - NOT the
+;                      shared CRAM $017000, so it's never clobbered by Load_
+;                      Image and never needs a reload)
+;    NFO display buf = $25000 - $29FFF (banks $25-$29: the <name>.NFO file loaded
+;                      verbatim - up to NFO_MAX_LINES fixed 160-byte {glyph,attr}
+;                      line records, TEXT_PITCH stride; blitted to the text
+;                      screen a window at a time by BLT_NFO_DRAW)
+;    NFO name cache  = $2A000 - $2DFFF (banks $2A-$2D: the selector status line's
+;                      long source filenames, NFO_NAME_SLOT bytes/image, loaded
+;                      once from D:IMAGES.LST per dir rescan, wiped before each)
+;    (bank $2E is free)
+;    Text win save   = $2F000 - $2FFFF (WIN_SAVE_VRAM: save-under for the D
+;                      window and the Q quit-confirm window)
+;    (banks $37-$3F are free)
 ;    Image name list = $40000 - $40FFF (bank $40: up to MAX_IMAGES=255 rows -
 ;                      "..", sub-dirs and *.MAP files, 8 bytes each; + a 10-char
 ;                      display field is formatted in place at draw time)
@@ -87,22 +113,25 @@
 .var Dir_Count			.byte = $4D9	; selector list: number of sub-directory rows
 .var FileStart			.byte = $4DA	; selector list: index of the first *.MAP row (= upCount + Dir_Count)
 .var Drive_Pick_Index	.byte = $4DB	; drive picker (UI_Mode 3): 0 = "D:", 1..8 = "Dn:"
-.var Nfo_Top			.word = $4DC	; info viewer: first visible line (0-based)
-.var Nfo_LineCount		.word = $4DE	; info viewer: total lines in the loaded .nfo
+.var Nfo_Top			.word = $4DC	; info viewer: first visible line record (0-based)
+.var Nfo_LineCount		.word = $4DE	; info viewer: line records in the loaded .NFO
 .var Font_Sel			.byte = $4E0	; text font: 0 = CGA ($44), 1 = Atari ($45)
-;	$4E1 to $4FF free
+.var Nfo_Name_Ord		.byte = $4E1	; selector status line: file ordinal being fetched
+;	$4E2 to $4FF free
 .var Dir_Line_Buf		:$28 .byte = $600	; One GET RECORD dir line ($600-$627)
 .var Scan_Path			:$28 .byte = $628	; subdirectory part, ">DIR>DIR>" or empty ($628-$64F)
 .var Scan_Spec			:$30 .byte = $650	; assembled "D[n]:PATH*.MAP",$9B ($650-$67F)
 .var Txt_Line			:$30 .byte = $680	; scratch line assembled for Text_PutStrAt ($680-$6AF)
-;	$6B7 to $6FF free (text80.asm uses $6B0-$6B6)
-; Info viewer (.nfo) line buffer + walk pointers.  Overlays Scan_Spec+Txt_Line
-; ($650-$6AF): both are idle whenever UI_Mode = 4, and Selector_Draw rebuilds
-; Txt_Line / the next scan rebuilds Scan_Spec on the way out.
-.var NfoLineBuf			:81 .byte = $650	; one .nfo line, NUL-terminated, for Text_PutStrAt ($650-$6A0)
-.var Nfo_WalkLo			.byte = $6A1	; .nfo window walk pointer, low
-.var Nfo_WalkHi			.byte = $6A2	; .nfo window walk pointer, high
-.var Nfo_WalkBank		.byte = $6A3	; .nfo VBXE bank currently mapped ($25 or $26)
+; One IMAGES.LST record (8-byte key + <=NFO_NAME_CAP name + $9B) for
+; Nfo_Name_LoadManifest.  Own buffer, not Dir_Line_Buf, because a record can
+; run to 8+48+1 = 57 bytes - past that 40-byte line's end.
+.var Nfo_Name_Line		:58 .byte = $6B7	; 8 key + 48 name + $9B, rounded ($6B7-$6F0)
+;	$6F1 to $6FF free (text80.asm uses $6B0-$6B6)
+; Info viewer (.nfo): Info_Count_Lines maps NFO buffer banks through the $2000
+; window and needs one byte to track which.  Overlays Scan_Spec ($650-$67F),
+; idle whenever UI_Mode = 4 - the next disk scan rebuilds it on the way out.
+.var Nfo_WalkBank		.byte = $650	; NFO buffer VBXE bank currently mapped ($25..$29)
+;	$651-$6AF free while UI_Mode = 4 (Scan_Spec / Txt_Line otherwise)
 
 ;-----------------------------------------------------------------------------
 ; Defines go here
@@ -120,38 +149,88 @@
 .def	ImageNames_End					= ImageNames + (MAX_IMAGES * 8)
 .def	Dir_Line_Len					= $28	; Max length of one dir GET RECORD line
 
-; VBXE text screen (text80.asm + XDL_Text in xdl.asm - these MUST agree).
+; VBXE text screen (text80.asm + XDL_MainMenu in xdl.asm - these MUST agree).
 ; Chosen clear of the image framebuffer/CRAM ($01000-$205FF), palette buffer
 ; ($21000), the name list ($40000) and the dir browser ($41000).
 .def	TEXT_FONT_VRAM					= $22000	; CGA.F08 (2048 bytes) lands here
 .def	TEXT_FONT_BANK					= TEXT_FONT_VRAM / $1000	; = $22  (LoadData target bank)
-.def	TEXT_CHBASE						= TEXT_FONT_VRAM / $800	; = $44  (XDL_Text CHBASE byte, CGA - boot default)
+.def	TEXT_CHBASE						= TEXT_FONT_VRAM / $800	; = $44  (XDL_MainMenu CHBASE bytes, CGA - boot default)
 .def	TEXT_FONT2_VRAM					= TEXT_FONT_VRAM + $800	; $22800 - Atari font (2nd 2K slot in bank $22)
-.def	TEXT_CHBASE2					= TEXT_FONT2_VRAM / $800	; = $45  (XDL_Text CHBASE byte, Atari)
-.def	TEXT_SCREEN_VRAM				= $23000	; 80x30 {glyph,attr} cells = 4800 bytes
+.def	TEXT_CHBASE2					= TEXT_FONT2_VRAM / $800	; = $45  (XDL_MainMenu CHBASE bytes, Atari)
+.def	TEXT_SCREEN_VRAM				= $23000	; ONE contiguous {glyph,attr} buffer,
+													; TEXT_ROWS rows x TEXT_PITCH bytes
 .def	TEXT_SCREEN_BANK				= TEXT_SCREEN_VRAM / $1000	; = $23  (first bank of screen RAM)
 .def	TEXT_COLS						= 80
-.def	TEXT_ROWS						= 30
-.def	TEXT_PITCH						= TEXT_COLS * 2	; $A0 = 160  (XDL_Text OVSTEP)
-.def	TEXT_SCREEN_BYTES				= TEXT_ROWS * TEXT_PITCH	; $12C0 = 4800
+.def	TEXT_PITCH						= TEXT_COLS * 2	; $A0 = 160
+; The menu/info XDL displays this ONE linear buffer as two on-screen bands
+; (a blank+separator gap between them is a display-time XDL gap only, not a
+; VRAM gap - text80.asm's Text_PutStrAt just walks linear rows 0..TEXT_ROWS-1):
+.def	TEXT_MAIN_ROWS					= 20		; rows 0-19: grid/Location/NFO scroll content
+.def	TEXT_FOOTER_ROWS				= 3		; rows 20-22: status/delay/legend, or an info hint line
+.def	TEXT_ROWS						= TEXT_MAIN_ROWS + TEXT_FOOTER_ROWS	; = 23 total buffer rows
+.def	TEXT_SCREEN_BYTES				= TEXT_ROWS * TEXT_PITCH	; 23*160 = 3680
+.def	TEXT_FOOTER_VRAM				= TEXT_SCREEN_VRAM + (TEXT_MAIN_ROWS * TEXT_PITCH)	; row 20 of the same buffer
 
-; Off-screen mono text page: one glyph byte per column, fixed stride.  Filled by
-; Info_Format_Page (.nfo) / the list draw (selector, folder) and blitted to the
-; text screen by Text_BlitMonoPage (BLT_DRAW_TEXT_MONO).  Stride $80 divides 4K
-; so no row ever straddles a VBXE bank - the CPU row-writer never has to split.
-.def	MONO_PAGE_VRAM					= $27000	; 8 banks ($27000-$2EFFF), above the .nfo raw banks
-.def	MONO_PAGE_BANK					= MONO_PAGE_VRAM / $1000	; = $27
-.def	MONO_PAGE_STRIDE				= $80		; 128 bytes/row (32 rows per 4K bank)
+; Menu/info XDL graphics bands (XDL_MainMenu in xdl.asm) - the top banner and
+; the two (shared) 1-line separators.  Both sit in the previously-undocumented,
+; genuinely-unreferenced $30000-$3FFFF gap, well clear of every other region.
+.def	MENU_BANNER_VRAM				= $30000
+.def	MENU_BANNER_BANK				= MENU_BANNER_VRAM / $1000	; = $30
+.def	MENU_BANNER_ROWS				= 36
+.def	MENU_BANNER_PITCH				= 320		; = $140, matches XDL_Image_* OVSTEP
+.def	MENU_BANNER_BYTES				= MENU_BANNER_ROWS * MENU_BANNER_PITCH	; = 11520 = $2D00
+.def	MENU_SEP_VRAM					= $33000	; next free bank after the banner (3 banks)
+.def	MENU_SEP_PITCH					= 160
+.def	MENU_SEP_FILL_COLOUR			= $07		; white in the modified A8 palette (Palette 0)  Palette is modified so text can use all 128 colours
+
+; Banner palette + attribute map: loaded from disk ONCE at boot and never
+; touched again (unlike the real image viewer's $21000/$017000 scratch, which
+; Load_Image legitimately overwrites for every image view).  Dedicated,
+; resident VRAM so the banner never needs a disk reload - see
+; Load_Menu_Banner_Raw / Apply_Menu_Banner_Palette (below) and Setup_Menu_Cmap.
+.def	MENU_BANNER_PAL_VRAM			= $34000	; same 4x768-byte .PAL layout Load_Image
+													; uses ($0000/$0300/$0600/$0900); slot 0 unused
+													; - palette register 0 is reserved for text
+.def	MENU_BANNER_MAP_VRAM			= $35000	; expanded attribute map (40 cells x 36 rows x
+													; 4 bytes = 5760 bytes, same layout as CRAM);
+													; XDL_MainMenu's banner MAPADR points here, NOT
+													; at the shared $017000 CRAM
+
+; NFO display buffer: the <name>.NFO file, loaded verbatim by Info_Load.  The
+; converter emits it as this exact byte image of the text screen - fixed
+; 160-byte line records of 80 {glyph,attr} cell pairs (attr $07), no
+; terminators, one all-$00 record marking end-of-text.  Info_Draw blits an
+; NFO_VISROWS window of it (source = NFO_BUF_VRAM + Nfo_Top*TEXT_PITCH) straight
+; onto the text screen with BLT_NFO_DRAW - one plain rect copy, no reformat.
+.def	NFO_BUF_VRAM					= $25000	; banks $25-$29 (5 * 4K = 20480 = 128 * 160)
+.def	NFO_BUF_BANK					= NFO_BUF_VRAM / $1000	; = $25  (LoadData target)
+
+; Selector status-line long-name cache.  One NFO_NAME_SLOT-byte slot per image
+; ordinal, filled by Nfo_Name_LoadManifest from D:IMAGES.LST on every
+; Rescan_Images (the converter writes that file - 8-byte key + source name per
+; record).  Slot byte 0: $00 = no name, >=$20 = a NUL-terminated name.  64
+; divides 4K so no slot straddles a bank; 255*64 = $3FC0 -> banks $2A-$2D.
+; Nfo_Name_ClearCache (blitter) wipes it just before each refill.
+.def	NFO_NAME_VRAM					= $2A000
+.def	NFO_NAME_BANK					= NFO_NAME_VRAM / $1000	; = $2A
+.def	NFO_NAME_SLOT					= 64		; bytes per image slot
+.def	NFO_NAME_CAP						= 48		; chars shown on the status line
 
 ; Save-under text window (Text_Window_Save/Restore/Frame in text80.asm).  The
 ; covered {glyph,attr} rectangle is blit-copied here at screen pitch (160) and
-; blitted back on close.  $2F000 is the first free 4K above the mono page.
+; blitted back on close.  $2F000 sits above the NFO buffer + its free tail.
 .def	WIN_SAVE_VRAM					= $2F000
 ; Drive picker (UI_Mode 3) geometry - a small overlay of "D:" + "D1:".."D8:".
 .def	DRIVE_WIN_ROW					= 6
 .def	DRIVE_WIN_COL					= 30
 .def	DRIVE_WIN_W						= 12		; cells wide  (border + "  Dn:  ")
 .def	DRIVE_WIN_H						= 13		; rows        (border + title + 9 + border)
+
+; Quit-confirm popup (UI_Mode 5) - "Are you sure to Quit" + (Y/N), Selector only.
+.def	QUIT_WIN_ROW					= 8
+.def	QUIT_WIN_COL					= 22
+.def	QUIT_WIN_W						= 36		; cells wide  (border + text + border)
+.def	QUIT_WIN_H						= 5		; rows        (border + text + hint + border, +1)
 
 ; BCB field byte offsets
 .def	Src_Adr0						= $00
@@ -170,7 +249,7 @@
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $11	; 1 (Screen code used for Version in loading screen)
-.def	V_2								= $12	; 1 (Screen code used for Version in loading screen)
+.def	V_2								= $14	; 3 (Screen code used for Version in loading screen)
 .def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
@@ -272,11 +351,12 @@ Restore_Palette0_Done
 start
 ; Initialization code can go here
 	jsr Text_Init						; Build the 80-column text screen (text80.asm)
+	jsr Load_Menu_Banner_Raw			; One-time load of the static banner/separator pixel data
 
 	lda #$00
 	sta Scan_Drive						; Default scan location = "D:" (current drive)
 	sta Scan_Path						; No subdirectory
-	sta Font_Sel						; Start on the CGA font (XDL_Text CHBASE = $44)
+	sta Font_Sel						; Start on the CGA font (XDL_MainMenu CHBASE = $44)
 	lda #$05
 	sta Slide_Secs						; Default slideshow delay, seconds
 
@@ -341,6 +421,26 @@ Setup_Cmap1_L1
 	vblda VBXE_BLITTER_BUSY
 	cmp #$00
 	bne Setup_Cmap1_L1					; Wait for blitter to finish
+	lda #$01
+	vbsta VBXE_BLITTER_START			; Start the blit
+	rts
+
+;-----------------------------------------------------------------------------
+; Setup_Menu_Cmap - same expansion as Setup_Cmap1, but into the menu banner's
+; own dedicated, resident MENU_BANNER_MAP_VRAM instead of the shared CRAM.
+; Called once, at boot, from Load_Menu_Banner_Raw.
+;-----------------------------------------------------------------------------
+Setup_Menu_Cmap
+	lda #BLT_SETUP_MENU_CMAP-BLT_CLEAR
+	vbsta VBXE_BL_ADR0
+	lda #$00
+	vbsta VBXE_BL_ADR2
+	lda #$01
+	vbsta VBXE_BL_ADR1
+Setup_Menu_Cmap_L1
+	vblda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Setup_Menu_Cmap_L1				; Wait for blitter to finish
 	lda #$01
 	vbsta VBXE_BLITTER_START			; Start the blit
 	rts
@@ -429,6 +529,171 @@ Load_Image_Done
 	rts
 
 ;-----------------------------------------------------------------------------
+; Load_Menu_Banner_Raw - boot-time load of the static menu banner (pixel data,
+; palette, attribute map) into dedicated, resident VRAM - never touched by
+; Load_Image, and never reloaded from disk again after this one call, since
+; the banner never changes at runtime.  Blank-fills any banner target whose
+; file is missing/fails so cold-boot VRAM garbage is never shown.  The
+; separator has no asset file at all - it is always a fixed-colour blitter
+; fill (Menu_Sep_Blank).  Called once from start:, before the first
+; Enter_Selector.
+;-----------------------------------------------------------------------------
+Load_Menu_Banner_Raw
+	lda #<Menu_Banner_Raw_Name
+	sta FileNamePtr
+	lda #>Menu_Banner_Raw_Name
+	sta FileNamePtr + $01
+	lda #MENU_BANNER_BANK
+	sta BankIndex
+	jsr LoadData
+	lda LoadStatus
+	bne Load_Menu_Banner_Raw_Sep		; loaded OK
+	jsr Menu_Banner_Blank				; OPEN/load failed - blank the banner band
+
+Load_Menu_Banner_Raw_Sep
+	jsr Menu_Sep_Blank					; no asset to load - always a fixed-colour fill
+
+Load_Menu_Banner_Raw_Pal
+; Load the banner's .PAL DIRECTLY into its own resident bank (not the $21000
+; scratch Load_Image uses) - same 4-slot layout Load_Image's .PAL files use
+; ($0000/$0300/$0600/$0900); the $0000 slot is unused (palette register 0 is
+; reserved for text, see Apply_Menu_Banner_Palette).
+	lda #<Menu_Banner_Pal_Name
+	sta FileNamePtr
+	lda #>Menu_Banner_Pal_Name
+	sta FileNamePtr + $01
+	lda #MENU_BANNER_PAL_VRAM / $1000
+	sta BankIndex
+	jsr LoadData
+	lda LoadStatus
+	bne Load_Menu_Banner_Raw_Map
+	jsr Menu_Pal_Blank					; OPEN/load failed - blank to solid black
+
+Load_Menu_Banner_Raw_Map
+; Load the banner's .MAP into $14000 (CRAM_Buffer, shared scratch - fine,
+; this is a one-time boot step) and expand it into MENU_BANNER_MAP_VRAM (its
+; own resident copy, NOT the shared CRAM $017000 - see Setup_Menu_Cmap).
+	lda #<Menu_Banner_Map_Name
+	sta FileNamePtr
+	lda #>Menu_Banner_Map_Name
+	sta FileNamePtr + $01
+	lda #$14
+	sta BankIndex
+	jsr LoadData
+	lda LoadStatus
+	beq Load_Menu_Banner_Raw_Done		; OPEN/load failed - leave MENU_BANNER_MAP_VRAM
+										; as-is; the palette-1-3 blank fallback above
+										; already makes the whole banner solid black
+	jsr Setup_Menu_Cmap
+
+Load_Menu_Banner_Raw_Done				; Apply_Menu_Banner_Palette isn't called here -
+	rts									; Enter_Selector always calls it before the first frame
+
+;-----------------------------------------------------------------------------
+; Apply_Menu_Banner_Palette - push MENU_BANNER_PAL_VRAM's resident bytes into
+; hardware palette registers 1-3.  No disk access, no LoadData, no IOCB - a
+; cheap in-VRAM-to-register copy only.  Register 0 is never touched (reserved
+; for text).  Called once at boot (above) and from every Enter_Selector
+; (ui.asm), since Load_Image overwrites registers 1-3 for every real image
+; viewed in between and there is no way to avoid that hardware-register
+; refresh - VBXE has exactly 4 palette registers total (FX manual, "RGB
+; PALETTE MODIFICATION") and there is no per-XDL copy of them.
+;-----------------------------------------------------------------------------
+Apply_Menu_Banner_Palette
+	lda #(MENU_BANNER_PAL_VRAM / $1000) | MEMAC_GLOBAL_ENABLE
+	vbsta VBXE_MA_BSEL
+	lda <(VBXE_WINDOW + $0300)
+	sta Y_Register
+	lda >(VBXE_WINDOW + $0300)
+	sta Y_Register + $01
+	lda #$01							; Set Palette 1
+	jsr VBXE_SetPalette2
+
+	lda <(VBXE_WINDOW + $0600)
+	sta Y_Register
+	lda >(VBXE_WINDOW + $0600)
+	sta Y_Register + $01
+	lda #$02							; Set Palette 2
+	jsr VBXE_SetPalette2
+
+	lda <(VBXE_WINDOW + $0900)
+	sta Y_Register
+	lda >(VBXE_WINDOW + $0900)
+	sta Y_Register + $01
+	lda #$03							; Set Palette 3
+	jsr VBXE_SetPalette2
+
+	lda #MEMAC_GLOBAL_DISABLE
+	vbsta VBXE_MA_BSEL
+	rts
+
+Menu_Banner_Blank
+	lda #BLT_MENU_BANNER_CLEAR-BLT_CLEAR
+	vbsta VBXE_BL_ADR0					; Setup the blitter for memory fill operation
+	lda #$00
+	vbsta VBXE_BL_ADR2
+	lda #$01
+	vbsta VBXE_BL_ADR1
+Menu_Banner_Blank_L1
+	vblda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Menu_Banner_Blank_L1			; Wait for any prior blit to finish
+	lda #$01
+	vbsta VBXE_BLITTER_START			; Start the fill
+Menu_Banner_Blank_L2
+	vblda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Menu_Banner_Blank_L2			; Wait for the fill to complete
+	rts
+
+Menu_Sep_Blank
+	lda #BLT_MENU_SEP_CLEAR-BLT_CLEAR
+	vbsta VBXE_BL_ADR0
+	lda #$00
+	vbsta VBXE_BL_ADR2
+	lda #$01
+	vbsta VBXE_BL_ADR1
+Menu_Sep_Blank_L1
+	vblda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Menu_Sep_Blank_L1
+	lda #$01
+	vbsta VBXE_BLITTER_START
+Menu_Sep_Blank_L2
+	vblda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Menu_Sep_Blank_L2
+	rts
+
+Menu_Pal_Blank
+	lda #BLT_MENU_PAL_CLEAR-BLT_CLEAR
+	vbsta VBXE_BL_ADR0
+	lda #$00
+	vbsta VBXE_BL_ADR2
+	lda #$01
+	vbsta VBXE_BL_ADR1
+Menu_Pal_Blank_L1
+	vblda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Menu_Pal_Blank_L1
+	lda #$01
+	vbsta VBXE_BLITTER_START
+Menu_Pal_Blank_L2
+	vblda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Menu_Pal_Blank_L2
+	rts
+
+; Fixed asset filenames - the menu banner is static UI chrome, not part of the
+; browsable image library, so these are NOT built via Build_Filename (which
+; reads the current selection out of IMAGE_BANK).  The separator has no asset
+; file - it is always a fixed-colour blitter fill (see Menu_Sep_Blank).
+; Placeholder names/drive - confirm the convention with Stephen.
+Menu_Banner_Pal_Name	dta c'D:MENU.PAL',0
+Menu_Banner_Map_Name	dta c'D:MENU.MAP',0
+Menu_Banner_Raw_Name	dta c'D:MENU.RAW',0
+
+;-----------------------------------------------------------------------------
 ; Handle_Keys
 ;-----------------------------------------------------------------------------
 Handle_Keys
@@ -454,14 +719,16 @@ Handle_Keys_NotSlide
 	jmp Drive_Keys						; 3 = drive picker (D-key overlay)
 Handle_Keys_NotFolder
 	cmp #$04
-	bne Handle_Keys_ImageView
+	bne Handle_Keys_NotInfo
 	jmp Info_Keys						; 4 = info viewer (.nfo)
+Handle_Keys_NotInfo
+	cmp #$05
+	bne Handle_Keys_ImageView
+	jmp Quit_Confirm_Keys				; 5 = quit-confirm popup (Selector only)
 Handle_Keys_ImageView
 
-; If present, the next 3 lines will allow a "jump to exit" on a specific key press
+; Q does not quit from here - only from the Selector, via a Y/N confirmation.
 	lda CH
-	cmp #$2F							; Press Q to quit
-	beq Exit
 	cmp #$21							; Space - next image
 	beq Handle_Space
 	cmp #$34							; Backspace - previous image
