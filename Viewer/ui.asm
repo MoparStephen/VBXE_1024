@@ -27,6 +27,7 @@
 ; UI_Mode:  0 = selector   1 = image view   2 = slideshow
 ;           3 = drive picker (D-key save-under overlay)   4 = info viewer (.nfo)
 ;           5 = quit-confirm (Q-key save-under overlay, selector only)
+;           6 = P-preview (P-key 4-palette ramp-square screen, Esc only)
 ;=============================================================================
 
 .def	UI_COLS			= 8				; grid columns (items/row) - a power of 2
@@ -1806,10 +1807,40 @@ Selector_Sync_Zero
 	rts
 
 ;-----------------------------------------------------------------------------
-; Selector_Handle_P - stub (future: 4-palette screen; Stephen supplies XDL+data)
+; Selector_Handle_P - "P" key: load the highlighted image's .PAL (all 4
+; palette registers) and show its 2x2 grid of ramp squares, one per
+; palette, zoomed 7x and centered on the image screen (UI_Mode 6,
+; Esc-only - see Pal_Preview_Keys).
 ;-----------------------------------------------------------------------------
 Selector_Handle_P
+	lda Sel_Index
+	sta File_Index
+	jsr Text_Deactivate
+	jsr Clear_Screen
+	jsr Load_Image_Palette
+	lda #MEMAC_GLOBAL_DISABLE
+	vbsta VBXE_MA_BSEL
+	jsr Fill_Pal_Preview_Cmap
+	jsr Draw_Pal_Preview_Squares
+	jsr Enable_Colour_Map
+	lda #$06
+	sta UI_Mode
 	rts
+
+;=============================================================================
+; P-preview screen keys (UI_Mode = 6) - Esc only; every other key ignored
+; (Space/Backspace/0-4 have no meaning here, unlike the real image-view key
+; set - see Selector_Handle_P).
+;=============================================================================
+Pal_Preview_Keys
+	lda CH
+	cmp #KEY_ESC
+	bne Pal_Preview_Keys_None
+	jsr Selector_Sync_Cursor
+	jsr Enter_Selector
+	jmp Read_Key_Done
+Pal_Preview_Keys_None
+	jmp Read_Key_Done
 
 ;-----------------------------------------------------------------------------
 ; Selector_Handle_I - load the selected image's "<name>.NFO" and open the info

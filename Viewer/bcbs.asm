@@ -180,7 +180,15 @@ BLT_MENU_BANNER_CLEAR
 	dta $00								; Control (Mode 0 with NEXT bit Cleared)
 
 ; The separator is never loaded from disk - it is always this fixed-colour
-; constant-source fill, kicked once from Load_Menu_Banner_Raw.
+; constant-source fill, kicked once from Load_Menu_Banner_Raw.  Dead after
+; boot, so Fill_Pal_Preview_Cmap (view1024.asm) also repurposes it for the
+; P-preview's CRAM_Buffer attribute fills (patching Dest_Adr, Dest_Step_Y0/1,
+; Blt_W0/1, Blt_H, Blt_Xor) rather than spending a 13th BCB - the 12 BCBs in
+; this file already fill the $100-$1FF VBXE VRAM budget (see the memory-map
+; comment at the top of view1024.asm); a 13th BCB overflows BLT_NFO_NAME_
+; CLEAR (the last one) across the $200 boundary into the NTSC_Palette load,
+; corrupting it - this happened once, do not add a new BCB here again
+; without also moving that budget.
 BLT_MENU_SEP_CLEAR
 	dta $00,$00,$00						; Source address (unused - constant source)
 	dta $00,$00							; Source step y (unused)

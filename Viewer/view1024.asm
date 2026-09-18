@@ -107,7 +107,7 @@
 .var Path_Buf			:56 .byte = $48D	; Built "D[n]:PATH>NAME.EXT",$00 for LoadData ($48D-$4C4)
 .var Dir_IOCB			.byte = $4C5	; IOCB used by Build_Image_List
 ; --- viewer UI state (ui.asm) ---
-.var UI_Mode			.byte = $4C6	; 0 selector / 1 image / 2 slideshow / 3 drive picker / 4 info
+.var UI_Mode			.byte = $4C6	; 0 selector / 1 image / 2 slideshow / 3 drive picker / 4 info / 6 P-preview
 .var Sel_Index			.byte = $4C7	; highlighted list entry (0-based)
 .var Sel_Top			.byte = $4C8	; list index of the first visible row (scroll)
 .var Slide_Secs			.byte = $4C9	; slideshow delay, seconds (1..30)
@@ -222,6 +222,37 @@
 .def	MENU_DEMO_ADDR_R_TOP			= MENU_BANNER_VRAM+(MENU_DEMO_ROW_TOP*MENU_BANNER_PITCH)+MENU_DEMO_COL_RIGHT
 .def	MENU_DEMO_ADDR_R_BOT			= MENU_BANNER_VRAM+(MENU_DEMO_ROW_BOT*MENU_BANNER_PITCH)+MENU_DEMO_COL_RIGHT
 
+; P (Pal) preview overlay: reuses the menu banner's ramp-square source
+; (MENU_RAMP_VRAM) blitted 4x into the image framebuffer at 7x zoom
+; (112x112px/square) as one non-mirrored 2x2 grid (TL=pal0, TR=pal1,
+; BL=pal2, BR=pal3), centered on the 320x239 visible image screen.  See
+; Selector_Handle_P (ui.asm), Fill_Pal_Preview_Cmap, Draw_Pal_Preview_Squares.
+.def	PAL_PREVIEW_VRAM				= $001000	; image framebuffer (same target Load_Image's .RAW uses)
+.def	PAL_PREVIEW_PITCH				= MENU_BANNER_PITCH	; = 320, same screen pitch
+.def	PAL_PREVIEW_ZOOM				= 7			; 7x7 zoom -> 112x112px/square
+.def	PAL_PREVIEW_SQUARE				= MENU_DEMO_SQUARE*PAL_PREVIEW_ZOOM	; = 112
+.def	PAL_PREVIEW_VIS_ROWS			= 239		; visible scanlines (XDL_Image_* chains 239, not the 240-row buffer height)
+.def	PAL_PREVIEW_TOP_ROW				= (PAL_PREVIEW_VIS_ROWS-(PAL_PREVIEW_SQUARE*2))/2	; = 7
+.def	PAL_PREVIEW_BOT_ROW				= PAL_PREVIEW_TOP_ROW+PAL_PREVIEW_SQUARE			; = 119
+.def	PAL_PREVIEW_LEFT_COL			= (320-(PAL_PREVIEW_SQUARE*2))/2	; = 48
+.def	PAL_PREVIEW_RIGHT_COL			= PAL_PREVIEW_LEFT_COL+PAL_PREVIEW_SQUARE			; = 160
+; 4 destination pixel addresses (framebuffer) - Pal_Preview_Dest_Table (below).
+.def	PAL_PREVIEW_ADDR_TL				= PAL_PREVIEW_VRAM+(PAL_PREVIEW_TOP_ROW*PAL_PREVIEW_PITCH)+PAL_PREVIEW_LEFT_COL
+.def	PAL_PREVIEW_ADDR_TR				= PAL_PREVIEW_VRAM+(PAL_PREVIEW_TOP_ROW*PAL_PREVIEW_PITCH)+PAL_PREVIEW_RIGHT_COL
+.def	PAL_PREVIEW_ADDR_BL				= PAL_PREVIEW_VRAM+(PAL_PREVIEW_BOT_ROW*PAL_PREVIEW_PITCH)+PAL_PREVIEW_LEFT_COL
+.def	PAL_PREVIEW_ADDR_BR				= PAL_PREVIEW_VRAM+(PAL_PREVIEW_BOT_ROW*PAL_PREVIEW_PITCH)+PAL_PREVIEW_RIGHT_COL
+; CRAM_Buffer (1 byte/cell, 40 cells/row scratch at $14000) cell addresses for
+; the attribute fills - TL needs no fill (Clear_Screen already zeroed the
+; whole buffer, and palette 0 = $00 is the zero default).
+.def	CRAM_BUFFER_VRAM				= $14000
+.def	CRAM_BUFFER_ROW_BYTES			= 40
+.def	PAL_PREVIEW_CELL_LEFT			= PAL_PREVIEW_LEFT_COL/8	; = 6
+.def	PAL_PREVIEW_CELL_RIGHT			= PAL_PREVIEW_RIGHT_COL/8	; = 20
+.def	PAL_PREVIEW_CELL_W				= PAL_PREVIEW_SQUARE/8		; = 14 cells wide
+.def	PAL_PREVIEW_CMAP_TR				= CRAM_BUFFER_VRAM+(PAL_PREVIEW_TOP_ROW*CRAM_BUFFER_ROW_BYTES)+PAL_PREVIEW_CELL_RIGHT
+.def	PAL_PREVIEW_CMAP_BL				= CRAM_BUFFER_VRAM+(PAL_PREVIEW_BOT_ROW*CRAM_BUFFER_ROW_BYTES)+PAL_PREVIEW_CELL_LEFT
+.def	PAL_PREVIEW_CMAP_BR				= CRAM_BUFFER_VRAM+(PAL_PREVIEW_BOT_ROW*CRAM_BUFFER_ROW_BYTES)+PAL_PREVIEW_CELL_RIGHT
+
 ; NFO display buffer: the <name>.NFO file, loaded verbatim by Info_Load.  The
 ; converter emits it as this exact byte image of the text screen - fixed
 ; 160-byte line records of 80 {glyph,attr} cell pairs (attr $07), no
@@ -265,17 +296,20 @@
 .def	Dest_Adr0						= $06
 .def	Dest_Adr1						= $07
 .def	Dest_Adr2						= $08
+.def	Dest_Step_Y0					= $09	; Destination step y, low byte
+.def	Dest_Step_Y1					= $0A	; Destination step y, high bits
 .def	Blt_W0							= $0C	; Width-1  low byte
 .def	Blt_W1							= $0D	; Width-1  bit 8
 .def	Blt_H							= $0E	; Height-1
 .def	Blt_And							= $0F	; And mask (0 = constant source)
 .def	Blt_Xor							= $10	; Xor mask (= fill value when And = 0)
+.def	Blt_Zoom						= $12	; X/Y zoom (bits 0-2=ZOOMX, 4-6=ZOOMY; factor = field+1)
 .def	Blt_Ctrl						= $14
 
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $11	; 1 (Screen code used for Version in loading screen)
-.def	V_2								= $14	; 3 (Screen code used for Version in loading screen)
+.def	V_2								= $15	; 5 (Screen code used for Version in loading screen)
 .def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
@@ -494,10 +528,12 @@ Clear_Screen_L1
 	rts
 
 ;-----------------------------------------------------------------------------
-; Load_Image
-; File_Index must be set before calling this!  No range checking is done!
+; Load_Image_Palette - load File_Index's .PAL and set all 4 hardware
+; palette registers.  File_Index must be set before calling.  Split out of
+; Load_Image so Selector_Handle_P (P-preview, ui.asm) can load just the
+; palette without touching .MAP/.RAW.
 ;-----------------------------------------------------------------------------
-Load_Image
+Load_Image_Palette
 ; Load the Palettes (D:<name>.PAL -> VBXE $21000)
 	lda #$00							; ext 0 = .PAL
 	jsr Build_Filename
@@ -534,6 +570,14 @@ Load_Image
 	sta Y_Register + $01
 	lda #$03							; Set Palette 3
 	jsr VBXE_SetPalette2
+	rts
+
+;-----------------------------------------------------------------------------
+; Load_Image
+; File_Index must be set before calling this!  No range checking is done!
+;-----------------------------------------------------------------------------
+Load_Image
+	jsr Load_Image_Palette
 
 ; Load the Attribute Colour Map (D:<name>.MAP -> VBXE $14000)
 	lda #$01							; ext 1 = .MAP
@@ -836,6 +880,155 @@ Set_Menu_Demo_Attr_Band_Col
 	bne Set_Menu_Demo_Attr_Band_Row
 	rts
 
+;-----------------------------------------------------------------------------
+; Fill_Pal_Preview_Cmap - stage the P-preview's 2x2 grid into CRAM_Buffer
+; (TL is left at the buffer's zero default = palette 0) then expand the
+; whole buffer into real CRAM via the existing Setup_Cmap1.  Called once
+; from Selector_Handle_P (ui.asm).
+;
+; Repurposes BLT_MENU_SEP_CLEAR (bcbs.asm) rather than adding a 13th BCB -
+; it's a constant-source fill kicked once at boot (Load_Menu_Banner_Raw) and
+; never touched again, and the 12 BCBs already in bcbs.asm exactly fill the
+; $100-$1FF VBXE VRAM budget (see the memory-map comment at the top of this
+; file); a 13th BCB overflowed BLT_NFO_NAME_CLEAR across the $200 boundary
+; into the NTSC_Palette load and corrupted it - do not add a new BCB here.
+; Its fixed Dest_Step_X (1) and And mask (0, constant source) already match;
+; Dest_Step_Y0/1 and Width-1/Height-1 are patched once, up front, since they
+; don't vary between the 3 kicks (only Dest_Adr/Xor do).
+;-----------------------------------------------------------------------------
+Fill_Pal_Preview_Cmap
+	lda #MEMAC_GLOBAL_ENABLE
+	vbsta VBXE_MA_BSEL
+	lda #<CRAM_BUFFER_ROW_BYTES
+	sta BLT_MENU_SEP_CLEAR + Dest_Step_Y0
+	lda #>CRAM_BUFFER_ROW_BYTES
+	sta BLT_MENU_SEP_CLEAR + Dest_Step_Y1
+	lda #<(PAL_PREVIEW_CELL_W-1)
+	sta BLT_MENU_SEP_CLEAR + Blt_W0
+	lda #>(PAL_PREVIEW_CELL_W-1)
+	sta BLT_MENU_SEP_CLEAR + Blt_W1
+	lda #PAL_PREVIEW_SQUARE-1
+	sta BLT_MENU_SEP_CLEAR + Blt_H
+	lda #MEMAC_GLOBAL_DISABLE
+	vbsta VBXE_MA_BSEL
+
+	ldx #$00
+Fill_Pal_Preview_Cmap_L1
+	lda #MEMAC_GLOBAL_ENABLE
+	vbsta VBXE_MA_BSEL
+	lda Pal_Preview_Cmap_Table,x
+	sta BLT_MENU_SEP_CLEAR + Dest_Adr0
+	lda Pal_Preview_Cmap_Table+1,x
+	sta BLT_MENU_SEP_CLEAR + Dest_Adr1
+	lda Pal_Preview_Cmap_Table+2,x
+	sta BLT_MENU_SEP_CLEAR + Dest_Adr2
+	lda Pal_Preview_Cmap_Table+3,x
+	sta BLT_MENU_SEP_CLEAR + Blt_Xor
+	lda #MEMAC_GLOBAL_DISABLE
+	vbsta VBXE_MA_BSEL
+
+	lda #BLT_MENU_SEP_CLEAR-BLT_CLEAR
+	vbsta VBXE_BL_ADR0
+	lda #$00
+	vbsta VBXE_BL_ADR2
+	lda #$01
+	vbsta VBXE_BL_ADR1
+Fill_Pal_Preview_Cmap_Wait1
+	vblda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Fill_Pal_Preview_Cmap_Wait1		; wait for any prior blit to finish
+	lda #$01
+	vbsta VBXE_BLITTER_START
+Fill_Pal_Preview_Cmap_Wait2
+	vblda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Fill_Pal_Preview_Cmap_Wait2		; wait for this kick to finish
+
+	txa
+	clc
+	adc #$04
+	tax
+	cpx #$0C							; 3 entries * 4 bytes = 12
+	bne Fill_Pal_Preview_Cmap_L1
+
+	jsr Setup_Cmap1						; expand CRAM_Buffer -> real CRAM ($017000)
+	rts
+
+; {dest_adr0,1,2, xor_value} x3 - TR/BL/BR only.
+Pal_Preview_Cmap_Table
+	dta <PAL_PREVIEW_CMAP_TR,>PAL_PREVIEW_CMAP_TR,PAL_PREVIEW_CMAP_TR>>16,$10		; TR (pal 1)
+	dta <PAL_PREVIEW_CMAP_BL,>PAL_PREVIEW_CMAP_BL,PAL_PREVIEW_CMAP_BL>>16,$20		; BL (pal 2)
+	dta <PAL_PREVIEW_CMAP_BR,>PAL_PREVIEW_CMAP_BR,PAL_PREVIEW_CMAP_BR>>16,$30		; BR (pal 3)
+
+;-----------------------------------------------------------------------------
+; Draw_Pal_Preview_Squares - patch BLT_MENU_DEMO_SQUARE's destination
+; address and Zoom byte, kick it 4 times (one 2x2 grid, no left/right
+; mirror) to blit Build_Menu_Ramp_Table's ramp square into the image
+; framebuffer at 7x zoom.  Restores Zoom to $00 afterward so the shared BCB
+; is left in its original 1x state.  Called once from Selector_Handle_P
+; (ui.asm), after Fill_Pal_Preview_Cmap.
+;-----------------------------------------------------------------------------
+Draw_Pal_Preview_Squares
+	lda #MEMAC_GLOBAL_ENABLE
+	vbsta VBXE_MA_BSEL
+	lda #$66							; ZOOMY=6,ZOOMX=6 -> 7x7 (PAL_PREVIEW_ZOOM)
+	sta BLT_MENU_DEMO_SQUARE + Blt_Zoom
+	lda #MEMAC_GLOBAL_DISABLE
+	vbsta VBXE_MA_BSEL
+
+	ldx #$00
+Draw_Pal_Preview_Squares_L1
+	lda #MEMAC_GLOBAL_ENABLE
+	vbsta VBXE_MA_BSEL
+	lda Pal_Preview_Dest_Table,x
+	sta BLT_MENU_DEMO_SQUARE + Dest_Adr0
+	lda Pal_Preview_Dest_Table+1,x
+	sta BLT_MENU_DEMO_SQUARE + Dest_Adr1
+	lda Pal_Preview_Dest_Table+2,x
+	sta BLT_MENU_DEMO_SQUARE + Dest_Adr2
+	lda #MEMAC_GLOBAL_DISABLE
+	vbsta VBXE_MA_BSEL
+
+	lda #BLT_MENU_DEMO_SQUARE-BLT_CLEAR
+	vbsta VBXE_BL_ADR0
+	lda #$00
+	vbsta VBXE_BL_ADR2
+	lda #$01
+	vbsta VBXE_BL_ADR1
+Draw_Pal_Preview_Squares_Wait1
+	vblda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Draw_Pal_Preview_Squares_Wait1		; wait for any prior blit to finish
+	lda #$01
+	vbsta VBXE_BLITTER_START
+Draw_Pal_Preview_Squares_Wait2
+	vblda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Draw_Pal_Preview_Squares_Wait2		; wait for this kick to finish
+
+	txa
+	clc
+	adc #$03
+	tax
+	cpx #$0C							; 4 entries * 3 bytes = 12
+	bne Draw_Pal_Preview_Squares_L1
+
+	lda #MEMAC_GLOBAL_ENABLE
+	vbsta VBXE_MA_BSEL
+	lda #$00
+	sta BLT_MENU_DEMO_SQUARE + Blt_Zoom	; restore to unzoomed (1x) default
+	lda #MEMAC_GLOBAL_DISABLE
+	vbsta VBXE_MA_BSEL
+	rts
+
+; 4 destination addresses for BLT_MENU_DEMO_SQUARE - one 2x2 grid, no mirror
+; (unlike Menu_Demo_Dest_Table's 8 entries/2 edges).
+Pal_Preview_Dest_Table
+	dta <PAL_PREVIEW_ADDR_TL,>PAL_PREVIEW_ADDR_TL,PAL_PREVIEW_ADDR_TL>>16	; TL (pal 0)
+	dta <PAL_PREVIEW_ADDR_TR,>PAL_PREVIEW_ADDR_TR,PAL_PREVIEW_ADDR_TR>>16	; TR (pal 1)
+	dta <PAL_PREVIEW_ADDR_BL,>PAL_PREVIEW_ADDR_BL,PAL_PREVIEW_ADDR_BL>>16	; BL (pal 2)
+	dta <PAL_PREVIEW_ADDR_BR,>PAL_PREVIEW_ADDR_BR,PAL_PREVIEW_ADDR_BR>>16	; BR (pal 3)
+
 Menu_Banner_Blank
 	lda #BLT_MENU_BANNER_CLEAR-BLT_CLEAR
 	vbsta VBXE_BL_ADR0					; Setup the blitter for memory fill operation
@@ -913,8 +1106,12 @@ Handle_Keys_NotFolder
 	jmp Info_Keys						; 4 = info viewer (.nfo)
 Handle_Keys_NotInfo
 	cmp #$05
-	bne Handle_Keys_ImageView
+	bne Handle_Keys_NotQuit
 	jmp Quit_Confirm_Keys				; 5 = quit-confirm popup (Selector only)
+Handle_Keys_NotQuit
+	cmp #$06
+	bne Handle_Keys_ImageView
+	jmp Pal_Preview_Keys				; 6 = P-preview screen (ui.asm)
 Handle_Keys_ImageView
 
 ; Q does not quit from here - only from the Selector, via a Y/N confirmation.
