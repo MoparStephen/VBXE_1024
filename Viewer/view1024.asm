@@ -30,10 +30,11 @@
 ;    Menu separator  = $33000 - $3309F (MENU_SEP_VRAM: 1 row x 160 bytes, lo-res
 ;                      no-attribute-map divider line, shared by both separator
 ;                      bands of the menu/info XDL)
-;    Menu banner pal = $34000 - $34BFF (MENU_BANNER_PAL_VRAM: the banner's .PAL
-;                      bytes, resident - registers 1-3 are refreshed from here
-;                      on every Enter_Selector with no disk access; see
-;                      Apply_Menu_Banner_Palette)
+;    Menu banner pal = $34000 - $34BFF (MENU_BANNER_PAL_VRAM: the banner's
+;                      palette bytes, resident and assembly-embedded (Load_
+;                      Menu_Ramps, init_vbxe.asm) - registers 1-3 are
+;                      refreshed from here on every Enter_Selector with no
+;                      disk access; see Apply_Menu_Banner_Palette)
 ;    Menu banner map = $35000 - $3667F (MENU_BANNER_MAP_VRAM: the banner's
 ;                      expanded attribute map, resident, dedicated - NOT the
 ;                      shared CRAM $017000, so it's never clobbered by Load_
@@ -45,7 +46,10 @@
 ;    NFO name cache  = $2A000 - $2DFFF (banks $2A-$2D: the selector status line's
 ;                      long source filenames, NFO_NAME_SLOT bytes/image, loaded
 ;                      once from D:IMAGES.LST per dir rescan, wiped before each)
-;    (bank $2E is free)
+;    Menu demo ramp  = $2E000 - $2E0FF (MENU_RAMP_VRAM: 256-byte ascending
+;                      0..255 pixel-source square for the banner's 4-palette
+;                      demo overlay, built at boot by Build_Menu_Ramp_Table;
+;                      rest of bank $2E free)
 ;    Text win save   = $2F000 - $2FFFF (WIN_SAVE_VRAM: save-under for the D
 ;                      window and the Q quit-confirm window)
 ;    (banks $37-$3F are free)
@@ -183,11 +187,12 @@
 .def	MENU_SEP_PITCH					= 160
 .def	MENU_SEP_FILL_COLOUR			= $07		; white in the modified A8 palette (Palette 0)  Palette is modified so text can use all 128 colours
 
-; Banner palette + attribute map: loaded from disk ONCE at boot and never
-; touched again (unlike the real image viewer's $21000/$017000 scratch, which
-; Load_Image legitimately overwrites for every image view).  Dedicated,
-; resident VRAM so the banner never needs a disk reload - see
+; Banner palette + attribute map: never touched at runtime (unlike the real
+; image viewer's $21000/$017000 scratch, which Load_Image legitimately
+; overwrites for every image view).  Dedicated, resident VRAM - see
 ; Load_Menu_Banner_Raw / Apply_Menu_Banner_Palette (below) and Setup_Menu_Cmap.
+; The palette bytes are assembly-embedded (Load_Menu_Ramps, init_vbxe.asm),
+; not disk-loaded; the attribute map is still loaded once from D:MENU.MAP.
 .def	MENU_BANNER_PAL_VRAM			= $34000	; same 4x768-byte .PAL layout Load_Image
 													; uses ($0000/$0300/$0600/$0900); slot 0 unused
 													; - palette register 0 is reserved for text
@@ -195,6 +200,27 @@
 													; 4 bytes = 5760 bytes, same layout as CRAM);
 													; XDL_MainMenu's banner MAPADR points here, NOT
 													; at the shared $017000 CRAM
+
+; Menu banner palette-demo overlay: a 32x33px 2x2 grid of identical 16x16
+; ramp squares, repeated at both banner edges. Left edge: TL=pal0, TR=pal1,
+; BL=pal2, BR=pal3. Right edge: same pixel data (Menu_Demo_Dest_Table is
+; unchanged) but horizontally mirrored via the attribute map only -
+; TL=pal1, TR=pal0, BL=pal3, BR=pal2 - see Build_Menu_Ramp_Table, Draw_Menu_Demo_
+; Squares, Set_Menu_Demo_Attrs (below).
+.def	MENU_RAMP_VRAM					= $2E000	; 256-byte ascending 0..255 pixel-source table
+.def	MENU_RAMP_BANK					= MENU_RAMP_VRAM / $1000	; = $2E ("free" bank)
+.def	MENU_DEMO_SQUARE				= 16		; one ramp square is 16x16 px
+.def	MENU_DEMO_ROW_TOP				= 0			; first row of the top squares
+.def	MENU_DEMO_ROW_BOT				= MENU_DEMO_ROW_TOP+MENU_DEMO_SQUARE+1	; = 19, first row of the bottom squares
+.def	MENU_DEMO_COL_LEFT				= 0			; left-edge block, x
+.def	MENU_DEMO_COL_RIGHT				= MENU_BANNER_PITCH-(MENU_DEMO_SQUARE*2)	; = 288, right-edge block, x
+.def	MENU_ATTR_ROW_BYTES				= 160		; expanded attribute map stride (40 cells x 4 bytes)
+; The 4 demo block origins (top-left pixel of each block's TL square) -
+; Menu_Demo_Dest_Table (below) adds MENU_DEMO_SQUARE to reach each block's TR/BR square.
+.def	MENU_DEMO_ADDR_L_TOP			= MENU_BANNER_VRAM+(MENU_DEMO_ROW_TOP*MENU_BANNER_PITCH)+MENU_DEMO_COL_LEFT
+.def	MENU_DEMO_ADDR_L_BOT			= MENU_BANNER_VRAM+(MENU_DEMO_ROW_BOT*MENU_BANNER_PITCH)+MENU_DEMO_COL_LEFT
+.def	MENU_DEMO_ADDR_R_TOP			= MENU_BANNER_VRAM+(MENU_DEMO_ROW_TOP*MENU_BANNER_PITCH)+MENU_DEMO_COL_RIGHT
+.def	MENU_DEMO_ADDR_R_BOT			= MENU_BANNER_VRAM+(MENU_DEMO_ROW_BOT*MENU_BANNER_PITCH)+MENU_DEMO_COL_RIGHT
 
 ; NFO display buffer: the <name>.NFO file, loaded verbatim by Info_Load.  The
 ; converter emits it as this exact byte image of the text screen - fixed
@@ -352,6 +378,9 @@ start
 ; Initialization code can go here
 	jsr Text_Init						; Build the 80-column text screen (text80.asm)
 	jsr Load_Menu_Banner_Raw			; One-time load of the static banner/separator pixel data
+	jsr Build_Menu_Ramp_Table			; One-time build of the palette-demo overlay's ramp square
+	jsr Draw_Menu_Demo_Squares			; ...blit it into the banner's 8 demo squares...
+	jsr Set_Menu_Demo_Attrs			; ...and set their attribute-map cells to the right palette
 
 	lda #$00
 	sta Scan_Drive						; Default scan location = "D:" (current drive)
@@ -530,12 +559,14 @@ Load_Image_Done
 
 ;-----------------------------------------------------------------------------
 ; Load_Menu_Banner_Raw - boot-time load of the static menu banner (pixel data,
-; palette, attribute map) into dedicated, resident VRAM - never touched by
-; Load_Image, and never reloaded from disk again after this one call, since
-; the banner never changes at runtime.  Blank-fills any banner target whose
-; file is missing/fails so cold-boot VRAM garbage is never shown.  The
-; separator has no asset file at all - it is always a fixed-colour blitter
-; fill (Menu_Sep_Blank).  Called once from start:, before the first
+; attribute map) into dedicated, resident VRAM - never touched by Load_Image,
+; and never reloaded from disk again after this one call, since the banner
+; never changes at runtime.  Blank-fills any banner target whose file is
+; missing/fails so cold-boot VRAM garbage is never shown.  The separator has
+; no asset file at all - it is always a fixed-colour blitter fill
+; (Menu_Sep_Blank).  The banner's palette (registers 1-3) is no longer a disk
+; asset - see Load_Menu_Ramps (init_vbxe.asm), assembly-embedded directly into
+; MENU_BANNER_PAL_VRAM.  Called once from start:, before the first
 ; Enter_Selector.
 ;-----------------------------------------------------------------------------
 Load_Menu_Banner_Raw
@@ -553,22 +584,6 @@ Load_Menu_Banner_Raw
 Load_Menu_Banner_Raw_Sep
 	jsr Menu_Sep_Blank					; no asset to load - always a fixed-colour fill
 
-Load_Menu_Banner_Raw_Pal
-; Load the banner's .PAL DIRECTLY into its own resident bank (not the $21000
-; scratch Load_Image uses) - same 4-slot layout Load_Image's .PAL files use
-; ($0000/$0300/$0600/$0900); the $0000 slot is unused (palette register 0 is
-; reserved for text, see Apply_Menu_Banner_Palette).
-	lda #<Menu_Banner_Pal_Name
-	sta FileNamePtr
-	lda #>Menu_Banner_Pal_Name
-	sta FileNamePtr + $01
-	lda #MENU_BANNER_PAL_VRAM / $1000
-	sta BankIndex
-	jsr LoadData
-	lda LoadStatus
-	bne Load_Menu_Banner_Raw_Map
-	jsr Menu_Pal_Blank					; OPEN/load failed - blank to solid black
-
 Load_Menu_Banner_Raw_Map
 ; Load the banner's .MAP into $14000 (CRAM_Buffer, shared scratch - fine,
 ; this is a one-time boot step) and expand it into MENU_BANNER_MAP_VRAM (its
@@ -581,9 +596,7 @@ Load_Menu_Banner_Raw_Map
 	sta BankIndex
 	jsr LoadData
 	lda LoadStatus
-	beq Load_Menu_Banner_Raw_Done		; OPEN/load failed - leave MENU_BANNER_MAP_VRAM
-										; as-is; the palette-1-3 blank fallback above
-										; already makes the whole banner solid black
+	beq Load_Menu_Banner_Raw_Done		; OPEN/load failed - leave MENU_BANNER_MAP_VRAM as-is
 	jsr Setup_Menu_Cmap
 
 Load_Menu_Banner_Raw_Done				; Apply_Menu_Banner_Palette isn't called here -
@@ -627,6 +640,202 @@ Apply_Menu_Banner_Palette
 	vbsta VBXE_MA_BSEL
 	rts
 
+;-----------------------------------------------------------------------------
+; Build_Menu_Ramp_Table - boot-time build of the palette-demo overlay's 256-
+; byte ascending pixel-source table (MENU_RAMP_VRAM = $2E000, bank $2E, the
+; last free VRAM bank).  BLT_MENU_DEMO_SQUARE reads it as a flat 16x16 block
+; (source step y = 16).  Called once from start:, after Load_Menu_Banner_Raw.
+;-----------------------------------------------------------------------------
+Build_Menu_Ramp_Table
+	lda #MENU_RAMP_BANK | MEMAC_GLOBAL_ENABLE
+	vbsta VBXE_MA_BSEL
+	ldx #$00
+Build_Menu_Ramp_Table_L1
+	txa
+	sta VBXE_WINDOW,x
+	inx
+	bne Build_Menu_Ramp_Table_L1
+	lda #MEMAC_GLOBAL_DISABLE
+	vbsta VBXE_MA_BSEL
+	rts
+
+; 8 destination addresses for BLT_MENU_DEMO_SQUARE, in the order
+; Draw_Menu_Demo_Squares steps through them: TL/TR/BL/BR at the left edge,
+; then TL/TR/BL/BR at the right edge (pal 0/1/2/3 respectively - same
+; assignment at both edges).
+Menu_Demo_Dest_Table
+	dta <MENU_DEMO_ADDR_L_TOP,>MENU_DEMO_ADDR_L_TOP,MENU_DEMO_ADDR_L_TOP>>16									; TL, left  (pal 0)
+	dta <[MENU_DEMO_ADDR_L_TOP+MENU_DEMO_SQUARE],>[MENU_DEMO_ADDR_L_TOP+MENU_DEMO_SQUARE],[MENU_DEMO_ADDR_L_TOP+MENU_DEMO_SQUARE]>>16	; TR, left  (pal 1)
+	dta <MENU_DEMO_ADDR_L_BOT,>MENU_DEMO_ADDR_L_BOT,MENU_DEMO_ADDR_L_BOT>>16									; BL, left  (pal 2)
+	dta <[MENU_DEMO_ADDR_L_BOT+MENU_DEMO_SQUARE],>[MENU_DEMO_ADDR_L_BOT+MENU_DEMO_SQUARE],[MENU_DEMO_ADDR_L_BOT+MENU_DEMO_SQUARE]>>16	; BR, left  (pal 3)
+	dta <MENU_DEMO_ADDR_R_TOP,>MENU_DEMO_ADDR_R_TOP,MENU_DEMO_ADDR_R_TOP>>16									; TL, right (pal 0)
+	dta <[MENU_DEMO_ADDR_R_TOP+MENU_DEMO_SQUARE],>[MENU_DEMO_ADDR_R_TOP+MENU_DEMO_SQUARE],[MENU_DEMO_ADDR_R_TOP+MENU_DEMO_SQUARE]>>16	; TR, right (pal 1)
+	dta <MENU_DEMO_ADDR_R_BOT,>MENU_DEMO_ADDR_R_BOT,MENU_DEMO_ADDR_R_BOT>>16									; BL, right (pal 2)
+	dta <[MENU_DEMO_ADDR_R_BOT+MENU_DEMO_SQUARE],>[MENU_DEMO_ADDR_R_BOT+MENU_DEMO_SQUARE],[MENU_DEMO_ADDR_R_BOT+MENU_DEMO_SQUARE]>>16	; BR, right (pal 3)
+
+;-----------------------------------------------------------------------------
+; Draw_Menu_Demo_Squares - patch BLT_MENU_DEMO_SQUARE's destination address
+; from Menu_Demo_Dest_Table and kick it 8 times (2 edges x 4 quadrants) -
+; same patch/wait/kick idiom as Info_Draw (BLT_NFO_DRAW) and Text_Window_
+; Save/Restore (BLT_TEXT_RECT).  Called once from start:, after Build_Menu_
+; Ramp_Table and Load_Menu_Banner_Raw.
+;-----------------------------------------------------------------------------
+Draw_Menu_Demo_Squares
+	ldx #$00
+Draw_Menu_Demo_Squares_L1
+	lda #MEMAC_GLOBAL_ENABLE			; map VBXE bank $00 -> $2000 window (patch the BCB)
+	vbsta VBXE_MA_BSEL
+	lda Menu_Demo_Dest_Table,x
+	sta BLT_MENU_DEMO_SQUARE + Dest_Adr0
+	lda Menu_Demo_Dest_Table+1,x
+	sta BLT_MENU_DEMO_SQUARE + Dest_Adr1
+	lda Menu_Demo_Dest_Table+2,x
+	sta BLT_MENU_DEMO_SQUARE + Dest_Adr2
+	lda #MEMAC_GLOBAL_DISABLE
+	vbsta VBXE_MA_BSEL
+
+	lda #BLT_MENU_DEMO_SQUARE-BLT_CLEAR
+	vbsta VBXE_BL_ADR0
+	lda #$00
+	vbsta VBXE_BL_ADR2
+	lda #$01
+	vbsta VBXE_BL_ADR1
+Draw_Menu_Demo_Squares_Wait1
+	vblda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Draw_Menu_Demo_Squares_Wait1		; wait for any prior blit to finish
+	lda #$01
+	vbsta VBXE_BLITTER_START
+Draw_Menu_Demo_Squares_Wait2
+	vblda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Draw_Menu_Demo_Squares_Wait2		; wait for this kick to finish
+
+	txa
+	clc
+	adc #$03
+	tax
+	cpx #$18							; 8 entries * 3 bytes = 24
+	bne Draw_Menu_Demo_Squares_L1
+	rts
+
+; Attribute-cell byte offsets (within a 160-byte expanded map row) for the 8
+; columns the demo overlay covers - cell*4+3 (the real attribute byte; the
+; other 3 bytes/cell are always zero - see Setup_Menu_Cmap/BLT_SETUP_MENU_
+; CMAP).  Left-edge block = cells 0-3 (pixels 0-31); right-edge block = cells
+; 36-39 (pixels 288-319, since MENU_BANNER_PITCH/8 = 40 cells/row).
+Menu_Demo_Attr_Cols
+	dta 3,7,11,15,147,151,155,159
+; Same column order: TL/TR pal ids (<<4), left edge then right edge. Right
+; edge is horizontally mirrored (pal 1,0 instead of 0,1) so the right-hand
+; copy reads as a flipped reflection of the left-hand one; the underlying
+; pixel data (Menu_Demo_Dest_Table) is untouched, only which palette
+; register each cell points at changes.
+Menu_Demo_Attr_Top_Vals
+	dta $00,$00,$10,$10,$10,$10,$00,$00
+; Same column order: BL/BR pal ids (<<4), left edge then right edge (mirrored:
+; pal 3,2 instead of 2,3 - see note above).
+Menu_Demo_Attr_Bot_Vals
+	dta $20,$20,$30,$30,$30,$30,$20,$20
+
+;-----------------------------------------------------------------------------
+; Set_Menu_Demo_Attrs - poke palette_id<<4 into the expanded attribute map's
+; (MENU_BANNER_MAP_VRAM) cell covering each of the demo overlay's 8 squares,
+; for all MENU_DEMO_SQUARE rows each square spans.  Plain CPU loop (no
+; blitter - a small, one-time boot fixup, overriding whatever D:MENU.MAP
+; supplied for just these cells).  MENU_BANNER_MAP_VRAM is exactly bank-
+; aligned, so a running byte offset from its start splits cleanly into a
+; bank number (offset's upper nibbles) and a window address (offset's low
+; 12 bits) - recomputed every byte, since the covered rows straddle the
+; $35xxx/$36xxx bank boundary partway through (row 25 already crosses it).
+; Called once from start:, after Load_Menu_Banner_Raw.
+;-----------------------------------------------------------------------------
+Set_Menu_Demo_Attrs
+	lda #<[MENU_DEMO_ROW_TOP*MENU_ATTR_ROW_BYTES]
+	sta Reg1
+	lda #>[MENU_DEMO_ROW_TOP*MENU_ATTR_ROW_BYTES]
+	sta Reg2
+	lda #<Menu_Demo_Attr_Top_Vals
+	sta Ptr_Lo
+	lda #>Menu_Demo_Attr_Top_Vals
+	sta Ptr_Hi
+	jsr Set_Menu_Demo_Attr_Band
+
+	lda #<[MENU_DEMO_ROW_BOT*MENU_ATTR_ROW_BYTES]
+	sta Reg1
+	lda #>[MENU_DEMO_ROW_BOT*MENU_ATTR_ROW_BYTES]
+	sta Reg2
+	lda #<Menu_Demo_Attr_Bot_Vals
+	sta Ptr_Lo
+	lda #>Menu_Demo_Attr_Bot_Vals
+	sta Ptr_Hi
+	jsr Set_Menu_Demo_Attr_Band
+
+	lda #MEMAC_GLOBAL_DISABLE
+	vbsta VBXE_MA_BSEL
+	rts
+
+; Reg1/Reg2 = running row_offset (16-bit, row*MENU_ATTR_ROW_BYTES from
+; MENU_BANNER_MAP_VRAM's start), advanced by MENU_ATTR_ROW_BYTES each row.
+; Ptr_Lo/Hi = this band's 8-byte value table (Menu_Demo_Attr_Cols order).
+; The column loop counter lives in X, not Y: vbsta/vblda clobber Y on every
+; call in __VBXE_AUTO__ mode (vbxe_min.asm), and this loop calls vbsta once
+; per column, so Y cannot survive across it.  Clobbers A/X/Y/Reg1-8.
+Set_Menu_Demo_Attr_Band
+	lda #MENU_DEMO_SQUARE
+	sta Reg8							; rows remaining
+Set_Menu_Demo_Attr_Band_Row
+	ldx #$00
+Set_Menu_Demo_Attr_Band_Col
+	lda Menu_Demo_Attr_Cols,x
+	clc
+	adc Reg1
+	sta Reg3							; total byte offset, lo
+	lda #$00
+	adc Reg2
+	sta Reg4							; total byte offset, hi
+
+; window address = VBXE_WINDOW + (total_offset & $0FFF)
+	lda Reg4
+	and #$0F
+	ora #>VBXE_WINDOW
+	sta Reg6							; dest ptr hi
+	lda Reg3
+	sta Reg5							; dest ptr lo
+
+; bank = MENU_BANNER_MAP_VRAM/$1000 + (total_offset >> 12)
+	lda Reg4
+	lsr
+	lsr
+	lsr
+	lsr
+	clc
+	adc #[MENU_BANNER_MAP_VRAM/$1000]
+	ora #MEMAC_GLOBAL_ENABLE
+	vbsta VBXE_MA_BSEL					; clobbers Y - X (our loop counter) survives
+
+	txa
+	tay
+	lda (Ptr_Lo),y						; this column's attribute value (Y = column index)
+	ldy #$00
+	sta (Reg5),y						; poke it into the mapped window
+
+	inx
+	cpx #$08
+	bne Set_Menu_Demo_Attr_Band_Col
+
+	lda Reg1
+	clc
+	adc #<MENU_ATTR_ROW_BYTES
+	sta Reg1
+	lda Reg2
+	adc #>MENU_ATTR_ROW_BYTES
+	sta Reg2
+
+	dec Reg8
+	bne Set_Menu_Demo_Attr_Band_Row
+	rts
+
 Menu_Banner_Blank
 	lda #BLT_MENU_BANNER_CLEAR-BLT_CLEAR
 	vbsta VBXE_BL_ADR0					; Setup the blitter for memory fill operation
@@ -665,31 +874,12 @@ Menu_Sep_Blank_L2
 	bne Menu_Sep_Blank_L2
 	rts
 
-Menu_Pal_Blank
-	lda #BLT_MENU_PAL_CLEAR-BLT_CLEAR
-	vbsta VBXE_BL_ADR0
-	lda #$00
-	vbsta VBXE_BL_ADR2
-	lda #$01
-	vbsta VBXE_BL_ADR1
-Menu_Pal_Blank_L1
-	vblda VBXE_BLITTER_BUSY
-	cmp #$00
-	bne Menu_Pal_Blank_L1
-	lda #$01
-	vbsta VBXE_BLITTER_START
-Menu_Pal_Blank_L2
-	vblda VBXE_BLITTER_BUSY
-	cmp #$00
-	bne Menu_Pal_Blank_L2
-	rts
-
 ; Fixed asset filenames - the menu banner is static UI chrome, not part of the
 ; browsable image library, so these are NOT built via Build_Filename (which
 ; reads the current selection out of IMAGE_BANK).  The separator has no asset
-; file - it is always a fixed-colour blitter fill (see Menu_Sep_Blank).
+; file - it is always a fixed-colour blitter fill (see Menu_Sep_Blank).  The
+; palette has no asset file either - see Load_Menu_Ramps (init_vbxe.asm).
 ; Placeholder names/drive - confirm the convention with Stephen.
-Menu_Banner_Pal_Name	dta c'D:MENU.PAL',0
 Menu_Banner_Map_Name	dta c'D:MENU.MAP',0
 Menu_Banner_Raw_Name	dta c'D:MENU.RAW',0
 

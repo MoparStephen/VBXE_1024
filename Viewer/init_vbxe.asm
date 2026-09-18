@@ -559,6 +559,60 @@ Load_Palette2_Message
 Palette2
 	ins 'vbxe_pal.pal'
 
+; Step $09 - Menu banner palette-demo overlay: assembly-embed the RGB ramps
+; for hardware palettes 1-3 directly into MENU_BANNER_PAL_VRAM (bank $34),
+; at the same $0300/$0600/$0900 slot offsets Apply_Menu_Banner_Palette
+; (view1024.asm) already reads for registers 1/2/3.  Replaces the old
+; D:MENU.PAL disk load - same "select bank, then org+ins" idiom as
+; Load_Palette1/Load_Palette2 above, so the bytes land straight into VBXE
+; RAM as the OS loader streams this .xex in, no runtime copy needed.
+	org LOAD_ADDRESS + $300
+.proc Load_Menu_Ramps
+	lda #(MENU_BANNER_PAL_VRAM / $1000) | MEMAC_GLOBAL_ENABLE	; Bank $34 VBXE Window Enabled
+	vbsta VBXE_MA_BSEL
+
+; Print Load_Menu_Ramps_Message - line 3 (y = $79)
+	ldy #$79
+	ldx #$00
+Print_Load_Menu_Ramps_Message_L1
+	lda Load_Menu_Ramps_Message,x
+	sta (Ptr_Lo),y
+	inx
+	iny
+	cpx #$21							; Copy $21 characters
+	bne Print_Load_Menu_Ramps_Message_L1
+
+; Update Progress bar - line 5 (y = $CB + (4 * increment #))
+	ldy Reg1
+	lda #$54							; Screen RAM code for Ctrl+T
+	ldx #NUM_DOTS						; Number of dots to write
+Progress_Bar_Loop
+	sta (Ptr_Lo),y
+	iny
+	dex
+	bne Progress_Bar_Loop
+	sty Reg1							; Save pointer for progress bar updates
+
+	rts									; Return controll to loader
+
+Load_Menu_Ramps_Message
+	.sb 'Loading menu banner ramps        '
+
+.endp
+	ini Load_Menu_Ramps
+
+	org VBXE_WINDOW + $300				; -> MENU_BANNER_PAL_VRAM+$0300 (hw palette register 1 slot)
+Menu_Ramp_Red
+	ins 'Assets/RAMP_RED.PAL'
+
+	org VBXE_WINDOW + $600				; -> MENU_BANNER_PAL_VRAM+$0600 (hw palette register 2 slot)
+Menu_Ramp_Green
+	ins 'Assets/RAMP_GRN.PAL'
+
+	org VBXE_WINDOW + $900				; -> MENU_BANNER_PAL_VRAM+$0900 (hw palette register 3 slot)
+Menu_Ramp_Blue
+	ins 'Assets/RAMP_BLU.PAL'
+
 ; The image-list scan (Build_Image_List / Parse_Dir_Line) and the old
 ; "press a key to start" gate (Wait_Start) used to live here as init steps.
 ; They moved to ui.asm (main segment): the scan location is now user-selectable

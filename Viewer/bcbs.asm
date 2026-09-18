@@ -197,23 +197,23 @@ BLT_MENU_SEP_CLEAR
 	dta $00								; Pattern feature
 	dta $00								; Control (Mode 0 with NEXT bit Cleared)
 
-; Same idea, for the banner's resident palette buffer (MENU_BANNER_PAL_VRAM,
-; whole 4096-byte bank) - a failed/missing MENU.PAL leaves the banner showing
-; solid black (all RGB zero) rather than cold-boot garbage colours, and
-; Apply_Menu_Banner_Palette can then apply it unconditionally, no LoadStatus
-; branching needed there.
-BLT_MENU_PAL_CLEAR
-	dta $00,$00,$00						; Source address (unused - constant source)
-	dta $00,$00							; Source step y (unused)
-	dta $00								; Source step x (unused)
-	dta <MENU_BANNER_PAL_VRAM,>MENU_BANNER_PAL_VRAM,MENU_BANNER_PAL_VRAM>>16	; Destination address
-	dta a($0100)						; Destination step y (256 - next row)
+; Menu banner palette-demo overlay - blit Build_Menu_Ramp_Table's 256-byte
+; ascending source ($2E000, bank $2E - fixed, never patched) as a flat 16x16
+; block into one of the demo's 8 squares.  Draw_Menu_Demo_Squares (view1024.
+; asm) patches Dest_Adr0-2 from Menu_Demo_Dest_Table before each of the 8
+; kicks; every other field is fixed.
+BLT_MENU_DEMO_SQUARE
+	dta <MENU_RAMP_VRAM,>MENU_RAMP_VRAM,MENU_RAMP_VRAM>>16	; Source address ($2E000, fixed)
+	dta $10,$00							; Source step y = 16
+	dta $01								; Source step x (1)
+	dta $00,$00,$00						; Destination address (PATCHED per kick)
+	dta a(MENU_BANNER_PITCH)			; Destination step y (320)
 	dta $01								; Destination step x (1)
-	dta $FF,$00							; Width-1  (255 -> 256 bytes per row)
-	dta $0F								; Height-1 (15 -> 16 rows; 16*256 = 4096 = 1 bank)
-	dta $00								; And mask (0 -> constant source)
-	dta $00								; Xor mask (fill value: $00)
-	dta $00								; Collision and mask
+	dta $0F,$00							; Width-1 = 15 (16 bytes wide)
+	dta $0F								; Height-1 = 15 (16 rows)
+	dta $FF								; And mask (straight copy)
+	dta $00								; Xor mask
+	dta $00								; Collision mask
 	dta $00								; Zoom
 	dta $00								; Pattern feature
 	dta $00								; Control (Mode 0 with NEXT bit Cleared)
