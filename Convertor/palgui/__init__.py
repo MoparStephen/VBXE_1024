@@ -30,4 +30,6 @@ run_palgui.sh at the repo root, which get the interpreter and the working
 directory right for you.
 """
 
-__version__ = '0.1.0'
+# The repo's single release number - must match the viewer's V_0..V_3 in
+# Viewer/view1024.asm and the v* git tag; packaging/check_version.py enforces it.
+__version__ = '0.16'

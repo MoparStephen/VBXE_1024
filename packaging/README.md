@@ -74,12 +74,26 @@ Linux notes:
 
 ## Release it
 
-Push a tag:
+The repo has ONE version number, the viewer's (`v0.16` = the `0.16` on the
+Atari loading screen), and the converter app is released under the same one.
+Three places must agree before tagging:
+
+| Where | What |
+|---|---|
+| `Viewer/view1024.asm` | `V_0`..`V_3` screen codes (`$10`-`$19` = digits, `V_3` `$00` or a letter) |
+| `Convertor/palgui/__init__.py` | `__version__ = '0.16'` - names the zip / tar.gz |
+| the git tag | `v0.16` |
+
+Check, commit, then push an annotated tag:
 
 ```
-git tag v0.1.0
-git push origin v0.1.0
+python packaging/check_version.py v0.16
+git tag -a v0.16 -m "v0.16: <one-line summary>"
+git push origin v0.16
 ```
+
+The workflow's `check-version` job runs the same script first and fails the
+release if any of the three disagree.
 
 `.github/workflows/release.yml` has two jobs - `build-windows` (`windows-latest`)
 and `build-linux` (`ubuntu-latest`, which also smoke-tests the frozen binaries) -

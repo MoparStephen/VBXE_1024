@@ -1,7 +1,9 @@
 name: Release app
 
-# Tag a commit v1.2.3 and push the tag:
-#   git tag v0.1.0 && git push origin v0.1.0
+# Tag a commit with the repo's version and push the tag:
+#   git tag -a v0.16 -m "v0.16" && git push origin v0.16
+# The tag must equal v + palgui __version__ + the viewer's V_0..V_3 - the
+# check-version job fails the run otherwise (packaging/check_version.py).
 # This builds dist/VBXE PAL Studio/ on a Windows runner and a Linux runner and
 # attaches the zip and the tar.gz to a GitHub Release. Nothing runs on ordinary
 # pushes.
@@ -16,7 +18,21 @@ permissions:
   contents: write            # create the Release and upload the assets
 
 jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag, GUI and viewer versions agree
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            python3 packaging/check_version.py "${GITHUB_REF_NAME}"
+          else
+            python3 packaging/check_version.py
+          fi
+
   build-windows:
+    needs: check-version
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +66,7 @@ jobs:
           generate_release_notes: true
 
   build-linux:
+    needs: check-version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
