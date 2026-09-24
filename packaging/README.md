@@ -95,6 +95,12 @@ git push origin v0.16
 The workflow's `check-version` job runs the same script first and fails the
 release if any of the three disagree.
 
+The release also carries the Atari viewer, `view1024.xex`. CI cannot assemble
+it (MADS and the external Libraries repo), so it attaches the **committed**
+`Viewer/out/view1024.xex` - rebuild and commit it after bumping `V_0`..`V_3`.
+`check_version.py` looks for the version string inside the xex and fails with
+"STALE - not rebuilt" if you forgot.
+
 `.github/workflows/release.yml` has two jobs - `build-windows` (`windows-latest`)
 and `build-linux` (`ubuntu-latest`, which also smoke-tests the frozen binaries) -
 and each attaches its archive to the same GitHub Release, so the tag ends up with

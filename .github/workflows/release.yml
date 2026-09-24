@@ -5,7 +5,8 @@ name: Release app
 # The tag must equal v + palgui __version__ + the viewer's V_0..V_3 - the
 # check-version job fails the run otherwise (packaging/check_version.py).
 # This builds dist/VBXE PAL Studio/ on a Windows runner and a Linux runner and
-# attaches the zip and the tar.gz to a GitHub Release. Nothing runs on ordinary
+# attaches the zip and the tar.gz - plus the committed Atari viewer
+# Viewer/out/view1024.xex - to a GitHub Release. Nothing runs on ordinary
 # pushes.
 
 on:
@@ -30,6 +31,26 @@ jobs:
           else
             python3 packaging/check_version.py
           fi
+
+  viewer:
+    # The Atari viewer is NOT assembled here (MADS + the external Libraries
+    # repo aren't available); the committed Viewer/out/view1024.xex ships
+    # as-is. check-version has already confirmed it carries this version.
+    needs: check-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: view1024-xex
+          path: Viewer/out/view1024.xex
+
+      - name: Publish Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Viewer/out/view1024.xex
 
   build-windows:
     needs: check-version

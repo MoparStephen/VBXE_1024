@@ -10,7 +10,9 @@ a release is numbered once, after the viewer's loading-screen version:
 
 build_app.ps1 / build_app.sh name the archive from __version__, so a tag
 pushed without bumping it publishes a zip labelled with the OLD number - the
-mistake this script exists to stop.  release.yml runs it before building.
+mistake this script exists to stop.  It also checks the committed
+Viewer/out/view1024.xex was rebuilt at that version, since the release
+attaches it as-is.  release.yml runs it before building.
 
     python packaging/check_version.py            # GUI vs viewer only
     python packaging/check_version.py v0.16      # ... and the tag
@@ -24,6 +26,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INIT_PY = os.path.join(ROOT, 'Convertor', 'palgui', '__init__.py')
 VIEWER_ASM = os.path.join(ROOT, 'Viewer', 'view1024.asm')
+VIEWER_XEX = os.path.join(ROOT, 'Viewer', 'out', 'view1024.xex')
 
 
 def gui_version():
@@ -59,13 +62,32 @@ def viewer_version():
             raise SystemExit('no V_%d in %s' % (n, VIEWER_ASM))
         codes[n] = int(m.group(1), 16)
     c = [_screen_char(codes[n]) for n in range(4)]
-    return '%s.%s%s%s' % tuple(c)
+    return '%s.%s%s%s' % tuple(c), codes
+
+
+def xex_has_version(codes):
+    """True when the COMMITTED view1024.xex carries this version.
+
+    CI cannot assemble the viewer (MADS and Stephen's Libraries repo are not
+    in this one), so the release ships Viewer/out/view1024.xex as committed.
+    Bumping V_0..V_3 without rebuilding would ship the old binary under the
+    new tag; the loading-screen line ends "...Viewer <ver>|" in screen codes
+    (init_vbxe.asm), so look for exactly those bytes.
+    """
+    needle = bytes([0x36, 0x69, 0x65, 0x77, 0x65, 0x72, 0x00,     # "Viewer "
+                    codes[0], 0x0E, codes[1], codes[2], codes[3], 0x7C])
+    with open(VIEWER_XEX, 'rb') as f:
+        return needle in f.read()
 
 
 def main(argv):
-    gui, viewer = gui_version(), viewer_version()
+    gui = gui_version()
+    viewer, codes = viewer_version()
+    xex_ok = xex_has_version(codes)
     print('palgui __version__ : %s' % gui)
     print('viewer V_0..V_3    : %s' % viewer)
+    print('view1024.xex       : %s' % ('built at ' + viewer if xex_ok
+                                       else 'STALE - not rebuilt'))
     ok = gui == viewer
     if argv:
         tag = argv[0].split('/')[-1]
@@ -74,6 +96,11 @@ def main(argv):
     if not ok:
         print('VERSION MISMATCH - bump Convertor/palgui/__init__.py and the '
               'V_0..V_3 defines in Viewer/view1024.asm to match the tag',
+              file=sys.stderr)
+        return 1
+    if not xex_ok:
+        print('Viewer/out/view1024.xex does not contain version %s - '
+              'rebuild the viewer and commit the .xex' % viewer,
               file=sys.stderr)
         return 1
     print('versions agree')
