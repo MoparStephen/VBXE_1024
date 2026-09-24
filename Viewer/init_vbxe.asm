@@ -1,4 +1,4 @@
-.def	NUM_DOTS						= $06
+.def	NUM_DOTS						= $05
 
 ; OS state Step_1 / Check_RAMTOP change and the Exit path restores (COLOR2_OLD
 ; is declared in view1024.asm alongside the other _OLD saves).

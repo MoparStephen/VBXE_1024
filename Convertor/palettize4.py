@@ -35,6 +35,9 @@ or --name)
   {name}3.pal
   {name}.pal     all palettes concatenated, palette-major (NP*256*3 bytes)
   {name}.map     one byte per cell, palette id (0-3) * 16 -> 0,16,32,48; row-major
+  {name}.v1k     {name}.pal + {name}.map + {name}.raw concatenated, no header
+                 (89472 bytes) - the single file the Atari viewer loads.  Only
+                 written with the default resize/cell/palettes/slots
   {name}_preview.png   reconstruction as the hardware would show it
   {name}_palettes.png  swatch sheet of the palettes
   {name}_report.txt    statistics and any quality warnings (human-readable, fixed 80-col layout)
@@ -46,6 +49,10 @@ or --name)
 import argparse, os, sys, json
 import numpy as np
 from PIL import Image
+
+# .v1k block sizes the viewer expects: .pal (4 x 256 x RGB), .map (40 x 240
+# cells), .raw (320 x 240 pixels).  Must match V1K_*_LEN in view1024.asm.
+V1K_BLOCK_SIZES = (3072, 9600, 76800)
 
 # resampling filters (robust across Pillow versions)
 _R = getattr(Image, "Resampling", Image)
@@ -859,6 +866,24 @@ def main():
     pal_rgb.astype(np.uint8).tofile(os.path.join(args.out, base + ".pal"))
     # {base}.map : one byte per cell, palette id (0-3) << 4  ->  0,16,32,48
     (cell_pal * 16).astype(np.uint8).tofile(os.path.join(args.out, base + ".map"))
+    # {base}.v1k : what the viewer actually loads - .pal + .map + .raw back to
+    # back, no header.  The viewer reads it at fixed offsets, so it is only
+    # written when the three blocks are the viewer's exact sizes (i.e. the
+    # default --resize/--cell/--palettes/--slots); the loose files above stay
+    # either way for inspection and testing.
+    v1k_blocks = (pal_rgb.astype(np.uint8).tobytes(),
+                  (cell_pal * 16).astype(np.uint8).tobytes(),
+                  out_idx.astype(np.uint8).tobytes())
+    v1k_written = tuple(len(b) for b in v1k_blocks) == V1K_BLOCK_SIZES
+    if v1k_written:
+        with open(os.path.join(args.out, base + ".v1k"), "wb") as f:
+            for b in v1k_blocks:
+                f.write(b)
+    else:
+        sys.stderr.write("warning: %s.v1k not written - block sizes %s are not "
+                         "the viewer's %s (non-default resize/cell/palettes/"
+                         "slots)\n" % (base, tuple(len(b) for b in v1k_blocks),
+                                       V1K_BLOCK_SIZES))
     # human-facing previews
     Image.fromarray(out_rgb, "RGB").save(os.path.join(args.out, base + "_preview.png"))
 
@@ -1032,6 +1057,8 @@ def main():
             "stats": base + "_stats.json",
         },
     }
+    if v1k_written:                     # absent, not null - consumers join paths
+        stats["files"]["v1k"] = base + ".v1k"
     with open(os.path.join(args.out, base + "_stats.json"), "w") as f:
         json.dump(stats, f, indent=2)
 

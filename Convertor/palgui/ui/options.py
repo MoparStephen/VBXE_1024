@@ -420,8 +420,9 @@ class OptionsPanel(QWidget):
         self.name = QLineEdit()
         self.name.setPlaceholderText('(input file name)')
         self.name.setToolTip(
-            'Base name for every output file: NAME.raw, NAME0.pal through '
-            'NAME3.pal, NAME.pal, NAME.map, and the preview/report sidecars.\n\n'
+            'Base name for every output file: NAME.v1k (the single file the '
+            'viewer loads), NAME.raw, NAME0.pal through NAME3.pal, NAME.pal, '
+            'NAME.map, and the preview/report sidecars.\n\n'
             'Blank means the input\'s file name without its extension.  Set it '
             'to img7 and so on when writing straight into the viewer\'s '
             'directory.')
@@ -600,9 +601,10 @@ class OptionsPanel(QWidget):
         if self.colors_auto.isChecked():
             self.colors.setValue(min(self.colors.maximum(), s.colour_budget()))
         base = s.effective_name() or 'NAME'
-        self.files.setText('writes %s/%s.raw, %s0-%d.pal, %s.pal, %s.map '
-                           '+ preview / report / stats'
-                           % (base, base, base, s.palettes - 1, base, base))
+        self.files.setText('writes %s/%s.v1k, %s.raw, %s0-%d.pal, %s.pal, '
+                           '%s.map + preview / report / stats'
+                           % (base, base, base, base, s.palettes - 1, base,
+                              base))
 
     # --- the inert-dither warning ------------------------------------------------------
     def set_dither_note(self, text):

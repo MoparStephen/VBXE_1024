@@ -83,15 +83,19 @@ def _long_name(map_path):
 
 
 def scan(folder):
-    """[(key, name), ...] for every .MAP under folder, deduped, sorted by key.
+    """[(key, name), ...] for every .MAP or .V1K under folder, deduped, sorted
+    by key.
 
     Looks in folder itself AND one level down - the GUI writes
-    out/<image>/<image>.map, a raw palettize4.py run writes them flat.
+    out/<image>/<image>.map, a raw palettize4.py run writes them flat.  A
+    disk folder for the single-file viewer may hold only .V1K (packed by
+    pack_v1k.py) + .NFO, so .V1K counts as an image too; the key is the same
+    base name either way.
     """
     paths = []
-    for pat in ("*.map", "*.MAP", os.path.join("*", "*.map"),
-                os.path.join("*", "*.MAP")):
-        paths.extend(glob.glob(os.path.join(folder, pat)))
+    for ext in ("map", "MAP", "v1k", "V1K"):
+        for pat in ("*." + ext, os.path.join("*", "*." + ext)):
+            paths.extend(glob.glob(os.path.join(folder, pat)))
 
     rows, seen = [], set()
     for path in sorted(paths):

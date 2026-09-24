@@ -1203,6 +1203,23 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(acc['identical_pixels'] + stats['recoloured_pixels'],
                          acc['compared_pixels'])
         self.assertLessEqual(acc['cells_damaged'], acc['cells_compared'])
+        # 160x120 is not the viewer's fixed 320x240, so no .v1k - and the
+        # key is absent rather than null, so output_paths() still joins.
+        self.assertNotIn('v1k', paths)
+
+    def test_a_default_run_writes_the_v1k(self):
+        """At the viewer's own geometry the .v1k is .pal + .map + .raw."""
+        s = Settings(input=self.sample)
+        stats = runner.run_blocking(s, out=self.out, name='t')
+        paths = runner.output_paths(stats, self.out)
+        parts = b''
+        for key in ('palettes_combined', 'map', 'raw'):
+            with open(paths[key], 'rb') as f:
+                parts += f.read()
+        with open(paths['v1k'], 'rb') as f:
+            v1k = f.read()
+        self.assertEqual(len(v1k), 3072 + 9600 + 76800)
+        self.assertEqual(v1k, parts)
 
     def test_preview_and_convert_agree(self):
         """The claim the whole app rests on: a preview is the real conversion.
@@ -1309,6 +1326,17 @@ class TestImagesLst(unittest.TestCase):
         self.assertIn('CHARGER0', rows)
         self.assertIn('CHROME_C', rows)
         self.assertIn('FJ_MARCE', rows)
+
+    def test_v1k_only_folder_is_scanned_once_per_image(self):
+        """A single-file disk folder holds .V1K + .NFO and no .MAP; a folder
+        holding both for one image must still list it once."""
+        self._touch('IMG0.v1k')
+        self._touch('IMG0.nfo', self._nfo('photo_of_a_cat.jpg'))
+        self._touch('IMG1.map')
+        self._touch('IMG1.v1k')
+        rows = imageslst.scan(self.dir)
+        self.assertEqual(rows, [('IMG0    ', 'photo_of_a_cat.jpg'),
+                                ('IMG1    ', 'IMG1')])
 
 
 if __name__ == '__main__':

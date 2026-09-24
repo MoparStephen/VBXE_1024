@@ -101,7 +101,7 @@
 ;=============================================================================
 
 ;-----------------------------------------------------------------------------
-; Rescan_Images - scan Scan_Drive/Scan_Path for *.MAP, rebuild + sort the list.
+; Rescan_Images - scan Scan_Drive/Scan_Path for *.V1K, rebuild + sort the list.
 ; Tolerates zero matches (an ordinary state the selector shows).
 ;-----------------------------------------------------------------------------
 Rescan_Images
@@ -119,7 +119,7 @@ Rescan_Images
 	sbc FileStart
 	tax									; X = file count
 	lda FileStart
-	jsr Sort_Range						; *.MAP files A-Z
+	jsr Sort_Range						; *.V1K files A-Z
 
 	jsr Nfo_Name_ClearCache				; drop the status-line name slots - list changed
 	jsr Nfo_Name_LoadManifest			; refill them from this folder's IMAGES.LST (if any)
@@ -158,11 +158,11 @@ Build_Spec_Prefix_L1
 Build_Spec_Prefix_Done
 	rts
 
-Build_Spec								; ... + "*.MAP" + EOL
+Build_Spec								; ... + "*.V1K" + EOL
 	jsr Build_Spec_Prefix
 	ldy #$00
 Build_Spec_L1
-	lda Build_Spec_MapWild,y
+	lda Build_Spec_ImgWild,y
 	sta Scan_Spec,x
 	inx
 	iny
@@ -194,18 +194,18 @@ Build_Manifest_Spec_L1
 	bcc Build_Manifest_Spec_L1
 	rts
 
-Build_Spec_MapWild		dta c'*.MAP',$9B
+Build_Spec_ImgWild		dta c'*.V1K',$9B
 Build_Spec_AnyWild		dta c'*.*',$9B
 Build_Spec_ManifestName	dta c'IMAGES.LST',$9B
 
 ;-----------------------------------------------------------------------------
 ; Build_Image_List - rebuild the selector list in IMAGE_BANK through the $2000
 ; window, grouped:  ".."  (only below the drive root)  |  sub-directories  |
-; *.MAP files.  Rescan_Images sorts the two real groups A-Z afterwards.
-; Sets ImageCount, Dir_Count and FileStart (index of the first *.MAP row).
+; *.V1K files.  Rescan_Images sorts the two real groups A-Z afterwards.
+; Sets ImageCount, Dir_Count and FileStart (index of the first *.V1K row).
 ;   - directory pass: OPEN "D[n]:PATH*.*" long DIR format (AUX2 = $80) and keep
 ;     only lines carrying SDX's "<DIR>" size-column tag (Line_Has_Dir_Tag).
-;   - file pass:      OPEN "D[n]:PATH*.MAP" short format (AUX2 = $00) as before.
+;   - file pass:      OPEN "D[n]:PATH*.V1K" short format (AUX2 = $00) as before.
 ; One 8-byte write cursor (Name_Ptr) and one ImageNames_End guard span both.
 ;-----------------------------------------------------------------------------
 Build_Image_List
@@ -280,7 +280,7 @@ Build_Image_List_DirClose
 	sta ICCOM,x
 	jsr CIOV
 
-; --- file pass : "D[n]:PATH*.MAP", short format
+; --- file pass : "D[n]:PATH*.V1K", short format
 Build_Image_List_Files
 	lda ImageCount						; FileStart = rows so far (".." + dirs)
 	sta FileStart
@@ -678,7 +678,7 @@ Selector_DrawList_Put
 	jmp Selector_DrawList_L1
 
 Selector_DrawList_Tail
-; list has rows but none are *.MAP files -> note it one row below the last entry
+; list has rows but none are *.V1K files -> note it one row below the last entry
 	lda FileStart
 	cmp ImageCount
 	bcc Selector_DrawList_Done			; some files present
@@ -828,7 +828,7 @@ Nfo_Name_ClearCache_L2
 
 ;-----------------------------------------------------------------------------
 ; Selector_DrawStatus - repaint row 20 for the current Sel_Index.  Blank for a
-; directory / ".." row or an empty list; "Src: <name>" for a *.MAP row whose
+; directory / ".." row or an empty list; "Src: <name>" for a *.V1K row whose
 ; slot was filled from IMAGES.LST.  Pure VRAM read - no file I/O.
 ;-----------------------------------------------------------------------------
 Selector_DrawStatus
@@ -841,7 +841,7 @@ Selector_DrawStatus
 	bne Selector_DrawStatus_Blank		; dir / ".." -> no source name
 	lda Sel_Index
 	sec
-	sbc FileStart						; ordinal into the *.MAP group
+	sbc FileStart						; ordinal into the *.V1K group
 	sta Nfo_Name_Ord
 	jsr Nfo_Name_MapSlot				; Ptr_Lo/Hi -> slot, bank $2A..$2D mapped
 	jsr Nfo_Name_Emit					; Path_Buf = name padded to NFO_NAME_CAP + NUL
@@ -943,7 +943,7 @@ Nfo_Name_Emit_Term
 
 ;-----------------------------------------------------------------------------
 ; Nfo_Name_LoadManifest - open "D[n]:PATH IMAGES.LST", and for every record
-; (8-byte key + source name + $9B) store the name into the matching *.MAP
+; (8-byte key + source name + $9B) store the name into the matching *.V1K
 ; row's slot.  Called from Rescan_Images right after Nfo_Name_ClearCache.
 ; A missing / unreadable file just leaves every slot $00 (blank status line).
 ;-----------------------------------------------------------------------------
@@ -982,7 +982,7 @@ Nfo_Name_LoadManifest_Line
 	bmi Nfo_Name_LoadManifest_Close		; EOF / error / record over 58 bytes
 
 	jsr Nfo_Name_Match					; key = Nfo_Name_Line[0..7]  -> A = ordinal
-	bcs Nfo_Name_LoadManifest_Line		; no matching *.MAP row - drop the line
+	bcs Nfo_Name_LoadManifest_Line		; no matching *.V1K row - drop the line
 	sta Nfo_Name_Ord
 	jsr Nfo_Name_MapSlot				; Ptr_Lo/Hi -> slot, bank $2A..$2D mapped
 	ldy #$00
@@ -1012,7 +1012,7 @@ Nfo_Name_LoadManifest_Done
 	rts
 
 ;-----------------------------------------------------------------------------
-; Nfo_Name_Match - the 8-byte key at Nfo_Name_Line in.  Linear-scans the *.MAP
+; Nfo_Name_Match - the 8-byte key at Nfo_Name_Line in.  Linear-scans the *.V1K
 ; group of the name list (rows FileStart .. ImageCount-1) in IMAGE_BANK for a
 ; byte-exact match.  Returns A = ordinal (row - FileStart), C=0 on a hit;
 ; C=1 and A undefined if none.  Maps + unmaps IMAGE_BANK itself.
@@ -1099,7 +1099,7 @@ UI_DrawNameRow_P
 ;-----------------------------------------------------------------------------
 UI_RowType
 	cmp FileStart
-	bcs UI_RowType_File					; index >= FileStart -> *.MAP file
+	bcs UI_RowType_File					; index >= FileStart -> *.V1K file
 	tax									; index < FileStart
 	bne UI_RowType_Dir					; index != 0 -> a directory
 	lda Scan_Path
@@ -1807,7 +1807,7 @@ Selector_Sync_Zero
 	rts
 
 ;-----------------------------------------------------------------------------
-; Selector_Handle_P - "P" key: load the highlighted image's .PAL (all 4
+; Selector_Handle_P - "P" key: load the highlighted .V1K's .PAL block (all 4
 ; palette registers) and show its 2x2 grid of ramp squares, one per
 ; palette, zoomed 7x and centered on the image screen (UI_Mode 6,
 ; Esc-only - see Pal_Preview_Keys).
@@ -1852,7 +1852,7 @@ Selector_Handle_I
 	beq Selector_Handle_I_Ret			; no images -> nothing to describe
 	lda Sel_Index
 	sta File_Index
-	lda #$03							; ext selector 3 = .NFO
+	lda #$01							; ext selector 1 = .NFO
 	jsr Build_Filename					; FileNamePtr -> "D[n]:PATH<base>.NFO",0
 	jsr Info_Load						; stream into NFO_BUF_VRAM, count records
 	lda LoadStatus

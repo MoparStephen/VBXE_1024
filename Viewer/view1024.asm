@@ -54,12 +54,12 @@
 ;                      window and the Q quit-confirm window)
 ;    (banks $37-$3F are free)
 ;    Image name list = $40000 - $40FFF (bank $40: up to MAX_IMAGES=255 rows -
-;                      "..", sub-dirs and *.MAP files, 8 bytes each; + a 10-char
+;                      "..", sub-dirs and *.V1K files, 8 bytes each; + a 10-char
 ;                      display field is formatted in place at draw time)
 ;    (bank $41 is free - the old folder browser used it)
 ;
 ; MAX_IMAGES is a hard design ceiling of 255 - each image is a ~90kB
-; .PAL/.MAP/.RAW set, so 255 far exceeds any real slideshow, and a one-byte
+; .V1K file, so 255 far exceeds any real slideshow, and a one-byte
 ; count keeps every nav/sort loop small. Not intended to ever be raised.
 
 ;-----------------------------------------------------------------------------
@@ -115,16 +115,21 @@
 .var Scan_Drive			.byte = $4CC	; '1'..'8', or $00 for a bare "D:"
 .var Name_Row_Buf		:12 .byte = $4CD	; one name record / formatted row, NUL-terminated
 .var Dir_Count			.byte = $4D9	; selector list: number of sub-directory rows
-.var FileStart			.byte = $4DA	; selector list: index of the first *.MAP row (= upCount + Dir_Count)
+.var FileStart			.byte = $4DA	; selector list: index of the first *.V1K row (= upCount + Dir_Count)
 .var Drive_Pick_Index	.byte = $4DB	; drive picker (UI_Mode 3): 0 = "D:", 1..8 = "Dn:"
 .var Nfo_Top			.word = $4DC	; info viewer: first visible line record (0-based)
 .var Nfo_LineCount		.word = $4DE	; info viewer: line records in the loaded .NFO
 .var Font_Sel			.byte = $4E0	; text font: 0 = CGA ($44), 1 = Atari ($45)
 .var Nfo_Name_Ord		.byte = $4E1	; selector status line: file ordinal being fetched
-;	$4E2 to $4FF free
+; --- single-file .V1K image loader (Image_Open / Image_Read_Segment) ---
+.var Load_IOCB			.byte = $4E2	; IOCB offset of the open .V1K file
+.var Seg_Bank			.byte = $4E3	; VBXE bank the next 4K chunk lands in
+.var Seg_Chunks			.byte = $4E4	; full 4K chunks left in this segment
+.var Seg_Tail			.word = $4E5	; bytes in the segment's final partial chunk
+;	$4E7 to $4FF free
 .var Dir_Line_Buf		:$28 .byte = $600	; One GET RECORD dir line ($600-$627)
 .var Scan_Path			:$28 .byte = $628	; subdirectory part, ">DIR>DIR>" or empty ($628-$64F)
-.var Scan_Spec			:$30 .byte = $650	; assembled "D[n]:PATH*.MAP",$9B ($650-$67F)
+.var Scan_Spec			:$30 .byte = $650	; assembled "D[n]:PATH*.V1K",$9B ($650-$67F)
 .var Txt_Line			:$30 .byte = $680	; scratch line assembled for Text_PutStrAt ($680-$6AF)
 ; One IMAGES.LST record (8-byte key + <=NFO_NAME_CAP name + $9B) for
 ; Nfo_Name_LoadManifest.  Own buffer, not Dir_Line_Buf, because a record can
@@ -152,6 +157,16 @@
 .def	ImageNames						= VBXE_WINDOW	; List base once IMAGE_BANK is mapped
 .def	ImageNames_End					= ImageNames + (MAX_IMAGES * 8)
 .def	Dir_Line_Len					= $28	; Max length of one dir GET RECORD line
+
+; Single-file image: <name>.V1K = .PAL block + .MAP block + .RAW block, no
+; header - every block is fixed-size, so every offset is a constant.
+; Load_Image streams each block to the same VRAM the old 3-file load used.
+.def	V1K_PAL_LEN						= $0C00		; 4 palettes x 768     = 3072
+.def	V1K_MAP_LEN						= $2580		; 40 cells x 240 rows  = 9600
+.def	V1K_RAW_LEN						= $12C00	; 320 x 240 pixels     = 76800
+.def	V1K_PAL_BANK					= $21		; -> $21000 (read back by Apply_Image_Palette)
+.def	V1K_MAP_BANK					= $14		; -> $14000 (CRAM_Buffer, Setup_Cmap1 expands it)
+.def	V1K_RAW_BANK					= $01		; -> $01000 (framebuffer)
 
 ; VBXE text screen (text80.asm + XDL_MainMenu in xdl.asm - these MUST agree).
 ; Chosen clear of the image framebuffer/CRAM ($01000-$205FF), palette buffer
@@ -309,7 +324,7 @@
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $11	; 1 (Screen code used for Version in loading screen)
-.def	V_2								= $15	; 5 (Screen code used for Version in loading screen)
+.def	V_2								= $16	; 6 (Screen code used for Version in loading screen)
 .def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
@@ -528,20 +543,31 @@ Clear_Screen_L1
 	rts
 
 ;-----------------------------------------------------------------------------
-; Load_Image_Palette - load File_Index's .PAL and set all 4 hardware
-; palette registers.  File_Index must be set before calling.  Split out of
-; Load_Image so Selector_Handle_P (P-preview, ui.asm) can load just the
-; palette without touching .MAP/.RAW.
+; Load_Image_Palette - read just the .PAL block (the first one) of File_Index's
+; .V1K and set all 4 hardware palette registers.  File_Index must be set before
+; calling.  Used by Selector_Handle_P (P-preview, ui.asm), which must not touch
+; the framebuffer or CRAM.
 ;-----------------------------------------------------------------------------
 Load_Image_Palette
-; Load the Palettes (D:<name>.PAL -> VBXE $21000)
-	lda #$00							; ext 0 = .PAL
+	lda #$00							; ext 0 = .V1K
 	jsr Build_Filename
-	lda #$21
-	sta BankIndex						; Load palette data under $21000
-	jsr LoadData
+	jsr Image_Open
+	bcs Load_Image_Palette_Done			; OPEN failed - registers left as they were
+	jsr Image_Read_Pal
+	php
+	jsr Image_Close
+	plp
+	bcs Load_Image_Palette_Done			; short read - don't push a half palette
+	jmp Apply_Image_Palette
+Load_Image_Palette_Done
+	rts
 
-	lda #$21 | MEMAC_GLOBAL_ENABLE		; Bank $21 VBXE Window Enabled
+;-----------------------------------------------------------------------------
+; Apply_Image_Palette - push the 4 x 768-byte palettes at $21000 (the .V1K's
+; .PAL block) into hardware palette registers 0-3.
+;-----------------------------------------------------------------------------
+Apply_Image_Palette
+	lda #V1K_PAL_BANK | MEMAC_GLOBAL_ENABLE	; Bank $21 VBXE Window Enabled
 	vbsta VBXE_MA_BSEL
 	lda <(VBXE_WINDOW + $0000)
 	sta Y_Register
@@ -575,31 +601,160 @@ Load_Image_Palette
 ;-----------------------------------------------------------------------------
 ; Load_Image
 ; File_Index must be set before calling this!  No range checking is done!
+; One OPEN of D:<name>.V1K, three sequential block reads:
+;   .PAL block -> $21000, pushed to palette registers 0-3
+;   .MAP block -> $14000, blitter-expanded to $17000 by Setup_Cmap1
+;   .RAW block -> $01000 framebuffer
+; A missing or short file stops at the failing block and closes the IOCB.
 ;-----------------------------------------------------------------------------
 Load_Image
-	jsr Load_Image_Palette
-
-; Load the Attribute Colour Map (D:<name>.MAP -> VBXE $14000)
-	lda #$01							; ext 1 = .MAP
+	lda #$00							; ext 0 = .V1K
 	jsr Build_Filename
-	lda #$14
-	sta BankIndex						; Load Colour Map data under $14000
-	jsr LoadData
+	jsr Image_Open
+	bcs Load_Image_Done					; OPEN failed - nothing to close
 
+	jsr Image_Read_Pal
+	bcs Load_Image_Close
+	jsr Apply_Image_Palette
+
+	lda #V1K_MAP_BANK					; Attribute Colour Map -> $14000
+	ldx #V1K_MAP_LEN / $1000
+	ldy #<[V1K_MAP_LEN & $0FFF]
+	sty Seg_Tail
+	ldy #>[V1K_MAP_LEN & $0FFF]
+	sty Seg_Tail + $01
+	jsr Image_Read_Segment
+	bcs Load_Image_Close
 	jsr Setup_Cmap1						; Expand the data out to $17000
 
-; Load the Image (D:<name>.RAW -> VBXE $01000)
-	lda #$02							; ext 2 = .RAW
-	jsr Build_Filename
-	lda #$01
-	sta BankIndex						; Load raw image data under $01000
-	jsr LoadData
+	lda #V1K_RAW_BANK					; Image pixels -> $01000
+	ldx #V1K_RAW_LEN / $1000
+	ldy #<[V1K_RAW_LEN & $0FFF]
+	sty Seg_Tail
+	ldy #>[V1K_RAW_LEN & $0FFF]
+	sty Seg_Tail + $01
+	jsr Image_Read_Segment
+
+Load_Image_Close
+	jsr Image_Close
 
 Load_Image_Done
 	lda #MEMAC_GLOBAL_DISABLE			; USE CPU address space
 	vbsta VBXE_MA_BSEL
 
 	rts
+
+;-----------------------------------------------------------------------------
+; Image_Read_Pal - read the .V1K's leading .PAL block into $21000.
+;  Out: C=1 on a read error / short file.
+;-----------------------------------------------------------------------------
+Image_Read_Pal
+	lda #V1K_PAL_BANK
+	ldx #V1K_PAL_LEN / $1000
+	ldy #<[V1K_PAL_LEN & $0FFF]
+	sty Seg_Tail
+	ldy #>[V1K_PAL_LEN & $0FFF]
+	sty Seg_Tail + $01
+	jmp Image_Read_Segment
+
+;-----------------------------------------------------------------------------
+; Image_Open - OPEN FileNamePtr for read on the first free IOCB (the same
+; sequence LoadData uses, but the file stays open across several block reads).
+;  Out: C=0 and Load_IOCB = IOCB offset, or C=1 (no IOCB / OPEN failed - the
+;       IOCB is closed again so it doesn't leak).
+;-----------------------------------------------------------------------------
+Image_Open
+	jsr Find_First_IOCB
+	cpy #$01
+	bne Image_Open_Fail					; no free IOCB
+	stx Load_IOCB
+	lda #CIO_read
+	sta ICAX1,x
+	lda #$00
+	sta ICAX2,x
+	lda #CIO_open
+	sta ICCOM,x
+	lda FileNamePtr
+	sta ICBAL,x
+	lda FileNamePtr + $01
+	sta ICBAH,x
+	jsr CIOV
+	bmi Image_Open_Close
+	clc
+	rts
+Image_Open_Close
+	jsr Image_Close
+Image_Open_Fail
+	sec
+	rts
+
+;-----------------------------------------------------------------------------
+; Image_Read_Segment - read one fixed-size block of the open .V1K into VRAM
+; through the 4K MEMAC window, 4K at a time, then the partial tail.
+;  In:  A = first VBXE bank, X = full 4K chunks, Seg_Tail = tail bytes (0 ok)
+;  Out: C=1 on any CIO error (including EOF before the block is complete)
+;-----------------------------------------------------------------------------
+Image_Read_Segment
+	sta Seg_Bank
+	stx Seg_Chunks
+Image_Read_Segment_L1
+	lda Seg_Chunks
+	beq Image_Read_Segment_Tail
+	lda #<VBXE_WINDOW_SIZE_4k
+	ldy #>VBXE_WINDOW_SIZE_4k
+	jsr Image_Read_Chunk
+	bcs Image_Read_Segment_Done
+	dec Seg_Chunks
+	jmp Image_Read_Segment_L1
+
+Image_Read_Segment_Tail
+	lda Seg_Tail
+	ora Seg_Tail + $01
+	beq Image_Read_Segment_OK			; no partial chunk
+	lda Seg_Tail
+	ldy Seg_Tail + $01
+	jmp Image_Read_Chunk
+
+Image_Read_Segment_OK
+	clc
+Image_Read_Segment_Done
+	rts
+
+; Map Seg_Bank at VBXE_WINDOW and GET A/Y bytes into it; Seg_Bank++ after.
+; C=1 on a CIO error.
+Image_Read_Chunk
+	ldx Load_IOCB
+	sta ICBLL,x
+	tya
+	sta ICBLH,x							; length stored before vbsta clobbers Y
+	lda Seg_Bank
+	ora #MEMAC_GLOBAL_ENABLE
+	vbsta VBXE_MA_BSEL
+	lda #CIO_getdata
+	sta ICCOM,x
+	lda #<VBXE_WINDOW
+	sta ICBAL,x
+	lda #>VBXE_WINDOW
+	sta ICBAH,x
+	jsr CIOV
+	bmi Image_Read_Chunk_Err
+	inc Seg_Bank
+	clc
+	rts
+Image_Read_Chunk_Err
+	sec
+	rts
+
+;-----------------------------------------------------------------------------
+; Image_Close - unmap the MEMAC window and CLOSE Load_IOCB.  Preserves nothing.
+;-----------------------------------------------------------------------------
+Image_Close
+	lda #MEMAC_GLOBAL_DISABLE
+	vbsta VBXE_MA_BSEL
+	ldx Load_IOCB
+	lda #CIO_close
+	sta ICCOM,x
+	jmp CIOV
 
 ;-----------------------------------------------------------------------------
 ; Load_Menu_Banner_Raw - boot-time load of the static menu banner (pixel data,
@@ -1197,7 +1352,7 @@ Exit
 	jmp Cleanup_Exit					; Clean up and exit (accounts for any long branch issues)
 
 ;-----------------------------------------------------------------------------
-; Increment_Image - advance File_Index within the *.MAP file band
+; Increment_Image - advance File_Index within the *.V1K file band
 ; [FileStart, ImageCount), wrapping past the last file to the first.
 ; No-op when the list holds no files.  (The selector list may now also carry
 ; ".." and directory rows below FileStart - Space/BkSp must skip those.)
@@ -1205,7 +1360,7 @@ Exit
 Increment_Image
 	lda FileStart
 	cmp ImageCount
-	bcs Increment_Image_Done			; no *.MAP files in the list
+	bcs Increment_Image_Done			; no *.V1K files in the list
 	ldx File_Index
 	inx
 	cpx ImageCount
@@ -1290,7 +1445,7 @@ Enable_Colour_Map
 
 ;-----------------------------------------------------------------------------
 ; Build_Filename
-;  In:  A          = 0 -> .PAL, 1 -> .MAP, 2 -> .RAW, 3 -> .NFO
+;  In:  A          = 0 -> .V1K, 1 -> .NFO
 ;       File_Index = image ordinal
 ;  Out: FileNamePtr -> Path_Buf holding
 ;         "D[n]:" + Scan_Path + base(<=8) + "." + ext + $00
@@ -1370,7 +1525,7 @@ Build_Filename_Ext
 	rts
 
 Ext_Table
-	dta c'PALMAPRAWNFO'					; selector 0=PAL 1=MAP 2=RAW 3=NFO
+	dta c'V1KNFO'						; selector 0=V1K 1=NFO
 
 ;-----------------------------------------------------------------------------
 ; Sort_Range - in-place alphabetical selection sort of the records
