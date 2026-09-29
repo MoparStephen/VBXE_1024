@@ -25,8 +25,9 @@ Strategy
   any over-full palette by substituting its rarest colours with their nearest
   perceptual neighbour. Error is reported.
 
-Outputs (into --out dir; {name} defaults to the input filename without extension,
-or --name)
+Outputs (into --out dir; {name} is the input filename without extension, or
+--name, made Atari-safe by atari_name.short_name(): upper-case A-Z 0-9 _, at
+most 8 chars, never a digit first - "Charger 01.jpg" -> CHARGER0)
 ------------------------
   {name}.raw     width * height bytes (8-bit pixel index, row-major)
   {name}0.pal    256 entries * (R,G,B) = 768 bytes  (one file per palette)
@@ -44,15 +45,23 @@ or --name)
   {name}.nfo           the same report as the Atari viewer's "About" screen eats it:
                        fixed 160-byte line records of 80 {glyph,attr} cell pairs
                        (attr $07), no terminators, one all-$00 record marks the end
+  {name}_stats.json    machine-readable stats, incl. "description" - the text
+                       IMAGES.LST carries to the viewer's selector status line
 """
 
 import argparse, os, sys, json
 import numpy as np
 from PIL import Image
 
+import atari_name
+
 # .v1k block sizes the viewer expects: .pal (4 x 256 x RGB), .map (40 x 240
 # cells), .raw (320 x 240 pixels).  Must match V1K_*_LEN in view1024.asm.
 V1K_BLOCK_SIZES = (3072, 9600, 76800)
+
+# --description: the selector status line is "Src: " + this, 80 columns.
+# Must match NFO_NAME_CAP in view1024.asm.
+DESC_CAP = 75
 
 # resampling filters (robust across Pillow versions)
 _R = getattr(Image, "Resampling", Image)
@@ -68,6 +77,15 @@ FILTERS = {
 def _parse_wh(s):
     w, h = s.lower().split("x")
     return int(w), int(h)
+
+def description(text, input_path):
+    """The selector status-line text: `text` if given, else the input filename
+    without its extension or any trailing period; capped at DESC_CAP."""
+    desc = (text or "").strip()
+    if not desc:
+        desc = os.path.splitext(os.path.basename(input_path))[0].rstrip(".")
+    return desc[:DESC_CAP].rstrip()
+
 
 def _parse_aspect(s):
     if ":" in s:
@@ -523,7 +541,11 @@ def main():
     ap.add_argument("input", help="input image (PNG/anything PIL reads)")
     ap.add_argument("--out", default="out", help="output directory")
     ap.add_argument("--name", default=None,
-                    help="base name for the .map/.raw/.pal output files (default: input filename without extension)")
+                    help="base name for the output files (default: input filename without extension); "
+                         "always reduced to an 8-char Atari name (A-Z 0-9 _, no leading digit)")
+    ap.add_argument("--description", default=None, metavar="TEXT",
+                    help=f"text the viewer's selector status line shows for this image "
+                         f"(max {DESC_CAP} chars; default = input filename without extension)")
     ap.add_argument("--cell", type=int, default=8, help="pixels per palette-override cell (default 8)")
     ap.add_argument("--palettes", type=int, default=4, help="number of palettes (default 4)")
     ap.add_argument("--slots", type=int, default=256, help="entries per palette (default 256)")
@@ -847,16 +869,15 @@ def main():
                            cell_w)
 
     # ---- write files --------------------------------------------------------
-    base = args.name if args.name else os.path.splitext(os.path.basename(args.input))[0]
-    # The Atari viewer (SpartaDOS X) only sees 8.3 short names, so the .map/.raw
-    # /.pal/.nfo set has to be renamed to something like IMG0.* when it is staged
-    # onto the disk.  Warn if the base is not already 8.3-safe - a mismatch there
-    # is the most common way the About screen ends up loading the wrong .nfo.
-    _bad = set(base) - set("abcdefghijklmnopqrstuvwxyz"
-                           "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
-    if len(base) > 8 or _bad:
-        sys.stderr.write("warning: output base %r is not an 8.3 short name - "
-                         "the Atari viewer (SDX) needs e.g. --name IMG0\n" % base)
+    # The Atari viewer (SpartaDOS X) only sees 8.3 names, so every output is
+    # named with the 8-char Atari base straight away - the .v1k and .nfo can go
+    # onto the disk as-is.  The original filename survives in the report's
+    # Input line (record 1 of the .nfo), which is where IMAGES.LST reads it.
+    raw_base = args.name if args.name else os.path.splitext(os.path.basename(args.input))[0]
+    base = atari_name.short_name(raw_base)
+    if args.name and base != args.name:
+        sys.stderr.write("note: --name %r is not a legal Atari name; using %r\n"
+                         % (args.name, base))
     # {base}.raw : one byte per pixel, row-major
     out_idx.tofile(os.path.join(args.out, base + ".raw"))
     # {base}#.pal : 256 entries x (R,G,B) = 768 bytes each
@@ -932,6 +953,17 @@ def main():
     lines.append(row("Output colours", f"{unique_out}  (distinct RGB on screen)"))
     lines.append("")
     lines.append(row("Strategy", strategy))
+    # coherence only feeds run_balanced(), i.e. a lossy run with bias > 0
+    coh_used = (not lossless) and strategy.startswith("balanced")
+    lines.append(row("Coherence", f"{float(args.coherence):.2f}  "
+                     + ("(attribute-map smoothing)" if coh_used
+                        else f"(unused - {strategy.split(' ')[0]} strategy)")))
+    # dither only runs inside the pre-quantization branch above
+    if args.dither == "none":
+        lines.append(row("Dithering", "none"))
+    else:
+        lines.append(row("Dithering", f"{args.dither}, strength {args.dither_strength:.2f}"
+                         + ("" if prequant else "  (inert - source within colour budget)")))
     if lossless:
         lines.append(f"{'RESULT: LOSSLESS':<23}components packed into "
                      f"{NP} palettes with no colour loss.")
@@ -1015,6 +1047,8 @@ def main():
     stats = {
         "input": args.input,
         "name": base,
+        "source_name": os.path.basename(args.input),
+        "description": description(args.description, args.input),
         "out_dir": args.out,
         "width": W, "height": H, "pixels": total_px,
         "source_width": orig_w, "source_height": orig_h,
@@ -1034,6 +1068,8 @@ def main():
         "lossless": bool(lossless),
         "strategy": strategy,
         "color_bias": eff_bias, "coherence": float(args.coherence),
+        "dither": args.dither, "dither_strength": float(args.dither_strength),
+        "dither_applied": bool(prequant and args.dither != "none"),
         "recoloured_pixels": int(sub_pixels),
         "recoloured_pct": (100.0 * sub_pixels / total_px) if total_px else 0.0,
         "mean_oklab_error": (sub_err_sum / sub_pixels) if sub_pixels else 0.0,

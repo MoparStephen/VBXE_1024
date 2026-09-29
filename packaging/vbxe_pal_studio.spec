@@ -46,6 +46,7 @@ gui_a = Analysis(
     datas=list(_scipy_datas),
     hiddenimports=[
         'palettize4',                       # runner.palettize4() imports it when frozen
+        'atari_name',                       # imported by palettize4 + palgui.imageslst
         'PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtWidgets',
         'PIL.Image', 'PIL.ImageDraw',
         'scipy.ndimage', 'scipy.spatial', 'scipy.spatial.distance',

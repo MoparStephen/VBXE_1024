@@ -31,7 +31,7 @@ else:
                               'presets')
 
 #: The fields a preset does not carry.  See the docstring.
-NOT_A_RECIPE = ('input', 'out', 'name')
+NOT_A_RECIPE = ('input', 'out', 'name', 'description')
 
 
 #: The display name is stored INSIDE the file, under this key, because the file

@@ -619,7 +619,7 @@ Selector_Draw
 	TXT_AT 21, 23, UI_Str_DelayHint
 	TXT_AT 22, 2, UI_Str_Legend
 	jsr Selector_DrawDelay				; the delay value at col 19
-	jmp Selector_DrawStatus				; row 20: the highlighted image's source name
+	jmp Selector_DrawStatus				; row 20: the highlighted image's description
 
 ;-----------------------------------------------------------------------------
 Selector_DrawList
@@ -791,12 +791,11 @@ Selector_DrawDelay_Pad2
 	rts
 
 ;=============================================================================
-; Selector status line (row 20) - the highlighted image's original long source
-; filename.  It is not on the Atari disk (8.3 short names only); it lives in the
-; image's .NFO as record 1, the "Input                : <name>" line.  Reading a
-; whole .NFO per row stuttered a fresh directory, so instead the converter
-; writes all the names once into "IMAGES.LST" (8-byte key + name per record)
-; beside the images.  Nfo_Name_LoadManifest slurps that in one pass on every
+; Selector status line (row 20) - the highlighted image's description (typed
+; in the converter, default = source filename without extension; up to
+; NFO_NAME_CAP = 75 chars).  Reading a file per row stuttered a fresh
+; directory, so instead the converter writes all the descriptions once into
+; "IMAGES.LST" (8-byte key + description per record) beside the images.  Nfo_Name_LoadManifest slurps that in one pass on every
 ; Rescan_Images into NFO_NAME_VRAM (NFO_NAME_SLOT bytes/ordinal); the draw path
 ; is then a pure VRAM read.  No IMAGES.LST -> every slot stays $00 -> the line
 ; is simply blank.
@@ -844,7 +843,7 @@ Selector_DrawStatus
 	sbc FileStart						; ordinal into the *.V1K group
 	sta Nfo_Name_Ord
 	jsr Nfo_Name_MapSlot				; Ptr_Lo/Hi -> slot, bank $2A..$2D mapped
-	jsr Nfo_Name_Emit					; Path_Buf = name padded to NFO_NAME_CAP + NUL
+	jsr Nfo_Name_Emit					; Nfo_Name_Line = name padded to NFO_NAME_CAP + NUL
 	lda #20
 	sta Txt_Row
 	lda #$00
@@ -856,11 +855,11 @@ Selector_DrawStatus
 	jsr Text_PutStrAt					; "Src: " at col 0
 	lda #$05
 	sta Txt_Col
-	lda #<Path_Buf
+	lda #<Nfo_Name_Line
 	sta Txt_Ptr
-	lda #>Path_Buf
+	lda #>Nfo_Name_Line
 	sta Txt_Ptr + $01
-	jmp Text_PutStrAt					; the padded name from col 5 (tail)
+	jmp Text_PutStrAt					; the padded name from col 5 to 79 (tail)
 Selector_DrawStatus_Blank
 	lda #20
 	sta Txt_Row
@@ -870,27 +869,23 @@ Selector_DrawStatus_Blank
 	sta Txt_Ptr
 	lda #>UI_Str_StatusBlank
 	sta Txt_Ptr + $01
-	jmp Text_PutStrAt					; 53 spaces (tail)
+	jmp Text_PutStrAt					; 80 spaces (tail)
 
 ;-----------------------------------------------------------------------------
 ; Nfo_Name_MapSlot - Nfo_Name_Ord -> Ptr_Lo/Hi = the slot's $2000-window
-; address, its VBXE bank ($2A..$2D) mapped in.  slot byte offset = Ord * 64:
-; bank = $2A + (Ord >> 6), window page = $20 + ((Ord >> 2) & 15),
-; window low = (Ord & 3) << 6.  (64 divides 4K, so a slot never straddles.)
+; address, its VBXE bank ($37..$3E) mapped in.  slot byte offset = Ord * 128:
+; bank = $37 + (Ord >> 5), window page = $20 + ((Ord >> 1) & 15),
+; window low = (Ord & 1) << 7.  (128 divides 4K, so a slot never straddles.)
 ;-----------------------------------------------------------------------------
 Nfo_Name_MapSlot
 	lda Nfo_Name_Ord
-	asl
-	asl
-	asl
-	asl
-	asl
-	asl									; A = (Ord & 3) << 6
+	lsr									; C = Ord & 1
+	lda #$00
+	ror									; A = (Ord & 1) << 7
 	sta Ptr_Lo
 	lda Nfo_Name_Ord
 	lsr
-	lsr
-	and #$0F							; (Ord >> 2) & 15
+	and #$0F							; (Ord >> 1) & 15
 	clc
 	adc #>VBXE_WINDOW					; -> $20..$2F
 	sta Ptr_Hi
@@ -899,8 +894,7 @@ Nfo_Name_MapSlot
 	lsr
 	lsr
 	lsr
-	lsr
-	lsr									; Ord >> 6  (0..3)
+	lsr									; Ord >> 5  (0..7)
 	clc
 	adc #NFO_NAME_BANK
 	ora #MEMAC_GLOBAL_ENABLE
@@ -909,9 +903,9 @@ Nfo_Name_MapSlot
 
 ;-----------------------------------------------------------------------------
 ; Nfo_Name_Emit - the slot Nfo_Name_MapSlot just mapped (at Ptr_Lo/Hi) in.
-; Leaves Path_Buf[0..NFO_NAME_CAP-1] = the name (or all spaces if the slot
-; byte 0 is < $21, i.e. "no name") + Path_Buf[NFO_NAME_CAP] = $00.  Window
-; unmapped on return.
+; Leaves Nfo_Name_Line[0..NFO_NAME_CAP-1] = the name (or all spaces if the
+; slot byte 0 is < $21, i.e. "no name") + Nfo_Name_Line[NFO_NAME_CAP] = $00.
+; Window unmapped on return.
 ;-----------------------------------------------------------------------------
 Nfo_Name_Emit
 	ldy #$00
@@ -921,7 +915,7 @@ Nfo_Name_Emit
 Nfo_Name_Emit_Copy
 	lda (Ptr_Lo),y
 	beq Nfo_Name_Emit_Pad
-	sta Path_Buf,y
+	sta Nfo_Name_Line,y
 	iny
 	cpy #NFO_NAME_CAP
 	bcc Nfo_Name_Emit_Copy
@@ -931,19 +925,19 @@ Nfo_Name_Emit_Pad
 Nfo_Name_Emit_PadL
 	cpy #NFO_NAME_CAP
 	bcs Nfo_Name_Emit_Term
-	sta Path_Buf,y
+	sta Nfo_Name_Line,y
 	iny
 	bne Nfo_Name_Emit_PadL				; always (Y < NFO_NAME_CAP)
 Nfo_Name_Emit_Term
 	lda #$00
-	sta Path_Buf + NFO_NAME_CAP
+	sta Nfo_Name_Line + NFO_NAME_CAP
 	lda #MEMAC_GLOBAL_DISABLE
 	vbsta VBXE_MA_BSEL
 	rts
 
 ;-----------------------------------------------------------------------------
 ; Nfo_Name_LoadManifest - open "D[n]:PATH IMAGES.LST", and for every record
-; (8-byte key + source name + $9B) store the name into the matching *.V1K
+; (8-byte key + description + $9B) store it into the matching *.V1K
 ; row's slot.  Called from Rescan_Images right after Nfo_Name_ClearCache.
 ; A missing / unreadable file just leaves every slot $00 (blank status line).
 ;-----------------------------------------------------------------------------
@@ -974,12 +968,15 @@ Nfo_Name_LoadManifest_Line
 	sta ICBAL,x
 	lda #>Nfo_Name_Line
 	sta ICBAH,x
-	lda #58								; buffer length (8 key + 48 name + $9B, rounded)
+	lda #8+NFO_NAME_CAP+1				; buffer length (8 key + 75 desc + $9B = 84)
 	sta ICBLL,x
 	lda #$00
 	sta ICBLH,x
 	jsr CIOV
-	bmi Nfo_Name_LoadManifest_Close		; EOF / error / record over 58 bytes
+	bpl Nfo_Name_LoadManifest_Got
+	cpy #$89							; 137 = record over 84 bytes: CIO kept the first 84
+	bne Nfo_Name_LoadManifest_Close		; EOF / real error -> stop
+Nfo_Name_LoadManifest_Got				; (a long record is cut to NFO_NAME_CAP below, not dropped)
 
 	jsr Nfo_Name_Match					; key = Nfo_Name_Line[0..7]  -> A = ordinal
 	bcs Nfo_Name_LoadManifest_Line		; no matching *.V1K row - drop the line
@@ -1433,7 +1430,7 @@ Sel_Nav_Apply_Rows
 	lda Sel_Index
 	jsr Selector_HiRow					; highlight the cell we moved to
 Sel_Key_Nav_Done
-	jsr Selector_DrawStatus				; row 20: source name of the new row
+	jsr Selector_DrawStatus				; row 20: description of the new row
 	jmp Read_Key_Done
 
 ;-----------------------------------------------------------------------------
@@ -2331,7 +2328,7 @@ UI_Str_DriveTitle	dta c'Scan drive',0
 UI_Str_QuitConfirm	dta c'Are you sure to Quit',0
 UI_Str_QuitHint		dta c'(Y/N)',0
 UI_Str_Src			dta c'Src: ',0
-UI_Str_StatusBlank	dta c'                                                     ',0	; 53 spaces (Src: + NFO_NAME_CAP)
+UI_Str_StatusBlank	dta c'                                                                                ',0	; 80 spaces (Src: + NFO_NAME_CAP)
 
 ;-----------------------------------------------------------------------------
 ; Sel_ColX - screen column for grid column c (0..UI_COLS-1), 10-char cells.

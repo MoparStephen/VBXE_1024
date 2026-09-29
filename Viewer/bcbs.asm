@@ -226,19 +226,19 @@ BLT_MENU_DEMO_SQUARE
 	dta $00								; Pattern feature
 	dta $00								; Control (Mode 0 with NEXT bit Cleared)
 
-; Wipe the selector long-name cache ($02A000-$02DFFF = NFO_NAME_VRAM, banks
-; $2A-$2D) to $00, marking every image slot "not loaded".  Constant-source fast
-; fill (And 0 -> source is the $00 Xor mask, no fetch).  256 bytes/row * 64 rows
-; = 16384 = 4 banks.  Kicked by Nfo_Name_ClearCache from Rescan_Images.
+; Wipe the selector description cache ($037000-$03EFFF = NFO_NAME_VRAM, banks
+; $37-$3E) to $00, marking every image slot "not loaded".  Constant-source fast
+; fill (And 0 -> source is the $00 Xor mask, no fetch).  256 bytes/row * 128
+; rows = 32768 = 8 banks.  Kicked by Nfo_Name_ClearCache from Rescan_Images.
 BLT_NFO_NAME_CLEAR
 	dta $00,$00,$00						; Source address (unused - constant source)
 	dta $00,$00							; Source step y (unused)
 	dta $00								; Source step x (unused)
-	dta $00,$A0,$02						; Destination address ($02A000 = NFO_NAME_VRAM)
+	dta <NFO_NAME_VRAM,>NFO_NAME_VRAM,NFO_NAME_VRAM>>16	; Destination address ($037000)
 	dta a($0100)						; Destination step y (256 - next row)
 	dta $01								; Destination step x (1)
 	dta $FF,$00							; Width-1  (255 -> 256 bytes per row)
-	dta $3F								; Height-1 (63 -> 64 rows; 64*256 = 16384 = 4 banks)
+	dta $7F								; Height-1 (127 -> 128 rows; 128*256 = 32768 = 8 banks)
 	dta $00								; And mask (0 -> constant source)
 	dta $00								; Xor mask (fill value: $00)
 	dta $00								; Collision and mask

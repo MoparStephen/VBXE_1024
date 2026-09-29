@@ -1,0 +1,19 @@
+{
+  "_name": "Taylor",
+  "cell": 8,
+  "coherence": 0.0,
+  "color_bias": 0.45,
+  "colors": 0,
+  "display_aspect": "4:3",
+  "dither": "blue",
+  "dither_strength": 0.5,
+  "filter": "lanczos",
+  "fit": "cover",
+  "max_colors": false,
+  "optimize": true,
+  "palettes": 4,
+  "reserve0": true,
+  "resize": "320x240",
+  "seed": 4,
+  "slots": 256
+}

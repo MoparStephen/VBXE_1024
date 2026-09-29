@@ -44,6 +44,7 @@ class ImageView(QWidget):
         self.zoom = FIT
         self.offset = QPoint(0, 0)      # top-left of the image, in image px
         self._drag = None
+        self.grid = 0                   # cell-column spacing in image px; 0 off
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setMinimumSize(160, 120)
         self.setMouseTracking(True)
@@ -70,6 +71,16 @@ class ImageView(QWidget):
         if not self.has_image():
             return (0, 0)
         return (self._pm.width(), self._pm.height())
+
+    def set_grid(self, step):
+        """Draw a column every `step` image pixels, or none for 0.
+
+        COLUMNS ONLY, because a cell is 8 pixels wide and one line tall: the
+        palette can change on any line, so a horizontal rule would mark a
+        boundary that does not exist.
+        """
+        self.grid = max(0, int(step or 0))
+        self.update()
 
     # --- the view ------------------------------------------------------------
     def set_view(self, zoom, offset):
@@ -188,6 +199,15 @@ class ImageView(QWidget):
         p.drawPixmap(dest, self._pm)
         p.setPen(theme.pen(theme.FRAME))
         p.drawRect(dest.adjusted(-1, -1, 0, 0))
+
+        if self.grid > 0:
+            # On the boundary BETWEEN pixel x-1 and x, so at 8x and up the line
+            # sits in the seam and both neighbouring pixels stay visible.
+            p.setClipRect(dest)
+            p.setPen(theme.pen(theme.CELL_LINES))
+            for x in range(self.grid, w, self.grid):
+                sx = o.x() + int(x * k)
+                p.drawLine(sx, dest.top(), sx, dest.bottom())
 
     def _placeholder(self):
         return 'no image'

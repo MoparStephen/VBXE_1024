@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox,
 from ..settings import (CELL_FIXED, DITHER_DIFFUSION, DITHER_ORDERED,
                         FILTERS, FITS, PALETTES_FIXED, RESIZE_FIXED,
                         SLOTS_FIXED, Settings)
+from ..imageslst import NAME_CAP as DESC_CAP
 from . import theme
 
 #: The four fixed flags, said once where their controls used to be.
@@ -191,6 +192,17 @@ class OptionsPanel(QWidget):
             'Only used by cover and fit.')
         self.display_aspect.editingFinished.connect(self._touch)
         f.addRow('display aspect', self.display_aspect)
+
+        self.description = QLineEdit()
+        self.description.setMaxLength(DESC_CAP)
+        self.description.setToolTip(
+            'What the Atari viewer\'s selector status line shows for this '
+            'image ("Src: <description>"), up to %d characters.\n\n'
+            'Left blank, it is the source filename without its extension.\n\n'
+            'Saved in the image\'s _stats.json; Build IMAGES.LST and Gather '
+            'read it from there.' % DESC_CAP)
+        self.description.editingFinished.connect(self._touch)
+        f.addRow('description', self.description)
         return g
 
     # --- the packing model ------------------------------------------------------
@@ -497,9 +509,19 @@ class OptionsPanel(QWidget):
             self._touch()
 
     def _input_edited(self):
+        # A new image's description starts blank - one image's text must not
+        # quietly ride along onto the next.  The placeholder shows the default.
+        if not self._loading:
+            self.description.clear()
+        self._sync_description_hint()
         self._touch()
         if not self._loading:
             self.input_changed.emit(self.input.text())
+
+    def _sync_description_hint(self):
+        """Placeholder = what palettize4 will use if the field stays blank."""
+        stem = os.path.splitext(os.path.basename(self.input.text().strip()))[0]
+        self.description.setPlaceholderText(stem.rstrip('.')[:DESC_CAP])
 
     # --- reading and writing the Settings ------------------------------------------
     def to_settings(self):
@@ -519,6 +541,7 @@ class OptionsPanel(QWidget):
         s.filter = self.filter.currentText()
         s.fit = self.fit.currentText()
         s.display_aspect = self.display_aspect.text().strip() or '4:3'
+        s.description = self.description.text().strip()
         s.color_bias = self.color_bias.value()
         s.max_colors = self.max_colors.isChecked()
         s.optimize = self.optimize.isChecked()
@@ -550,6 +573,8 @@ class OptionsPanel(QWidget):
             self.filter.setCurrentText(s.filter)
             self.fit.setCurrentText(s.fit)
             self.display_aspect.setText(s.display_aspect)
+            self.description.setText(s.description)
+            self._sync_description_hint()
             self.color_bias.setValue(float(s.color_bias))
             self.max_colors.setChecked(bool(s.max_colors))
             self.optimize.setChecked(bool(s.optimize))

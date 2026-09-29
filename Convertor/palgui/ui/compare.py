@@ -28,7 +28,7 @@ could drift the flip would be worthless - it would be showing you a pan, not a
 difference.
 """
 
-from PySide6.QtCore import QPoint, Qt, Signal
+from PySide6.QtCore import QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import QLabel, QSplitter, QVBoxLayout, QWidget
 
@@ -40,6 +40,9 @@ FLIP = 'flip'
 
 #: The split when both are shown.  Even, because neither is the subject.
 EVEN = [500, 500]
+
+#: Auto-flip period until the toolbar says otherwise, in ms.
+FLIP_MS = 500
 
 
 class _Badge(ImageView):
@@ -96,6 +99,15 @@ class ComparePane(QWidget):
         self._syncing = False
         self._held = False              # SPACE is down
         self._showing_source = False    # which side the flip is on
+        #: Attribute-cell width in image pixels, for the O-key column overlay.
+        #: Set from the settings the result was made with, not the panel.
+        self.cell = 8
+
+        # T: flip on a timer, for a comparison that runs while your hands
+        # are off the keyboard.
+        self._auto = QTimer(self)
+        self._auto.setInterval(FLIP_MS)
+        self._auto.timeout.connect(self.flip)
 
         for a, b in ((self.source, self.result), (self.result, self.source)):
             a.view_changed.connect(
@@ -138,11 +150,25 @@ class ComparePane(QWidget):
 
     def clear_result(self):
         self.result.set_image(None)
+        self.stop_auto()
         self._apply()
+
+    def set_cell(self, cell):
+        self.cell = max(1, int(cell or 8))
+        # Held while a new result lands: follow its cell width.
+        for v in (self.source, self.result):
+            if v.grid:
+                v.set_grid(self.cell)
+
+    def set_grid(self, on):
+        for v in (self.source, self.result):
+            v.set_grid(self.cell if on else 0)
 
     # --- mode ------------------------------------------------------------------
     def set_mode(self, mode):
         self.mode = mode
+        if mode != FLIP:
+            self.stop_auto()
         self._apply()
 
     def _apply(self):
@@ -171,6 +197,35 @@ class ComparePane(QWidget):
             return
         self._showing_source = not self._showing_source
         self._apply()
+
+    # --- timed flip ------------------------------------------------------------
+    def set_flip_interval(self, ms):
+        self._auto.setInterval(max(50, int(ms)))
+        self._hint()
+
+    def flip_interval(self):
+        return self._auto.interval()
+
+    def auto_running(self):
+        return self._auto.isActive()
+
+    def toggle_auto(self):
+        """Start or stop the timed flip.  Returns whether it is now running.
+
+        Only in flip mode with a result: side by side has nothing to swap, and
+        with no result a flip has nothing to swap TO.
+        """
+        if self._auto.isActive():
+            self.stop_auto()
+        elif self.mode == FLIP and self.result.has_image():
+            self._auto.start()
+            self._hint()
+        return self._auto.isActive()
+
+    def stop_auto(self):
+        if self._auto.isActive():
+            self._auto.stop()
+            self._hint()
 
     def show_side(self, source):
         if self.mode != FLIP:
@@ -221,31 +276,54 @@ class ComparePane(QWidget):
             if self.result.has_image():
                 side = ('source' if self.showing() is self.source
                         else 'converted')
-                what = 'showing %s - hold SPACE or press A / B to flip' % side
+                if self._auto.isActive():
+                    what = ('showing %s - auto-flipping every %gs, T to stop'
+                            % (side, self._auto.interval() / 1000.0))
+                else:
+                    what = ('showing %s - hold SPACE or press A / B to flip, '
+                            'T to auto-flip' % side)
             else:
                 what = ('showing source - press Preview to have something to '
                         'flip to')
         else:
             what = 'source left, converted right - both zoom and pan together'
         self.hint.setText('%s   |   %s   |   zoom %s   |   drag to pan, '
-                          'wheel to zoom' % (what, size, zoom))
+                          'wheel to zoom, O for cell columns'
+                          % (what, size, zoom))
 
     # --- keys --------------------------------------------------------------------
     def keyPressEvent(self, ev):
         # HELD, NOT TOGGLED, for space: the comparison is a flicker, and letting
         # go should put you back where you were rather than leaving you unsure
         # which one is up.  A and B are the sticky form for a longer look.
+        # A manual pick always beats the timer: stop it, or the next tick
+        # would take the side you just chose straight away again.
         if ev.key() == Qt.Key_Space and not ev.isAutoRepeat():
+            self.stop_auto()
             self._held = True
             self.show_side(True)
             ev.accept()
             return
         if ev.key() == Qt.Key_A:
+            self.stop_auto()
             self.show_side(True)
             ev.accept()
             return
         if ev.key() == Qt.Key_B:
+            self.stop_auto()
             self.show_side(False)
+            ev.accept()
+            return
+        if ev.key() == Qt.Key_T:
+            if not ev.isAutoRepeat():
+                self.toggle_auto()
+            ev.accept()
+            return
+        # TOGGLED, unlike SPACE: hunting seams takes both hands on the zoom
+        # and pan, so the grid stays up until O is pressed again.
+        if ev.key() == Qt.Key_O:
+            if not ev.isAutoRepeat():
+                self.set_grid(not self.result.grid)
             ev.accept()
             return
         QWidget.keyPressEvent(self, ev)

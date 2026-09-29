@@ -88,6 +88,7 @@ class Settings(object):
         ('filter', 'lanczos'),
         ('fit', 'stretch'),
         ('display_aspect', '4:3'),
+        ('description', ''),        # '' -> palettize4 uses the input stem
         ('color_bias', 0.0),
         ('max_colors', False),
         ('optimize', True),
@@ -134,6 +135,7 @@ class Settings(object):
         '--filter': ('filter', str),
         '--fit': ('fit', str),
         '--display-aspect': ('display_aspect', str),
+        '--description': ('description', str),
         '--color-bias': ('color_bias', float),
         '--coherence': ('coherence', float),
         '--dither': ('dither', str),
@@ -190,6 +192,10 @@ class Settings(object):
                 # --display-aspect is in turn only read by cover/fit.
                 if self.display_aspect != '4:3':
                     argv += ['--display-aspect', self.display_aspect]
+
+        # --- what the viewer's selector shows for it --------------------------
+        if self.description.strip():
+            argv += ['--description', self.description.strip()]
 
         # --- strategy ---------------------------------------------------------
         # --max-colors and --color-bias 1.0 are the same run; sending both would

@@ -25,6 +25,10 @@ GRID = QColor('#20252d')
 CANVAS = QColor('#101215')
 #: The one-pixel edge around a picture, so a black border is not invisible.
 FRAME = QColor('#3a424e')
+#: The cell-boundary columns O toggles on.  Magenta and half see-through: it
+#: has to read against any picture without hiding the very boundary pixels it
+#: is there to point at.
+CELL_LINES = QColor(255, 0, 255, 150)
 
 # --- text -------------------------------------------------------------------
 TEXT = QColor('#cfd8dc')

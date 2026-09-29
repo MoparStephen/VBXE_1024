@@ -106,17 +106,31 @@ class ReviewPane(QWidget):
         return b
 
     # --- contents ------------------------------------------------------------
-    def load(self, directory):
+    def load(self, directory, select=None):
         """Read a folder.  Returns how many pairs were found.
 
         SELECTS THE FIRST ROW, which emits `selected` and therefore puts a
         picture on screen.  Loading a folder and being shown an empty pane
         until you happen to click something is a feature that looks broken.
+
+        UNLESS `select` NAMES A PNG: then that row is selected QUIETLY.  That
+        is the snapshot a Preview just wrote, whose picture and settings are
+        already on screen - emitting would reload them from disk on top of
+        themselves, and trip the panel's stale check on the way.
         """
         self.shots = review.shots(directory)
         self._dir = directory
         self.refresh()
-        if self.shots:
+        if select is not None:
+            want = os.path.normcase(os.path.abspath(select))
+            for r, shot in enumerate(self.shots):
+                if os.path.normcase(os.path.abspath(shot.png)) == want:
+                    self.table.blockSignals(True)
+                    self.table.selectRow(r)
+                    self.table.blockSignals(False)
+                    self.table.scrollToItem(self.table.item(r, 0))
+                    break
+        elif self.shots:
             self.table.selectRow(0)
         return len(self.shots)
 

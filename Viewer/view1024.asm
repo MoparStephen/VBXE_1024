@@ -43,16 +43,17 @@
 ;                      verbatim - up to NFO_MAX_LINES fixed 160-byte {glyph,attr}
 ;                      line records, TEXT_PITCH stride; blitted to the text
 ;                      screen a window at a time by BLT_NFO_DRAW)
-;    NFO name cache  = $2A000 - $2DFFF (banks $2A-$2D: the selector status line's
-;                      long source filenames, NFO_NAME_SLOT bytes/image, loaded
-;                      once from D:IMAGES.LST per dir rescan, wiped before each)
+;    (banks $2A-$2D are free - the NFO name cache moved to $37000 when it grew)
 ;    Menu demo ramp  = $2E000 - $2E0FF (MENU_RAMP_VRAM: 256-byte ascending
 ;                      0..255 pixel-source square for the banner's 4-palette
 ;                      demo overlay, built at boot by Build_Menu_Ramp_Table;
 ;                      rest of bank $2E free)
 ;    Text win save   = $2F000 - $2FFFF (WIN_SAVE_VRAM: save-under for the D
 ;                      window and the Q quit-confirm window)
-;    (banks $37-$3F are free)
+;    NFO name cache  = $37000 - $3EFFF (banks $37-$3E: the selector status line's
+;                      image descriptions, NFO_NAME_SLOT bytes/image, loaded
+;                      once from D:IMAGES.LST per dir rescan, wiped before each)
+;    (bank $3F is free)
 ;    Image name list = $40000 - $40FFF (bank $40: up to MAX_IMAGES=255 rows -
 ;                      "..", sub-dirs and *.V1K files, 8 bytes each; + a 10-char
 ;                      display field is formatted in place at draw time)
@@ -131,11 +132,16 @@
 .var Scan_Path			:$28 .byte = $628	; subdirectory part, ">DIR>DIR>" or empty ($628-$64F)
 .var Scan_Spec			:$30 .byte = $650	; assembled "D[n]:PATH*.V1K",$9B ($650-$67F)
 .var Txt_Line			:$30 .byte = $680	; scratch line assembled for Text_PutStrAt ($680-$6AF)
-; One IMAGES.LST record (8-byte key + <=NFO_NAME_CAP name + $9B) for
-; Nfo_Name_LoadManifest.  Own buffer, not Dir_Line_Buf, because a record can
-; run to 8+48+1 = 57 bytes - past that 40-byte line's end.
-.var Nfo_Name_Line		:58 .byte = $6B7	; 8 key + 48 name + $9B, rounded ($6B7-$6F0)
-;	$6F1 to $6FF free (text80.asm uses $6B0-$6B6)
+; One IMAGES.LST record (8-byte key + <=NFO_NAME_CAP description + $9B) for
+; Nfo_Name_LoadManifest, and the padded status-line text Nfo_Name_Emit builds
+; for Selector_DrawStatus.  8+75+1 = 84 bytes fits no free gap, so it OVERLAYS
+; Scan_Spec + Txt_Line ($650-$6A3).  Safe because neither is live across
+; either use: Scan_Spec is only read by the CIO OPEN before the record loop
+; (and rebuilt before every scan), Txt_Line is per-draw scratch that
+; Text_PutStrAt does not touch, and Nfo_WalkBank ($650) is only live inside
+; Info_Count_Lines (UI_Mode 4, no status line).
+.var Nfo_Name_Line		:84 .byte = $650	; 8 key + 75 desc + $9B ($650-$6A3)
+;	$6B7 to $6FF free (text80.asm uses $6B0-$6B6)
 ; Info viewer (.nfo): Info_Count_Lines maps NFO buffer banks through the $2000
 ; window and needs one byte to track which.  Overlays Scan_Spec ($650-$67F),
 ; idle whenever UI_Mode = 4 - the next disk scan rebuilds it on the way out.
@@ -277,16 +283,18 @@
 .def	NFO_BUF_VRAM					= $25000	; banks $25-$29 (5 * 4K = 20480 = 128 * 160)
 .def	NFO_BUF_BANK					= NFO_BUF_VRAM / $1000	; = $25  (LoadData target)
 
-; Selector status-line long-name cache.  One NFO_NAME_SLOT-byte slot per image
-; ordinal, filled by Nfo_Name_LoadManifest from D:IMAGES.LST on every
-; Rescan_Images (the converter writes that file - 8-byte key + source name per
-; record).  Slot byte 0: $00 = no name, >=$20 = a NUL-terminated name.  64
-; divides 4K so no slot straddles a bank; 255*64 = $3FC0 -> banks $2A-$2D.
+; Selector status-line description cache.  One NFO_NAME_SLOT-byte slot per
+; image ordinal, filled by Nfo_Name_LoadManifest from D:IMAGES.LST on every
+; Rescan_Images (the converter writes that file - 8-byte key + description per
+; record).  Slot byte 0: $00 = no name, >=$20 = a NUL-terminated name.  128
+; divides 4K so no slot straddles a bank; 255*128 = $7F80 -> banks $37-$3E.
 ; Nfo_Name_ClearCache (blitter) wipes it just before each refill.
-.def	NFO_NAME_VRAM					= $2A000
-.def	NFO_NAME_BANK					= NFO_NAME_VRAM / $1000	; = $2A
-.def	NFO_NAME_SLOT					= 64		; bytes per image slot
-.def	NFO_NAME_CAP						= 48		; chars shown on the status line
+.def	NFO_NAME_VRAM					= $37000
+.def	NFO_NAME_BANK					= NFO_NAME_VRAM / $1000	; = $37
+.def	NFO_NAME_SLOT					= 128		; bytes per image slot
+.def	NFO_NAME_CAP						= 75		; chars shown on the status line
+														; ("Src: " + 75 = 80 cols; = the
+														; converter's DESC_CAP)
 
 ; Save-under text window (Text_Window_Save/Restore/Frame in text80.asm).  The
 ; covered {glyph,attr} rectangle is blit-copied here at screen pitch (160) and
@@ -324,7 +332,7 @@
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $11	; 1 (Screen code used for Version in loading screen)
-.def	V_2								= $16	; 6 (Screen code used for Version in loading screen)
+.def	V_2								= $17	; 7 (Screen code used for Version in loading screen)
 .def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------

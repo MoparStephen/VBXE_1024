@@ -24,7 +24,9 @@ import sys
 import tempfile
 import unittest
 
-from palgui import imageslst, jobs, presets, review, runner, snapshot, summary
+from palgui import (gather, imageslst, jobs, presets, review, runner,
+                    snapshot, summary)
+from palgui.imageslst import atari_name
 from palgui.settings import (DITHERS, FILTERS, FITS, RESIZE_FIXED,
                             Settings, split_command_line)
 
@@ -327,6 +329,19 @@ class TestPresets(unittest.TestCase):
         self.assertEqual(got.out, 'mine')
         self.assertEqual(got.name, 'img9')
         self.assertEqual(got.dither, 'blue')
+
+    def test_description_is_not_a_recipe(self):
+        """A description belongs to one image, never to a preset."""
+        presets.save('p', Settings(description='A cat'))
+        got = presets.load('p', onto=Settings(description='A dog'))
+        self.assertEqual(got.description, 'A dog')
+
+    def test_description_round_trips_through_argv(self):
+        s = Settings(input='a.png', description='Sunset, "Malibu" 2024')
+        argv = s.to_argv()
+        self.assertIn('--description', argv)
+        self.assertEqual(Settings.from_argv(argv).description, s.description)
+        self.assertNotIn('--description', Settings(input='a.png').to_argv())
 
     def test_builtins_only_land_in_an_empty_directory(self):
         presets.ensure_builtins()
@@ -1221,6 +1236,29 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(len(v1k), 3072 + 9600 + 76800)
         self.assertEqual(v1k, parts)
 
+    def test_outputs_get_the_atari_name_and_report_settings(self):
+        """A long/illegal --name is reduced to the 8-char Atari base, and the
+        report says which dither and coherence the run used."""
+        s = Settings(input=self.sample, resize='160x120', color_bias=0.5,
+                     coherence=2.0, dither='floyd', dither_strength=0.5)
+        stats = runner.run_blocking(s, out=self.out, name='2024 long name')
+        self.assertEqual(stats['name'], 'I2024LON')
+        self.assertEqual(stats['files']['nfo'], 'I2024LON.nfo')
+        self.assertEqual(stats['dither'], 'floyd')
+        self.assertEqual(stats['dither_strength'], 0.5)
+        paths = runner.output_paths(stats, self.out)
+        for key in ('raw', 'map', 'nfo', 'report'):
+            self.assertTrue(os.path.isfile(paths[key]), key)
+        with open(paths['report']) as f:
+            lines = f.read().splitlines()
+        labels = [ln[:21].strip() for ln in lines]
+        i = labels.index('Strategy')
+        self.assertEqual(labels[i + 1], 'Coherence')
+        self.assertIn('2.00  (attribute-map smoothing)', lines[i + 1])
+        self.assertEqual(labels[i + 2], 'Dithering')
+        self.assertIn('floyd, strength 0.50', lines[i + 2])
+        self.assertTrue(all(len(ln) <= 80 for ln in lines))
+
     def test_preview_and_convert_agree(self):
         """The claim the whole app rests on: a preview is the real conversion.
 
@@ -1288,8 +1326,8 @@ class TestImagesLst(unittest.TestCase):
         self.assertEqual([k for k, _ in rows],
                          ['IMG0    ', 'IMG1    ', 'IMG2    ', 'IMG3    '])
         self.assertEqual([n for _, n in rows],
-                         ['photo_of_a_cat.jpg', 'sunset_beach.png',
-                          'IMG2', 'dragon_lores.bmp'])
+                         ['photo_of_a_cat', 'sunset_beach',
+                          'IMG2', 'dragon_lores'])
 
     def test_build_is_9b_terminated_keyed_records(self):
         self._touch('IMG0.map')
@@ -1297,12 +1335,33 @@ class TestImagesLst(unittest.TestCase):
         data = imageslst.build(self.dir)
         self.assertEqual(data.count(imageslst.EOL), 1)
         self.assertEqual(data[:imageslst.KEY_LEN], b'IMG0    ')
-        self.assertIn(b'photo_of_a_cat.jpg', data)
+        self.assertIn(b'photo_of_a_cat', data)
         self.assertEqual(data[-1], imageslst.EOL)
 
-    def test_long_name_is_clipped_to_the_cap(self):
+    def test_stats_description_wins_over_the_filename(self):
         self._touch('IMG0.map')
-        self._touch('IMG0.nfo', self._nfo('x' * 90))
+        self._touch('IMG0.nfo', self._nfo('photo_of_a_cat.jpg'))
+        self._touch('IMG0_stats.json',
+                    json.dumps({'description': 'Tabby on a windowsill'})
+                    .encode('utf-8'))
+        (key, name), = imageslst.scan(self.dir)
+        self.assertEqual(name, 'Tabby on a windowsill')
+
+    def test_fallback_drops_extension_and_trailing_period(self):
+        self._touch('IMG0.map')
+        self._touch('IMG0.nfo', self._nfo('my.photo.png'))
+        self._touch('IMG1.map')
+        self._touch('IMG1.nfo', self._nfo('odd name.'))
+        self._touch('IMG2.map')                          # stats, no description
+        self._touch('IMG2_stats.json', b'{"description": ""}')
+        self._touch('IMG2.nfo', self._nfo('beach.jpg'))
+        self.assertEqual([n for _, n in imageslst.scan(self.dir)],
+                         ['my.photo', 'odd name', 'beach'])
+
+    def test_description_is_clipped_to_the_cap(self):
+        self._touch('IMG0.map')
+        self._touch('IMG0_stats.json',
+                    json.dumps({'description': 'x' * 90}).encode('utf-8'))
         (key, name), = imageslst.scan(self.dir)
         self.assertEqual(len(name), imageslst.NAME_CAP)
 
@@ -1335,8 +1394,98 @@ class TestImagesLst(unittest.TestCase):
         self._touch('IMG1.map')
         self._touch('IMG1.v1k')
         rows = imageslst.scan(self.dir)
-        self.assertEqual(rows, [('IMG0    ', 'photo_of_a_cat.jpg'),
+        self.assertEqual(rows, [('IMG0    ', 'photo_of_a_cat'),
                                 ('IMG1    ', 'IMG1')])
+
+
+class TestAtariName(unittest.TestCase):
+    """atari_name - the 8-char base every Atari-bound file gets."""
+
+    def test_short_name(self):
+        cases = {'Charger 01': 'CHARGER0', 'Chrome_cr': 'CHROME_C',
+                 'FJ_Marceline_300': 'FJ_MARCE', '2024 trip': 'I2024TRI',
+                 '!!!': 'IMG', 'a.b-c': 'ABC', '_x': '_X', '': 'IMG'}
+        for src, want in cases.items():
+            got = atari_name.short_name(src)
+            self.assertEqual(got, want, src)
+            self.assertTrue(atari_name.is_short_name(got), got)
+
+    def test_is_short_name(self):
+        self.assertTrue(atari_name.is_short_name('IMG0'))
+        for bad in ('img0', '0IMG', 'TOOLONGNM', 'A-B', ''):
+            self.assertFalse(atari_name.is_short_name(bad), bad)
+
+    def test_unique_name(self):
+        taken = {'CHARGER0'}
+        self.assertEqual(atari_name.unique_name('CHARGER0', taken), 'CHARGE01')
+        taken.add('CHARGE01')
+        self.assertEqual(atari_name.unique_name('CHARGER0', taken), 'CHARGE02')
+        self.assertEqual(atari_name.unique_name('IMG', {'IMG'}), 'IMG01')
+        self.assertEqual(atari_name.unique_name('NEW', taken), 'NEW')
+
+
+class TestGather(unittest.TestCase):
+    """gather.plan / run - the Atari staging folder and its images.lst."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix='palgui-gather-')
+        self.out = os.path.join(self.root, 'stage')
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def _touch(self, rel, data=b''):
+        path = os.path.join(self.root, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'wb') as f:
+            f.write(data)
+        return path
+
+    def _v1k(self, rel, fill=0):
+        return self._touch(rel, bytes([fill]) * gather.V1K_LEN)
+
+    def test_run_renames_dedupes_and_writes_the_manifest(self):
+        self._v1k('a/IMG0.v1k')
+        self._touch('a/IMG0.nfo', TestImagesLst._nfo('photo_of_a_cat.jpg'))
+        self._v1k('b/Charger 01.v1k', 1)                  # legacy long name
+        self._touch('b/Charger 01.nfo', TestImagesLst._nfo('Charger 01.jpg'))
+        self._v1k('c/deep/Charger 02.V1K', 2)             # collides, no .nfo
+        self._touch('c/deep/Charger 02_stats.json',        # not copied, but read
+                    b'{"description": "Red Charger, side view"}')
+        self._touch('d/short.v1k', b'x')                  # wrong size
+        self._v1k('e/img0.v1k')                           # same bytes as IMG0
+
+        items, manifest = gather.run(self.root, self.out)
+        ok = {i.name: i for i in items if not i.problem}
+        self.assertEqual(sorted(ok), ['CHARGE01', 'CHARGER0', 'IMG0'])
+        self.assertFalse(ok['IMG0'].renamed)
+        self.assertTrue(ok['CHARGER0'].renamed)
+        self.assertEqual([i.v1k for i in items if i.problem],
+                         [os.path.join(self.root, 'd', 'short.v1k'),
+                          os.path.join(self.root, 'e', 'img0.v1k')])
+        self.assertEqual(items[-1].problem, 'duplicate of IMG0')
+
+        listing = sorted(os.listdir(self.out))
+        self.assertEqual(listing, ['CHARGE01.v1k', 'CHARGER0.nfo',
+                                   'CHARGER0.v1k', 'IMG0.nfo', 'IMG0.v1k',
+                                   'images.lst'])
+        with open(manifest, 'rb') as f:
+            recs = f.read().split(bytes([imageslst.EOL]))[:-1]
+        self.assertEqual(recs, [b'CHARGE01Red Charger, side view',
+                                b'CHARGER0Charger 01',
+                                b'IMG0    photo_of_a_cat'])
+
+    def test_output_inside_root_is_not_regathered(self):
+        self._v1k('img0.v1k')
+        gather.run(self.root, self.out)
+        items, _ = gather.run(self.root, self.out)
+        self.assertEqual([i.name for i in items], ['IMG0'])
+        self.assertFalse(items[0].renamed)              # case is not a rename
+
+    def test_plan_writes_nothing(self):
+        self._v1k('IMG0.v1k')
+        gather.plan(self.root, self.out)
+        self.assertFalse(os.path.exists(self.out))
 
 
 if __name__ == '__main__':

@@ -24,14 +24,15 @@ import tempfile
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtGui import QAction, QImage, QKeySequence
 from PySide6.QtWidgets import (QApplication, QComboBox, QDialog,
-                               QDialogButtonBox, QDockWidget, QFileDialog,
+                               QDialogButtonBox, QDockWidget,
+                               QDoubleSpinBox, QFileDialog,
                                QInputDialog, QLabel, QMainWindow, QMessageBox,
                                QPlainTextEdit, QScrollArea, QToolBar,
                                QVBoxLayout)
 
-from .. import imageslst, jobs, presets, runner, snapshot, summary
+from .. import gather, imageslst, jobs, presets, runner, snapshot, summary
 from . import theme
-from .compare import FLIP, SIDE_BY_SIDE, ComparePane
+from .compare import FLIP, FLIP_MS, SIDE_BY_SIDE, ComparePane
 from .imageview import FIT
 from .joblist import JobList
 from .options import OptionsPanel
@@ -218,7 +219,10 @@ class MainWindow(QMainWindow):
         self._act(m, 'Open output folder', '', self._open_output)
         self._act(m, 'Build images.lst...', '', self._build_images_lst,
                   'Scan a folder of converted images and write the images.lst '
-                  'manifest the Atari viewer reads for long filenames')
+                  'manifest the Atari viewer reads for image descriptions')
+        self._act(m, 'Gather images for Atari...', '', self._gather_images,
+                  'Copy every .v1k/.nfo under a folder into one staging folder '
+                  'with 8-char names, and write its images.lst')
         m.addSeparator()
         self._act(m, 'Quit', QKeySequence.Quit, self.close)
 
@@ -252,6 +256,11 @@ class MainWindow(QMainWindow):
 
         m = self.menuBar().addMenu('&View')
         self._act(m, 'Flip source / converted', 'Tab', self.compare.flip)
+        # NO SHORTCUT HERE: T is the key, but only on the compare pane.  A
+        # window-wide plain letter would fire while typing in an option field.
+        self._act(m, 'Auto-flip on / off  (T)', '', self.compare.toggle_auto,
+                  'Alternate source and converted on a timer - the interval '
+                  'is the "flip every" box on the toolbar')
         m.addSeparator()
         self._act(m, 'Fit', 'Ctrl+0', self.compare.fit)
         self._act(m, 'Zoom in', QKeySequence.ZoomIn,
@@ -311,6 +320,20 @@ class MainWindow(QMainWindow):
             lambda _i: self.compare.set_mode(self.mode.currentData()))
         tb.addWidget(self.mode)
 
+        tb.addWidget(QLabel(' flip every '))
+        self.flip_every = QDoubleSpinBox()
+        self.flip_every.setRange(0.1, 5.0)
+        self.flip_every.setSingleStep(0.1)
+        self.flip_every.setDecimals(1)
+        self.flip_every.setSuffix(' s')
+        self.flip_every.setValue(FLIP_MS / 1000.0)
+        self.flip_every.setToolTip(
+            'How often T swaps source and converted.  Press T on the image to '
+            'start and again to stop; A, B or SPACE also stop it.')
+        self.flip_every.valueChanged.connect(
+            lambda v: self.compare.set_flip_interval(int(round(v * 1000))))
+        tb.addWidget(self.flip_every)
+
         self.zoom = QComboBox()
         self.zoom.addItem('fit', FIT)
         for z in (1, 2, 3, 4, 6, 8, 12, 16):
@@ -350,6 +373,12 @@ class MainWindow(QMainWindow):
         1600x1200 file beside a 320x240 result and the flip - the entire point
         of the pane - compares a resample instead of a dither.
         """
+        if not keep_result:
+            # A NEW IMAGE, so the Previews list belongs to the old one.  Before
+            # the load, so a file that fails to open still drops it.  The
+            # keep_result callers are the Previews and Queue rows themselves,
+            # which must not empty the list they are being picked from.
+            self.review.clear()
         if not path:
             self.compare.set_source(None)
             return
@@ -442,6 +471,7 @@ class MainWindow(QMainWindow):
 
         paths = runner.output_paths(stats, out)
         preview = paths.get('preview')
+        self.compare.set_cell(settings.cell)
         if preview and os.path.isfile(preview):
             img = QImage(preview)
             self.compare.set_result(img if not img.isNull() else None)
@@ -504,10 +534,14 @@ class MainWindow(QMainWindow):
         except (OSError, KeyError, ValueError) as exc:  # noqa: BLE001 - shown
             return '   -  SNAPSHOT NOT WRITTEN: %s' % exc, False
         self._last_snapshot = (png, txt)
-        # A list showing this same folder would otherwise silently omit the
-        # shot just taken, which looks like the snapshot did not happen.
-        if self.review.directory() == where:
-            self.review.load(where)
+        # EVERY SNAPSHOT LANDS IN PREVIEWS, whatever the pane held before - a
+        # shot you have to go and Open folder... to find looks like it did not
+        # happen.  Selected quietly: it is already the picture on screen.
+        self.review.load(where, select=png)
+        if not self._batch_preview:
+            # Shown but not raised: the Queue shares that dock, and a batch
+            # raises Previews itself once it is done (_batch_finished).
+            self.d_review.show()
         return ('   +  saved %s in %s'
                 % (os.path.basename(png),
                    os.path.join(os.path.basename(os.path.dirname(where)),
@@ -739,6 +773,7 @@ class MainWindow(QMainWindow):
         exactly like a success.
         """
         img = QImage(png) if png and os.path.isfile(png) else QImage()
+        self.compare.set_cell(settings.cell)
         self.compare.set_result(img if not img.isNull() else None)
         if palettes:
             self.palettes.load(palettes, stats, settings.reserve0)
@@ -1017,6 +1052,8 @@ class MainWindow(QMainWindow):
             # non-empty 'false' would switch the thing on.
             self.options.set_snapshots_wanted(
                 str(st.value('snapshots', 'false')).lower() == 'true')
+            self.flip_every.setValue(
+                float(st.value('flip_interval', FLIP_MS / 1000.0)))
             if geom is not None:
                 self.restoreGeometry(geom)
             if state is not None:
@@ -1031,6 +1068,7 @@ class MainWindow(QMainWindow):
             st.setValue('state', self.saveState())
             st.setValue('layout_version', LAYOUT_VERSION)
             st.setValue('snapshots', self.options.snapshots_wanted())
+            st.setValue('flip_interval', self.flip_every.value())
         except Exception:               # noqa: BLE001 - never block a close
             pass
 
@@ -1103,6 +1141,33 @@ class MainWindow(QMainWindow):
         self._say('%s - %d entr%s' % (path, count,
                                       'y' if count == 1 else 'ies'))
 
+    def _gather_images(self):
+        """Collect every .V1K/.NFO under a root into an Atari staging folder.
+
+        Renames anything that is not a legal 8-char Atari name and writes the
+        folder's images.lst - see palgui/gather.py.
+        """
+        start = runner.resolve(self.options.to_settings().out)
+        if not os.path.isdir(start):
+            start = str(runner.CONVERTOR)
+        root = QFileDialog.getExistingDirectory(
+            self, 'Folder to scan for .v1k images', start)
+        if not root:
+            return
+        out = QFileDialog.getExistingDirectory(
+            self, 'Atari staging folder to copy them into', root)
+        if not out:
+            return
+        try:
+            items, manifest = gather.run(root, out)
+        except Exception as exc:                      # noqa: BLE001 - shown
+            self._show_text('Gather failed', repr(exc))
+            return
+        text = '\n'.join([it.line() for it in items]
+                         + ['', gather.summary(items), 'manifest: ' + manifest])
+        self._show_text('Gather images for Atari', text)
+        self._say('%s -> %s' % (gather.summary(items), out))
+
     def _say(self, text, colour=None):
         self.status.setText(text)
         self.status.setStyleSheet('color:%s;' % (colour or theme.TEXT).name())
@@ -1163,6 +1228,8 @@ Keys
   Tab         flip source / converted
   SPACE       flip while held
   A / B       show source / converted
+  T           flip on a timer, on / off  (interval on the toolbar)
+  O           cell columns on / off, to find seams at cell edges
   Ctrl+0      fit,  Ctrl+= / Ctrl+-  zoom
   wheel       zoom at the cursor,  drag  pan
 

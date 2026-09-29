@@ -2,9 +2,9 @@
 """Build IMAGES.LST for a folder of converter output.
 
 The Atari viewer reads IMAGES.LST at directory-scan time to show each image's
-original long source filename on the selector status line.  It is an 8-byte
-key (the .MAP base name, upper-cased, space-padded) plus that filename per
-record, $9B-terminated.  Run this on the folder you build the disk image from
+description (from its _stats.json, else the source filename minus extension)
+on the selector status line.  It is an 8-byte key (the .MAP base name,
+upper-cased, space-padded) plus that description per record, $9B-terminated.  Run this on the folder you build the disk image from
 so the keys line up with the on-disk 8.3 names.
 
     python build_images_lst.py OUTDIR                # -> OUTDIR/images.lst
