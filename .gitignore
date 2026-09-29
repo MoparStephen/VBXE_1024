@@ -11,3 +11,19 @@ __pycache__/
 /dist/
 /VBXE PAL Studio v*.zip
 /VBXE PAL Studio v*-linux.tar.gz
+
+# Local working files: personal queues, test images, disk images, scratch.
+/Convertor/Colour Biam Ramp.json
+/Convertor/Test/
+/Images To Convert/
+/Viewer/OldFormat/
+/Viewer/View1024.atr
+/Viewer/Viewer.code-workspace
+/Viewer/images.txt.bak
+/Viewer/out/CHIX/
+/Viewer/out/Images/
+/Viewer/out/notes.txt
+
+# Stray viewer build outputs (the real ones live in Viewer/out/view1024.*)
+/Viewer/outview1024.*
+/Viewer/out/view1024.asm.lab
