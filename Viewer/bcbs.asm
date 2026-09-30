@@ -33,26 +33,6 @@ BLT_SETUP_CMAP_1
 	dta $00								; Collision mask
 	dta $00								; Zoom
 	dta $00								; Pattern feature
-
-; Same expansion as BLT_SETUP_CMAP_1, but for the menu banner: 40 cells/row *
-; MENU_BANNER_ROWS(36) rows = 1440 source bytes, dest stride 4 starting at
-; MENU_BANNER_MAP_VRAM+3 - a dedicated, resident copy (NOT the shared CRAM
-; $017000), so the banner's attribute map never needs to be reloaded.  Kicked
-; once, at boot, by Setup_Menu_Cmap.
-BLT_SETUP_MENU_CMAP
-	dta $00,$40,$01						; Source address ($14000 = CRAM_Buffer, reused as scratch)
-	dta $28,$00							; Source step y = 40
-	dta $01								; Source step x (1)
-	dta <[MENU_BANNER_MAP_VRAM+3], >[MENU_BANNER_MAP_VRAM+3], [MENU_BANNER_MAP_VRAM+3]>>16	; Destination address
-	dta $A0,$00							; Destination step y = 160 (40 cells * 4 bytes)
-	dta $04								; Destination step x (4)
-	dta $27,$00							; Width-1 = 39   (40 cells/row)
-	dta MENU_BANNER_ROWS-1				; Height-1 = 35  (36 rows; 40*36 = 1440)
-	dta $FF								; And mask ($FF - pass-through, copies zero values too)
-	dta $00								; Xor mask (no inversion)
-	dta $00								; Collision mask
-	dta $00								; Zoom
-	dta $00								; Pattern feature
 	dta $00								; Control (Mode 0 with NEXT bit Cleared)
 
 ; Clears the screen RAM and CMAP data ($01000 - $21FFF or 128kB)

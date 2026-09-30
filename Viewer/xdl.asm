@@ -28,8 +28,9 @@ XDL_Image_Normal						; Graphics mode,SD resolution, 240 lines, start at $01000,
 ; all come from view1024.asm's .def block so this XDL and text80.asm cannot
 ; drift.  OV_PALETTE = 0 (ui.asm's Restore_Palette0 keeps standard PAL/NTSC
 ; colours in palette 0); the banner's attribute map lives in its own
-; dedicated, resident MENU_BANNER_MAP_VRAM (loaded once at boot, never the
-; shared CRAM $017000 the image viewer uses) so it never needs a reload.
+; dedicated, resident MENU_BANNER_MAP_VRAM (zeroed at boot = palette 0, plus
+; the ramp squares' cells; never the shared CRAM $017000 the image viewer
+; uses) so it never needs a reload.
 ; Only the banner's palette REGISTERS (1-3) need a per-Enter_Selector
 ; refresh - a cheap resident-VRAM-to-register copy, no disk access - since
 ; VBXE has exactly 4 physical palette registers total and Load_Image

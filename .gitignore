@@ -27,3 +27,8 @@ __pycache__/
 # Stray viewer build outputs (the real ones live in Viewer/out/view1024.*)
 /Viewer/outview1024.*
 /Viewer/out/view1024.asm.lab
+
+# make_logo.py concept renders - regenerable; only the chosen header logo is kept
+/Viewer/Assets/Logo/*.png
+!/Viewer/Assets/Logo/logo_15_m7_final_x.png
+!/Viewer/Assets/Logo/logo_15_m7_final_x_x4.png

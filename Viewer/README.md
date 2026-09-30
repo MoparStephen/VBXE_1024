@@ -26,7 +26,7 @@ list is left in disk order for now; a future UI can enable the sort.
 The Atari disk only holds 8.3 short names, so the original source filename
 (`isabelle_fuhrman_eyes.jpg`) is lost from `IMG0.MAP`. If an `IMAGES.LST` file
 sits in the same directory as the images, the selector reads it once per
-directory scan (`Nfo_Name_LoadManifest`) and shows `Src: <name>` on row 26 for
+directory scan (`Nfo_Name_LoadManifest`) and shows `Nfo: <name>` on row 26 for
 the highlighted image. Each record is an 8-byte key (the `.MAP` base name as
 it lands on the Atari disk - illegal chars like space stripped, `_` kept,
 upper-cased, first 8, space-padded) + the source name + `$9B`; the viewer

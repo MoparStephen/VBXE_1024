@@ -14,11 +14,14 @@
 ; menu/info XDL (xdl.asm) displays this ONE buffer as two on-screen bands (a
 ; graphics banner sits above it, a 1-line separator between the bands, see
 ; xdl.asm for the full 240-scanline layout).  Selector row map:
-;   row 0            Location: <path>
+;   row 0            Location: <path>  ...  image counter (cols 68-77,
+;                    "nnn of NNN" / "NNN images" - Selector_DrawCount);
+;                    "Scanning directory..." in the path's place while
+;                    Rescan_Images runs
 ;   row 1            blank
 ;   rows 2-16 (15)   scrolling grid (UI_FIRSTROW/UI_VISROWS below)
 ;   rows 17-19       spare/margin (blank)
-;   row 20 (TEXT_MAIN_ROWS+0)   status line (Src: ...)
+;   row 20 (TEXT_MAIN_ROWS+0)   status line (Nfo: ...)
 ;   row 21 (TEXT_MAIN_ROWS+1)   slideshow delay
 ;   row 22 (TEXT_MAIN_ROWS+2)   key legend
 ; The info viewer uses rows 0..TEXT_MAIN_ROWS-1 for scrollable content and
@@ -35,6 +38,8 @@
 .def	UI_VISROWS		= 15			; grid rows visible at once
 .def	UI_FIRSTROW		= 2				; first screen row of the grid
 .def	UI_GRIDCOL0		= 0				; first screen column of the grid (Sel_ColX base)
+.def	UI_COUNT_COL	= 68			; row 0 image counter, 10 chars (cols 68-77,
+										; mirroring Location:'s 2-col left margin)
 ; UI_FIRSTROW / UI_GRIDCOL0 are the only placement knobs - see the row map
 ; above for the rest of the selector's chrome (status/delay/legend rows).
 .def	UI_SLIDE_MIN	= 1
@@ -62,8 +67,14 @@
 
 ; --- CH key codes (POKEY, no modifier).  Matches the bare-CH style in
 ;     Handle_Keys (Q $2F, Space $21, BkSp $34, Esc $1C, digits ...).
-.def	KEY_UP			= $0E			; "-" key (up-arrow, unshifted)
-.def	KEY_DOWN		= $0F			; "=" key (down-arrow, unshifted)
+;     The 4 arrows are also accepted with CTRL held ($8E/$8F/$86/$87): each
+;     handler ANDs CH with KEY_CTRL_OFF before the arrow compares, then
+;     reloads the raw CH for everything else.
+.def	KEY_CTRL_OFF	= $7F			; CH AND mask - clears the CTRL bit ($80)
+.def	KEY_UP			= $0E			; "-" key (up-arrow;    Ctrl = $8E)
+.def	KEY_DOWN		= $0F			; "=" key (down-arrow;  Ctrl = $8F)
+.def	KEY_LEFT		= $06			; "+" key (left-arrow;  Ctrl = $86)
+.def	KEY_RIGHT		= $07			; "*" key (right-arrow; Ctrl = $87)
 .def	KEY_RETURN		= $0C
 .def	KEY_ESC			= $1C
 .def	KEY_SPACE		= $21
@@ -77,8 +88,6 @@
 .def	KEY_DOT			= $22			; "." - longer slideshow delay
 .def	KEY_Y			= $2B			; quit-confirm: yes (verified via Altirra CH readback)
 .def	KEY_N			= $23			; quit-confirm: no  (verified via Altirra CH readback)
-.def	KEY_LEFT		= $8E			; Ctrl+"-" (bare KEY_UP $0E | CTRL bit $80)
-.def	KEY_RIGHT		= $8F			; Ctrl+"=" (bare KEY_DOWN $0F | CTRL bit $80)
 
 ;-----------------------------------------------------------------------------
 ; TXT_AT row, col, strlabel  -  draw a string via the text API
@@ -105,6 +114,14 @@
 ; Tolerates zero matches (an ordinary state the selector shows).
 ;-----------------------------------------------------------------------------
 Rescan_Images
+; Show "Scanning directory..." where the path goes - the scan + IMAGES.LST
+; name cache can take a while in a big folder.  Every caller repaints the
+; whole selector (Selector_Draw) afterwards.
+	jsr UI_Pen_Normal
+	TXT_AT 0, 2, UI_Str_Loc				; label too - not drawn yet at boot
+	TXT_AT 0, 12, UI_Str_StatusBlank+12	; 68 spaces: clear the old path + counter
+	TXT_AT 0, 12, UI_Str_Scanning
+
 	jsr Build_Image_List				; fills IMAGE_BANK; sets ImageCount/Dir_Count/FileStart
 
 ; sort the two real groups independently: dirs [FileStart-Dir_Count .. FileStart)
@@ -826,11 +843,86 @@ Nfo_Name_ClearCache_L2
 	rts
 
 ;-----------------------------------------------------------------------------
-; Selector_DrawStatus - repaint row 20 for the current Sel_Index.  Blank for a
-; directory / ".." row or an empty list; "Src: <name>" for a *.V1K row whose
-; slot was filled from IMAGES.LST.  Pure VRAM read - no file I/O.
+; Selector_DrawCount - row 0's right-hand image counter for the current
+; Sel_Index: "nnn of NNN" on a *.V1K row, else "NNN images" (" image " for
+; one) - always 10 chars at UI_COUNT_COL, numbers space-padded to 3.  NNN =
+; ImageCount - FileStart (the *.V1K group only).  Builds it in Txt_Line.
+; Clobbers A/X/Y, Reg1, Reg2, Reg7, Txt_Ptr.
+;-----------------------------------------------------------------------------
+Selector_DrawCount
+	lda ImageCount
+	sec
+	sbc FileStart
+	sta Reg7							; Reg7 = image count (<= MAX_IMAGES)
+	beq Selector_DrawCount_Total
+	lda Sel_Index
+	jsr UI_RowType
+	bne Selector_DrawCount_Total		; dir / ".." -> just the total
+	lda Sel_Index
+	sec
+	sbc FileStart						; ordinal into the *.V1K group ...
+	clc
+	adc #$01							; ... counted from 1
+	ldx #$00
+	jsr Put_U8_Pad3
+	lda #<UI_Str_Of
+	ldy #>UI_Str_Of
+	jsr Selector_DrawCount_Cat
+	lda Reg7
+	jsr Put_U8_Pad3
+	lda #$00
+	sta Txt_Line,x
+	jmp Selector_DrawCount_Put
+Selector_DrawCount_Total
+	ldx #$00
+	lda Reg7
+	jsr Put_U8_Pad3
+	lda #<UI_Str_Images
+	ldy #>UI_Str_Images
+	ldx Reg7
+	dex
+	bne Selector_DrawCount_Plural
+	lda #<UI_Str_Image1
+	ldy #>UI_Str_Image1
+Selector_DrawCount_Plural
+	ldx #$03							; after the 3-char number
+	jsr Selector_DrawCount_Cat
+Selector_DrawCount_Put
+	jsr UI_Pen_Normal
+	lda #$00
+	sta Txt_Row
+	lda #UI_COUNT_COL
+	sta Txt_Col
+	lda #<Txt_Line
+	sta Txt_Ptr
+	lda #>Txt_Line
+	sta Txt_Ptr + $01
+	jmp Text_PutStrAt
+
+; Append the NUL-terminated string at A/Y (lo/hi) to Txt_Line at X, NUL
+; included; returns X on that NUL.
+Selector_DrawCount_Cat
+	sta Txt_Ptr
+	sty Txt_Ptr + $01
+	ldy #$00
+Selector_DrawCount_Cat_L1
+	lda (Txt_Ptr),y
+	sta Txt_Line,x
+	beq Selector_DrawCount_Cat_Done
+	inx
+	iny
+	bne Selector_DrawCount_Cat_L1
+Selector_DrawCount_Cat_Done
+	rts
+
+;-----------------------------------------------------------------------------
+; Selector_DrawStatus - repaint row 20 for the current Sel_Index, and row 0's
+; image counter (Selector_DrawCount).  Blank for a directory / ".." row or an
+; empty list; "Nfo: <name>" for a *.V1K row whose slot was filled from
+; IMAGES.LST.  Pure VRAM read - no file I/O.
 ;-----------------------------------------------------------------------------
 Selector_DrawStatus
+	jsr Selector_DrawCount
 	jsr UI_Pen_Normal
 	lda ImageCount
 	ora ImageCount+1
@@ -848,11 +940,11 @@ Selector_DrawStatus
 	sta Txt_Row
 	lda #$00
 	sta Txt_Col
-	lda #<UI_Str_Src
+	lda #<UI_Str_Nfo
 	sta Txt_Ptr
-	lda #>UI_Str_Src
+	lda #>UI_Str_Nfo
 	sta Txt_Ptr + $01
-	jsr Text_PutStrAt					; "Src: " at col 0
+	jsr Text_PutStrAt					; "Nfo: " at col 0
 	lda #$05
 	sta Txt_Col
 	lda #<Nfo_Name_Line
@@ -1252,6 +1344,57 @@ UI_Build_LocLine_End
 	rts
 
 ;-----------------------------------------------------------------------------
+; Put_U8_Pad3 - A = 0..255 -> 3 chars at Txt_Line,X, right-aligned with
+; leading spaces ("  7", " 42", "255"); X advanced by 3, no NUL.
+; Clobbers A/Y, Reg1, Reg2.
+;-----------------------------------------------------------------------------
+Put_U8_Pad3
+	sta Reg1							; Reg1 = remaining value
+	lda #$00
+	sta Reg2							; Reg2 = "emitted a digit" flag
+	ldy #$00
+Put_U8_Pad3_H
+	lda Reg1
+	cmp #100
+	bcc Put_U8_Pad3_HDone
+	sbc #100
+	sta Reg1
+	iny
+	bne Put_U8_Pad3_H
+Put_U8_Pad3_HDone
+	tya
+	jsr Put_U8_Pad3_Digit
+	ldy #$00
+Put_U8_Pad3_T
+	lda Reg1
+	cmp #10
+	bcc Put_U8_Pad3_TDone
+	sbc #10
+	sta Reg1
+	iny
+	bne Put_U8_Pad3_T
+Put_U8_Pad3_TDone
+	tya
+	jsr Put_U8_Pad3_Digit
+	lda Reg1
+	ora #'0'							; ones digit - always shown
+	bne Put_U8_Pad3_Store
+; A = digit 0-9: a space while it's still a leading zero, else the digit
+Put_U8_Pad3_Digit
+	bne Put_U8_Pad3_Emit
+	ldy Reg2
+	bne Put_U8_Pad3_Emit				; a zero after a digit -> '0'
+	lda #' '
+	bne Put_U8_Pad3_Store
+Put_U8_Pad3_Emit
+	ora #'0'
+	inc Reg2
+Put_U8_Pad3_Store
+	sta Txt_Line,x
+	inx
+	rts
+
+;-----------------------------------------------------------------------------
 ; Put_U8_Dec_Line - A = 0..255 -> Txt_Line = decimal text, NUL-terminated,
 ; no leading zeros.  Clobbers A/X/Y, Reg1, Reg2.
 ;-----------------------------------------------------------------------------
@@ -1311,6 +1454,7 @@ Put_U8_O
 ;=============================================================================
 Selector_Keys
 	lda CH
+	and #KEY_CTRL_OFF					; arrows: with or without CTRL
 	cmp #KEY_DOWN
 	bne SelK_1
 	jmp Sel_Key_Down
@@ -1327,6 +1471,7 @@ SelK_1b
 	bne SelK_2
 	jmp Sel_Key_Right
 SelK_2
+	lda CH								; raw CH for the non-arrow keys
 	cmp #KEY_RETURN
 	bne SelK_3
 	jmp Sel_Key_Enter
@@ -1639,6 +1784,7 @@ Drive_DrawRows_Done
 ;=============================================================================
 Drive_Keys
 	lda CH
+	and #KEY_CTRL_OFF					; arrows: with or without CTRL
 	cmp #KEY_DOWN
 	bne DrvK_1
 	lda Drive_Pick_Index
@@ -1656,6 +1802,7 @@ DrvK_1
 	jsr Drive_DrawRows
 	jmp Read_Key_Done
 DrvK_2
+	lda CH								; raw CH for the non-arrow keys
 	cmp #KEY_RETURN
 	bne DrvK_3
 	lda Drive_Pick_Index
@@ -2132,6 +2279,7 @@ Info_Can_Scroll_Yes
 ;-----------------------------------------------------------------------------
 Info_Keys
 	lda CH
+	and #KEY_CTRL_OFF					; arrows: with or without CTRL
 	cmp #KEY_UP
 	bne InfK_1
 	jmp Info_Key_Up
@@ -2140,6 +2288,7 @@ InfK_1
 	bne InfK_2
 	jmp Info_Key_Down
 InfK_2
+	lda CH								; raw CH for the non-arrow keys
 	cmp #KEY_COMMA
 	bne InfK_3
 	jmp Info_Key_PageUp
@@ -2327,8 +2476,12 @@ UI_Str_InfoHint		dta c'Esc to go back, Up/Down to scroll',0
 UI_Str_DriveTitle	dta c'Scan drive',0
 UI_Str_QuitConfirm	dta c'Are you sure to Quit',0
 UI_Str_QuitHint		dta c'(Y/N)',0
-UI_Str_Src			dta c'Src: ',0
-UI_Str_StatusBlank	dta c'                                                                                ',0	; 80 spaces (Src: + NFO_NAME_CAP)
+UI_Str_Nfo			dta c'Nfo: ',0
+UI_Str_StatusBlank	dta c'                                                                                ',0	; 80 spaces (Nfo: + NFO_NAME_CAP)
+UI_Str_Scanning		dta c'Scanning directory...',0
+UI_Str_Of			dta c' of ',0
+UI_Str_Images		dta c' images',0
+UI_Str_Image1		dta c' image ',0
 
 ;-----------------------------------------------------------------------------
 ; Sel_ColX - screen column for grid column c (0..UI_COLS-1), 10-char cells.

@@ -1,4 +1,6 @@
-.def	NUM_DOTS						= $05
+.def	NUM_DOTS						= $04		; 8 stages x 4 = 32 dots, centred in the 38-col box (cols 4-35)
+.def	LOAD_DOTS_START					= $CC		; row 5, col 4 - first progress dot
+.def	LOAD_MSG_ROW3					= $79		; row 3, col 1 - stage message (33 chars)
 
 ; OS state Step_1 / Check_RAMTOP change and the Exit path restores (COLOR2_OLD
 ; is declared in view1024.asm alongside the other _OLD saves).
@@ -129,7 +131,7 @@ Print_Loading_L2						; Copy the last $180 bytes
 	bpl Print_Loading_L2
 
 	dec Ptr_Hi							; Restore to beginning of screen RAM
-	lda #$CA
+	lda #LOAD_DOTS_START
 	sta Reg1							; Pointer to screen RAM for progress dots
 
 	; jsr Wait_For_Key_Exit
