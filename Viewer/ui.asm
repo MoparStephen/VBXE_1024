@@ -71,8 +71,8 @@
 .def	UI_PEN_COUNT	= $3B			; row 0 "nnn of NNN" / "NNN images" : hue 7, luma 6
 .def	UI_PEN_FRAMEC	= $3A			; popup window frames: hue 7 blue,  luma 4
 .def	UI_PEN_QUITQ	= $3B			; quit question      : hue 7 blue,   luma 6
-.def	UI_PEN_YES		= $5B			; quit "Y" button    : hue $B green, luma 6
-.def	UI_PEN_NO		= $13			; quit "N" button    : hue 2 red,    luma 6
+.def	UI_PEN_YES		= $52			; quit "Y" button    : hue $A dark green, luma 4
+.def	UI_PEN_NO		= $19			; quit "N" button    : hue 3 dark red,   luma 2
 .def	UI_PEN_KEY		= $43			; key names          : hue 8 light blue, luma 6 (= info screen notes)
 .def	UI_PEN_DESC		= $3A			; key descriptions   : hue 7 dark blue,  luma 4 (= info screen values)
 

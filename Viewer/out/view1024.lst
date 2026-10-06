@@ -687,7 +687,7 @@ Source: equates.asm
    340 = 0010			.def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
    341 = 0012			.def	V_1								= $12	; 2 (Screen code used for Version in loading screen)
    342 = 0010			.def	V_2								= $10	; 0 (Screen code used for Version in loading screen)
-   343 = 0000			.def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
+   343 = 0061			.def	V_3								= $61	; 61=a (Screen code used for Version in loading screen)
    344
    345 				;-----------------------------------------------------------------------------
    346 				; VBXE Helpers
@@ -4978,8 +4978,8 @@ Source: ui.asm
     71 = 003B			.def	UI_PEN_COUNT	= $3B			; row 0 "nnn of NNN" / "NNN images" : hue 7, luma 6
     72 = 003A			.def	UI_PEN_FRAMEC	= $3A			; popup window frames: hue 7 blue,  luma 4
     73 = 003B			.def	UI_PEN_QUITQ	= $3B			; quit question      : hue 7 blue,   luma 6
-    74 = 005B			.def	UI_PEN_YES		= $5B			; quit "Y" button    : hue $B green, luma 6
-    75 = 0013			.def	UI_PEN_NO		= $13			; quit "N" button    : hue 2 red,    luma 6
+    74 = 0052			.def	UI_PEN_YES		= $52			; quit "Y" button    : hue $A dark green, luma 4
+    75 = 0019			.def	UI_PEN_NO		= $19			; quit "N" button    : hue 3 dark red,   luma 2
     76 = 0043			.def	UI_PEN_KEY		= $43			; key names          : hue 8 light blue, luma 6 (= info screen notes)
     77 = 003A			.def	UI_PEN_DESC		= $3A			; key descriptions   : hue 7 dark blue,  luma 4 (= info screen values)
     78
@@ -7797,8 +7797,8 @@ Source: ui.asm
   2638 5EC8 01 43 48 45 4C 50 + 					dta TXT_PEN,UI_PEN_KEY,c'HELP',TXT_PEN,UI_PEN_DESC,c' for additional information',0
   2639 5EEC 4C 6F 67 20 44 72 + UI_Str_DriveTitle	dta c'Log Drive',0
   2640 5EF6 01 3B 41 72 65 20 + UI_Str_QuitConfirm	dta TXT_PEN,UI_PEN_QUITQ,c'Are You Sure To Quit',0
-  2641 5F0D 01 5B 59 00		UI_Str_QuitYes		dta TXT_PEN,UI_PEN_YES,c'Y',0
-  2642 5F11 01 13 4E 00		UI_Str_QuitNo		dta TXT_PEN,UI_PEN_NO,c'N',0
+  2641 5F0D 01 52 59 00		UI_Str_QuitYes		dta TXT_PEN,UI_PEN_YES,c'Y',0
+  2642 5F11 01 19 4E 00		UI_Str_QuitNo		dta TXT_PEN,UI_PEN_NO,c'N',0
   2643 5F15 01 7C 4E 66 6F 3A + UI_Str_Nfo			dta TXT_PEN,UI_PEN_LOC,c'Nfo:',TXT_PEN,UI_PEN_VALUE,c' ',0
   2644 5F1F 20 20 20 20 20 20 + UI_Str_StatusBlank	dta c'                                                                                ',0	; 80 spaces (Nfo: + NFO_NAME_CAP)
   2645 5F70 53 63 61 6E 6E 69 + UI_Str_Scanning		dta c'Scanning directory...',0

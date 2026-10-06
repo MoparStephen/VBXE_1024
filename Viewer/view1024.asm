@@ -340,7 +340,7 @@
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $12	; 2 (Screen code used for Version in loading screen)
 .def	V_2								= $10	; 0 (Screen code used for Version in loading screen)
-.def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
+.def	V_3								= $61	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
 ; VBXE Helpers
