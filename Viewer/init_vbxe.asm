@@ -563,7 +563,7 @@ Palette2
 
 ; Step $09 - Menu banner palette-demo overlay: assembly-embed the RGB ramps
 ; for hardware palettes 1-3 directly into MENU_BANNER_PAL_VRAM (bank $34),
-; at the same $0300/$0600/$0900 slot offsets Apply_Menu_Banner_Palette
+; at the same $0300/$0600/$0900 slot offsets Apply_Menu_Palettes
 ; (view1024.asm) already reads for registers 1/2/3.  Replaces the old
 ; D:MENU.PAL disk load - same "select bank, then org+ins" idiom as
 ; Load_Palette1/Load_Palette2 above, so the bytes land straight into VBXE

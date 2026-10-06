@@ -52,7 +52,7 @@ BLT_CLEAR_SCREEN
 	dta $00								; Pattern feature
 	dta $00								; Control (Mode 0 with NEXT bit Cleared)
 
-; Zero-fill the 80 x TEXT_ROWS VBXE text screen (TEXT_SCREEN_VRAM, TEXT_SCREEN_
+; Zero-fill the 80 x TEXT_ROWS VBXE text back buffer (TEXT_BACK_VRAM, TEXT_SCREEN_
 ; BYTES bytes - ONE contiguous buffer backing both the menu XDL's main-content
 ; and footer text bands).  Constant-source fast fill: And mask 0 makes the
 ; source a constant equal to the Xor mask and the blitter skips the source
@@ -63,11 +63,11 @@ BLT_CLEAR_TEXT
 	dta $00,$00,$00						; Source address (unused - constant source)
 	dta $00,$00							; Source step y (unused)
 	dta $00								; Source step x (unused)
-	dta $00,$30,$02						; Destination address ($023000 = TEXT_SCREEN_VRAM)
+	dta <TEXT_BACK_VRAM,>TEXT_BACK_VRAM,TEXT_BACK_VRAM>>16	; Destination address (back buffer)
 	dta a(TEXT_PITCH)					; Destination step y (160 - next text row)
 	dta $01								; Destination step x (1)
 	dta a(TEXT_PITCH-1)					; Width-1  (159 -> 160 bytes per row)
-	dta TEXT_ROWS-1						; Height-1 (29 -> 30 rows)
+	dta TEXT_ROWS-1						; Height-1 (22 -> 23 rows)
 	dta $00								; And mask (0 -> constant source)
 	dta $00								; Xor mask (fill value: $00)
 	dta $00								; Collision and mask
@@ -75,7 +75,7 @@ BLT_CLEAR_TEXT
 	dta $00								; Pattern feature
 	dta $00								; Control (Mode 0 with NEXT bit Cleared)
 
-; Recolour a rectangular region of the text screen - floods the attribute (odd)
+; Recolour a rectangular region of the text back buffer - floods the attribute (odd)
 ; bytes only (Destination step x = 2).  Constant-source fast fill (And 0).
 ; Text_FillColour patches Destination address, Width-1, Height-1 and Xor mask
 ; before each kick.
@@ -83,7 +83,7 @@ BLT_FILL_COLOUR
 	dta $00,$00,$00						; Source address (unused - constant source)
 	dta $00,$00							; Source step y (unused)
 	dta $00								; Source step x (unused)
-	dta $01,$30,$02						; Destination address ($023001; PATCHED - attr byte of cell)
+	dta <[TEXT_BACK_VRAM+1],>[TEXT_BACK_VRAM+1],TEXT_BACK_VRAM>>16	; Destination address (attr byte of cell; PATCHED)
 	dta a(TEXT_PITCH)					; Destination step y (160 - next text row)
 	dta $02								; Destination step x (2 - attribute bytes only)
 	dta a(TEXT_COLS-1)					; Width-1  (79 -> 80 cells; PATCHED)
@@ -97,7 +97,7 @@ BLT_FILL_COLOUR
 
 ; Draw a window of the NFO display buffer (NFO_BUF_VRAM: fixed 160-byte
 ; {glyph,attr} line records - the same interleaved layout as the text screen)
-; onto the text screen's main-content band only (TEXT_MAIN_ROWS rows - the
+; onto the text back buffer's main-content band only (TEXT_MAIN_ROWS rows - the
 ; footer band below it holds separate static text the NFO blit must not
 ; touch).  A plain rectangular copy (And $FF, MODE 0, step x = 1): the buffer
 ; already carries the attribute bytes, so no fill link is needed.  Info_Draw
@@ -107,7 +107,7 @@ BLT_NFO_DRAW
 	dta $00,$50,$02						; Source address ($025000 = NFO_BUF_VRAM; PATCHED)
 	dta a(TEXT_PITCH)					; Source step y (160 - next line record)
 	dta $01								; Source step x (1)
-	dta $00,$30,$02						; Destination address ($023000 = TEXT_SCREEN_VRAM)
+	dta <TEXT_BACK_VRAM,>TEXT_BACK_VRAM,TEXT_BACK_VRAM>>16	; Destination address (back buffer)
 	dta a(TEXT_PITCH)					; Destination step y (160 - next text row)
 	dta $01								; Destination step x (1)
 	dta a(TEXT_PITCH-1)					; Width-1  (159 -> 160 bytes = 80 cells)
@@ -120,7 +120,7 @@ BLT_NFO_DRAW
 	dta $00								; Control (Mode 0 with NEXT bit Cleared)
 
 ; Save-under rectangle copy for the text-window primitive (Text_Window_Save /
-; Text_Window_Restore).  A plain {glyph,attr} rect copy at screen pitch: step x
+; Text_Window_Restore), and the full-screen back -> front copy (Text_Present).  A plain {glyph,attr} rect copy at screen pitch: step x
 ; = 1, step y = TEXT_PITCH, MODE 0, And $FF.  Both address triplets plus Width-1
 ; and Height-1 are patched per call; the two directions just swap Src <-> Dest.
 BLT_TEXT_RECT

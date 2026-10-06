@@ -11,7 +11,7 @@
 ;    BCBs            = $00100 - $001FF
 ;    NTSC_Palette    = $00200 - $004FF (256 RGB triplets; restores Palette 0 on exit)
 ;    PAL_Palette     = $00500 - $007FF (256 RGB triplets; restores Palette 0 on exit)
-;    Text pal buffer = $00800 - $00AFF (UI_Apply_TextPalette de-interleave scratch)
+;    Text pal buffer = $00800 - $00AFF (UI_Build_TextPalette de-interleaved text palette, resident)
 ;    VRAM            = $01000 - $13BFF (Video Ram)
 ;    CRAM_Buffer     = $14000 - $1657F (Compressed palette bytes)
 ;    CRAM            = $17000 - $205FF (Colour Ram)
@@ -34,8 +34,8 @@
 ;    Menu banner pal = $34000 - $34BFF (MENU_BANNER_PAL_VRAM: the banner's
 ;                      palette bytes, resident and assembly-embedded (Load_
 ;                      Menu_Ramps, init_vbxe.asm) - registers 1-3 are
-;                      refreshed from here on every Enter_Selector with no
-;                      disk access; see Apply_Menu_Banner_Palette)
+;                      refreshed from here by Enter_Selector (after an image) with no
+;                      disk access; see Apply_Menu_Palettes)
 ;    Menu banner map = $35000 - $3667F (MENU_BANNER_MAP_VRAM: the banner's
 ;                      expanded attribute map, resident, dedicated - NOT the
 ;                      shared CRAM $017000, so it's never clobbered by Load_
@@ -44,7 +44,10 @@
 ;                      verbatim - up to NFO_MAX_LINES fixed 160-byte {glyph,attr}
 ;                      line records, TEXT_PITCH stride; blitted to the text
 ;                      screen a window at a time by BLT_NFO_DRAW)
-;    (banks $2A-$2D are free - the NFO name cache moved to $37000 when it grew)
+;    Text back buf   = $2A000 - $2AE5F (TEXT_BACK_VRAM: every text draw lands here,
+;                      off screen; Text_Present blits it to $23000 in one copy
+;                      during vblank - see text80.asm)
+;    (banks $2B-$2D are free - the NFO name cache moved to $37000 when it grew)
 ;    Menu demo ramp  = $2E000 - $2E0FF (MENU_RAMP_VRAM: 256-byte ascending
 ;                      0..255 pixel-source square for the banner's 4-palette
 ;                      demo overlay, built at boot by Build_Menu_Ramp_Table;
@@ -128,7 +131,8 @@
 .var Seg_Bank			.byte = $4E3	; VBXE bank the next 4K chunk lands in
 .var Seg_Chunks			.byte = $4E4	; full 4K chunks left in this segment
 .var Seg_Tail			.word = $4E5	; bytes in the segment's final partial chunk
-;	$4E7 to $4FF free
+.var Pal_Image			.byte = $4E7	; 1 = an image's palettes are in registers 0-3 (Enter_Selector must restore)
+;	$4E8 to $4FF free
 .var Dir_Line_Buf		:$28 .byte = $600	; One GET RECORD dir line ($600-$627)
 .var Scan_Path			:$28 .byte = $628	; subdirectory part, ">DIR>DIR>" or empty ($628-$64F)
 .var Scan_Spec			:$30 .byte = $650	; assembled "D[n]:PATH*.V1K",$9B ($650-$67F)
@@ -196,6 +200,12 @@
 .def	TEXT_ROWS						= TEXT_MAIN_ROWS + TEXT_FOOTER_ROWS	; = 23 total buffer rows
 .def	TEXT_SCREEN_BYTES				= TEXT_ROWS * TEXT_PITCH	; 23*160 = 3680
 .def	TEXT_FOOTER_VRAM				= TEXT_SCREEN_VRAM + (TEXT_MAIN_ROWS * TEXT_PITCH)	; row 20 of the same buffer
+; Off-screen back buffer, same layout as TEXT_SCREEN_VRAM.  Every text draw
+; (Text_PutStrAt / Text_Clear / Text_FillColour / save-under / NFO blit) lands
+; here; Text_Present copies it to the displayed buffer with one blit in vblank,
+; so no partly-drawn screen is ever shown.  3680 bytes - fits one bank.
+.def	TEXT_BACK_VRAM					= $2A000
+.def	TEXT_BACK_BANK					= TEXT_BACK_VRAM / $1000	; = $2A
 
 ; Menu/info XDL graphics bands (XDL_MainMenu in xdl.asm) - the top banner and
 ; the two (shared) 1-line separators.  Both sit in the previously-undocumented,
@@ -212,7 +222,7 @@
 ; Banner palette + attribute map: never touched at runtime (unlike the real
 ; image viewer's $21000/$017000 scratch, which Load_Image legitimately
 ; overwrites for every image view).  Dedicated, resident VRAM - see
-; Load_Menu_Banner_Raw / Apply_Menu_Banner_Palette (below).
+; Load_Menu_Banner_Raw / Apply_Menu_Palettes (below).
 ; The palette bytes are assembly-embedded (Load_Menu_Ramps, init_vbxe.asm),
 ; not disk-loaded.  The attribute map has no file either: it is left all
 ; zeros (= palette 0) by the boot-time clear_vbxe, and Set_Menu_Demo_Attrs
@@ -339,8 +349,8 @@
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $12	; 2 (Screen code used for Version in loading screen)
-.def	V_2								= $10	; 0 (Screen code used for Version in loading screen)
-.def	V_3								= $61	; 61=a (Screen code used for Version in loading screen)
+.def	V_2								= $11	; 1 (Screen code used for Version in loading screen)
+.def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
 ; VBXE Helpers
@@ -462,6 +472,8 @@ start
 	lda #$FF							; Must set priority when using Attribute Map
 	vbsta VBXE_P0						; because VBXE defaults P0-P3 to #$00 on power-up
 
+	jsr UI_Build_TextPalette			; one-time de-interleave of the master -> VBXE $00800
+	jsr Apply_Menu_Palettes				; text + banner palettes in before the first frame
 	jsr Text_Activate					; show the text XDL now (Rescan_Images can be slow)
 
 	jsr Rescan_Images					; Scan Scan_Drive/Scan_Path, sort the list
@@ -519,7 +531,9 @@ Setup_Cmap1_L1
 	rts
 
 ;-----------------------------------------------------------------------------
-; Clear_Screen - Clears a contiguous 128kB block of VBXE RAM
+; Clear_Screen - Clears a contiguous 128kB block of VBXE RAM.  Waits for the
+; fill to finish: callers switch to / load into the framebuffer straight after,
+; and a still-running clear would show stale pixels or wipe freshly loaded data.
 ;-----------------------------------------------------------------------------
 Clear_Screen
 	lda #BLT_CLEAR_SCREEN-BLT_CLEAR
@@ -528,40 +542,74 @@ Clear_Screen
 	vbsta VBXE_BL_ADR2
 	lda #$01
 	vbsta VBXE_BL_ADR1
-	lda #$00
 Clear_Screen_L1
 	vblda VBXE_BLITTER_BUSY
 	cmp #$00
-	bne Clear_Screen_L1					; Wait for blitter to finish
+	bne Clear_Screen_L1					; Wait for any prior blit to finish
 	lda #$01
 	vbsta VBXE_BLITTER_START			; Start the blit
+Clear_Screen_L2
+	vblda VBXE_BLITTER_BUSY
+	cmp #$00
+	bne Clear_Screen_L2					; Wait for the clear to complete
 	rts
 
 ;-----------------------------------------------------------------------------
-; Load_Image_Palette - read just the .PAL block (the first one) of File_Index's
-; .V1K and set all 4 hardware palette registers.  File_Index must be set before
-; calling.  Used by Selector_Handle_P (P-preview, ui.asm), which must not touch
-; the framebuffer or CRAM.
+; Wait_VBlank - hold until the beam is below the overlay's last line (VCOUNT >=
+; $7C on both PAL and NTSC), so an XDL / palette / text-screen swap made now
+; lands between frames.  Returns at once if already in vblank.  No key handling
+; (unlike Wait_For_Sync).
 ;-----------------------------------------------------------------------------
-Load_Image_Palette
+Wait_VBlank
+	lda VCOUNT
+	cmp #$7C
+	bcc Wait_VBlank						; still drawing the visible area
+	rts
+
+;-----------------------------------------------------------------------------
+; Display_Off / Display_On - blank the whole overlay (XDL disabled, ANTIC DMA is
+; already off -> plain black) while the palette registers are rewritten, so a
+; screen never shows in another screen's colours.  Both wait for vblank.
+;-----------------------------------------------------------------------------
+Display_Off
+	jsr Wait_VBlank
+	lda #%00000010						; XDL off, XCOLOR on
+	vbsta VBXE_VIDEO_CONTROL
+	rts
+
+Display_On
+	jsr Wait_VBlank
+	lda #%00000011						; XDL,XCOLOR Enabled and transparent color index 0
+	vbsta VBXE_VIDEO_CONTROL
+	rts
+
+;-----------------------------------------------------------------------------
+; Read_Image_Palette - read just the .PAL block (the first one) of File_Index's
+; .V1K into $21000.  Does NOT touch the palette registers - the caller applies
+; it (Apply_Image_Palette) once the screen it belongs to is ready.  File_Index
+; must be set before calling.  Used by Selector_Handle_P (P-preview, ui.asm).
+;  Out: C=1 if the file is missing or short.
+;-----------------------------------------------------------------------------
+Read_Image_Palette
 	lda #$00							; ext 0 = .V1K
 	jsr Build_Filename
 	jsr Image_Open
-	bcs Load_Image_Palette_Done			; OPEN failed - registers left as they were
+	bcs Read_Image_Palette_Done			; OPEN failed (C=1)
 	jsr Image_Read_Pal
 	php
 	jsr Image_Close
-	plp
-	bcs Load_Image_Palette_Done			; short read - don't push a half palette
-	jmp Apply_Image_Palette
-Load_Image_Palette_Done
+	plp									; C from the read
+Read_Image_Palette_Done
 	rts
 
 ;-----------------------------------------------------------------------------
 ; Apply_Image_Palette - push the 4 x 768-byte palettes at $21000 (the .V1K's
-; .PAL block) into hardware palette registers 0-3.
+; .PAL block) into hardware palette registers 0-3.  Sets Pal_Image, so the
+; next Enter_Selector knows the menu's palettes have to be put back.
 ;-----------------------------------------------------------------------------
 Apply_Image_Palette
+	lda #$01
+	sta Pal_Image
 	lda #V1K_PAL_BANK | MEMAC_GLOBAL_ENABLE	; Bank $21 VBXE Window Enabled
 	vbsta VBXE_MA_BSEL
 	lda <(VBXE_WINDOW + $0000)
@@ -812,23 +860,36 @@ Load_Menu_Banner_Dots_L1
 	bne Load_Menu_Banner_Dots_L1
 
 	rts									; The separator is already in VRAM (Load_Menu_Sep).
-										; Apply_Menu_Banner_Palette isn't called here -
-										; Enter_Selector always calls it before the first frame
+										; Apply_Menu_Palettes isn't called here -
+										; start: calls it before the first frame
 
 Load_Menu_Banner_Message
 	.sb 'Loading menu logo MENU.RAW        '
 
 ;-----------------------------------------------------------------------------
-; Apply_Menu_Banner_Palette - push MENU_BANNER_PAL_VRAM's resident bytes into
-; hardware palette registers 1-3.  No disk access, no LoadData, no IOCB - a
-; cheap in-VRAM-to-register copy only.  Register 0 is never touched (reserved
-; for text).  Called once at boot (above) and from every Enter_Selector
-; (ui.asm), since Load_Image overwrites registers 1-3 for every real image
-; viewed in between and there is no way to avoid that hardware-register
-; refresh - VBXE has exactly 4 palette registers total (FX manual, "RGB
-; PALETTE MODIFICATION") and there is no per-XDL copy of them.
+; Apply_Menu_Palettes - put the menu/info screen's palettes back in the
+; hardware registers: set 0 = the de-interleaved text palette UI_Build_
+; TextPalette left resident at VBXE $00800, sets 1-3 = MENU_BANNER_PAL_VRAM's
+; banner ramps.  No disk access - a cheap in-VRAM-to-register copy only.
+; Clears Pal_Image.  Called once from start:, and from Enter_Selector (ui.asm)
+; only when Pal_Image says an image palette replaced them - VBXE has exactly 4
+; palette registers total (FX manual, "RGB PALETTE MODIFICATION") and there is
+; no per-XDL copy, so after a real image this refresh can't be avoided; after
+; Info / Drive / Quit / a directory P-preview it isn't needed and is skipped.
+; The logo VRAM itself is never rewritten.
 ;-----------------------------------------------------------------------------
-Apply_Menu_Banner_Palette
+Apply_Menu_Palettes
+	lda #$00
+	sta Pal_Image
+	lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 - the text palette at $00800
+	vbsta VBXE_MA_BSEL
+	lda <(VBXE_WINDOW + $0800)
+	sta Y_Register
+	lda >(VBXE_WINDOW + $0800)
+	sta Y_Register + $01
+	lda #$00							; Set Palette 0
+	jsr VBXE_SetPalette2
+
 	lda #(MENU_BANNER_PAL_VRAM / $1000) | MEMAC_GLOBAL_ENABLE
 	vbsta VBXE_MA_BSEL
 	lda <(VBXE_WINDOW + $0300)
@@ -1239,7 +1300,7 @@ Handle_Keys
 	lda CH
 	cmp #KEY_F							; F toggles the text font on every screen
 	bne Handle_Keys_Mode
-	jsr UI_Toggle_Font					; (ui.asm) - also redraws an open quit box's frame
+	jsr Toggle_Font						; (text80.asm) - a CHBASE flip, nothing is redrawn
 	jmp Read_Key_Done
 Handle_Keys_Mode
 	lda UI_Mode
@@ -1330,6 +1391,10 @@ Handle_4
 Read_Key_Done
 	lda #$FF
 	sta CH								; Clear last key pressed
+	lda Txt_Dirty						; did this key draw any text (into the back buffer)?
+	beq Read_Key_Done_Ret
+	jmp Text_Present					; show it - one blit, in vblank (tail)
+Read_Key_Done_Ret
 	rts									; Else return to caller
 Exit
 ; Restore the OS state Step_1 / Check_RAMTOP changed, BEFORE Cleanup_Exit runs

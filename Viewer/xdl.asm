@@ -31,11 +31,11 @@ XDL_Image_Normal						; Graphics mode,SD resolution, 240 lines, start at $01000,
 ; dedicated, resident MENU_BANNER_MAP_VRAM (zeroed at boot = palette 0, plus
 ; the ramp squares' cells; never the shared CRAM $017000 the image viewer
 ; uses) so it never needs a reload.
-; Only the banner's palette REGISTERS (1-3) need a per-Enter_Selector
+; The palette REGISTERS (text set 0 + banner 1-3) need an Enter_Selector
 ; refresh - a cheap resident-VRAM-to-register copy, no disk access - since
 ; VBXE has exactly 4 physical palette registers total and Load_Image
 ; legitimately overwrites them for every real image viewed; see
-; Apply_Menu_Banner_Palette (view1024.asm).
+; Apply_Menu_Palettes (view1024.asm).
 ;
 ; 239-scanline layout (confirmed with Stephen; down from the original 240
 ; due to the extra separator block added under the banner):

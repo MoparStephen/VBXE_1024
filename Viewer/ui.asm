@@ -47,7 +47,7 @@
 .def	UI_SLIDE_MAX	= 30
 ; VBXE text-mode colour byte: bits 0-6 = foreground palette-0 entry (0-127),
 ; bit 7 = 1 -> opaque background (hardware-forced to palette[fg+128]), 0 ->
-; transparent.  UI_Apply_TextPalette de-interleaves the Atari master into set 0
+; transparent.  UI_Build_TextPalette de-interleaves the Atari master for set 0
 ; so entry e = master colour 2e: hue = e>>3 (all 16 hues), luma = (e&7)*2.
 ; The cursor row is marked by FOREGROUND colour only - no opaque bar - because
 ; after the de-interleave palette[e+128] is the adjacent-luma neighbour of
@@ -140,10 +140,9 @@ Rescan_Images
 ; Show "Scanning directory..." where the path goes - the scan + IMAGES.LST
 ; name cache can take a while in a big folder.  Every caller repaints the
 ; whole selector (Selector_Draw) afterwards.
-	jsr UI_Pen_LocRow
-	TXT_AT 0, 2, UI_Str_Loc				; label too - not drawn yet at boot
-	TXT_AT 0, 12, UI_Str_StatusBlank+12	; 68 spaces: clear the old path + counter
-	TXT_AT 0, 12, UI_Str_Scanning
+	lda #<UI_Str_Scanning
+	ldy #>UI_Str_Scanning
+	jsr UI_Show_Busy
 
 	jsr Build_Image_List				; fills IMAGE_BANK; sets ImageCount/Dir_Count/FileStart
 
@@ -523,39 +522,48 @@ Emit_Path_Prefix_Done
 ;=============================================================================
 
 ;-----------------------------------------------------------------------------
-; Enter_Selector - restore Palette 0 for text, refresh the menu banner's
-; palette registers 1-3 (Load_Image overwrites them for every real image
-; viewed in between - a cheap resident-VRAM-to-register copy, no disk access;
-; see Apply_Menu_Banner_Palette in view1024.asm), show the text screen, draw
-; it.  Reached from start: (jsr), Handle_Escape (jsr), Slide_Key_Stop (jsr)
-; and Info_Key_Leave (jsr) - always returns.
+; Enter_Selector - build the selector in the back buffer (unseen), put the
+; menu palettes back ONLY if an image replaced them (Pal_Image - after Info,
+; Drive, Quit or a directory P-preview the registers are already right), then
+; show the finished screen: one Text_Present + an XDL switch.  When palettes
+; have to be rewritten the overlay is blanked for those ~2 frames, so neither
+; the image nor the logo is ever seen in the wrong colours.  The logo's VRAM
+; is never touched.  Reached from start: (jsr), Handle_Escape (jsr),
+; Slide_Key_Stop (jsr), Pal_Preview_Keys (jsr) and Info_Key_Leave (jsr) -
+; always returns.
 ;-----------------------------------------------------------------------------
 Enter_Selector
-	jsr Restore_Palette0				; standard PAL/NTSC master palette -> set 0
-	jsr UI_Apply_TextPalette			; ...then de-interleave it for text mode
-	jsr Apply_Menu_Banner_Palette		; refresh the banner's palette registers 1-3
-	jsr Text_Activate					; point the XDL at the menu/info screen
 	lda #$00
 	sta UI_Mode
-	jsr Selector_Draw
-	rts
+	jsr Selector_Draw					; back buffer only - nothing visible yet
+	lda Pal_Image
+	beq Enter_Selector_Show				; menu palettes still in the registers
+	jsr Display_Off						; blank while the registers are rewritten
+	jsr Apply_Menu_Palettes				; text set 0 + banner sets 1-3, clears Pal_Image
+	jsr Text_Present
+	jsr Text_Activate
+	jmp Display_On						; (tail)
+Enter_Selector_Show
+	jsr Text_Present					; the finished screen, in one blit
+	jmp Text_Activate					; (tail) a pure XDL swap
 
 ;-----------------------------------------------------------------------------
-; UI_Apply_TextPalette - Restore_Palette0 has just put the standard Atari 256-
-; colour master into palette set 0.  The VBXE text mode can only reach entries
-; 0-127 as a foreground, and in the master that range is hues 0-7 (no green).
+; UI_Build_TextPalette - the standard Atari 256-colour master (NTSC $00200 /
+; PAL $00500, per Video_Flag) has its entries 0-127 in hues 0-7 only (no
+; green), and the VBXE text mode can only reach entries 0-127 as a foreground.
 ; De-interleave it so:
 ;     entry e        (0..127) = master colour 2e    (all 16 hues, even lumas)
 ;     entry 128+e             = master colour 2e+1  (odd lumas - inverse bg)
 ; Build a page-aligned 768-byte image at VBXE $00800 (free: NTSC master
-; $00200-$004FF, PAL master $00500-$007FF, VRAM from $01000) and re-upload it
-; as set 0.  Runs only on entry to the selector - not per frame.
+; $00200-$004FF, PAL master $00500-$007FF, VRAM from $01000).  Runs ONCE, from
+; start: - the buffer stays resident (Clear_Screen starts at $01000) and
+; Apply_Menu_Palettes (view1024.asm) uploads it as set 0 whenever needed.
 ; Restore_Palette0 itself is left untouched so the DOS-exit path still restores
-; the true master.  Clobbers A/X/Y, Ptr_Lo/Hi, Name_Ptr, Y_Register.
+; the true master.  Clobbers A/X/Y, Ptr_Lo/Hi, Name_Ptr.
 ;-----------------------------------------------------------------------------
 UI_APPLY_TP_BUF		= VBXE_WINDOW + $800		; page-aligned de-interleave buffer
 
-UI_Apply_TextPalette
+UI_Build_TextPalette
 	lda #$00 | MEMAC_GLOBAL_ENABLE				; map VBXE bank $00 into the window
 	vbsta VBXE_MA_BSEL
 
@@ -581,14 +589,6 @@ UI_Apply_TP_P2Dst
 	lda #>[UI_APPLY_TP_BUF + $180]
 	sta Name_Ptr+1
 	jsr UI_Apply_TP_Pass
-
-; --- upload the de-interleaved image as palette set 0
-	lda #<UI_APPLY_TP_BUF
-	sta Y_Register
-	lda #>UI_APPLY_TP_BUF
-	sta Y_Register+1
-	lda #$00
-	jsr VBXE_SetPalette2
 
 	lda #MEMAC_GLOBAL_DISABLE
 	vbsta VBXE_MA_BSEL
@@ -641,15 +641,13 @@ UI_Apply_TP_Pass_Next
 	rts
 
 ;-----------------------------------------------------------------------------
-; Selector_Draw - full repaint.  Only entered from Enter_Selector (boot / ESC)
-; and after a rescan; the nav / delay keys repaint just what changed.
+; Selector_Draw - full repaint of the back buffer (shown by the caller's
+; Text_Present, or by Read_Key_Done).  Only entered from Enter_Selector (boot /
+; ESC) and after a rescan; the nav / delay keys repaint just what changed.
 ;-----------------------------------------------------------------------------
 Selector_Draw
 	jsr Text_Clear
-	jsr UI_Pen_LocRow						; "Location: " and the path, one colour
-	TXT_AT 0, 2, UI_Str_Loc
-	jsr UI_Build_LocLine
-	TXT_AT 0, 12, Txt_Line
+	jsr Selector_DrawLocRow				; row 0 (its counter: Selector_DrawStatus)
 											; row 1 stays blank - see the row map above
 
 	jsr Selector_DrawList
@@ -662,37 +660,53 @@ Selector_Draw
 	jmp Selector_DrawStatus				; row 20: the highlighted image's description
 
 ;-----------------------------------------------------------------------------
-; Selector_DrawLegend - row 22 "Nav: ...".  The 4 arrow glyphs differ by font
-; (CGA.F08: CP437 $18 $19 $1B $1A; ATARI.F08: ATASCII $1C-$1F), so they are
-; patched into UI_Legend_Arrows from Font_Sel before every draw.  Also called
-; by UI_Toggle_Font so the arrows follow an F press straight away.
+; Selector_DrawLegend - row 22 "Nav: ...".  The arrows are the CP437 codes
+; $18 $19 $1B $1A, which the Atari font carries too (Text_Load_Fonts), so the
+; legend is right in either font with no redraw.
 ;-----------------------------------------------------------------------------
 Selector_DrawLegend
-	ldx #$03
-Selector_DrawLegend_L1
-	jsr UI_Arrow_Glyph
-	sta UI_Legend_Arrows,x				; up down left right
-	dex
-	bpl Selector_DrawLegend_L1
 	jsr UI_Pen_Normal
 	TXT_AT 22, 0, UI_Str_Legend
 	rts
 
-; UI_Arrow_Glyph - X = 0 up / 1 down / 2 left / 3 right -> A = that arrow's
-; glyph in the current font (Font_Sel).  X preserved; clobbers Y.
-UI_Arrow_Glyph
-	txa
-	ldy Font_Sel
-	beq UI_Arrow_Glyph_Get
-	ora #$04							; Atari font: the second 4 entries
-UI_Arrow_Glyph_Get
-	tay
-	lda UI_Legend_Arrow_Glyphs,y
+;-----------------------------------------------------------------------------
+; Selector_DrawLocRow - row 0: "Location: " + the current path, the rest of
+; the row (old path / busy message / counter) blanked.  Selector_DrawCount
+; puts the right-hand counter back - Selector_Restore_LocRow does both.
+;-----------------------------------------------------------------------------
+Selector_DrawLocRow
+	jsr UI_Pen_LocRow					; "Location: " and the path, one colour
+	TXT_AT 0, 2, UI_Str_Loc
+	TXT_AT 0, 12, UI_Str_StatusBlank+12	; 68 spaces: clear cols 12-79
+	jsr UI_Build_LocLine
+	TXT_AT 0, 12, Txt_Line
 	rts
 
-UI_Legend_Arrow_Glyphs
-	dta $18,$19,$1B,$1A					; CGA font:   up down left right (CP437)
-	dta $1C,$1D,$1E,$1F					; Atari font: up down left right (ATASCII)
+; Row 0 back to normal after a UI_Show_Busy whose load failed - the selector
+; stays up.  Shown by Read_Key_Done.
+Selector_Restore_LocRow
+	jsr Selector_DrawLocRow
+	jmp Selector_DrawCount				; (tail)
+
+;-----------------------------------------------------------------------------
+; UI_Show_Busy - A/Y = lo/hi of a NUL-terminated message.  Shows it in row 0
+; in the path's place ("Location: " stays, the rest of the row is blanked) and
+; PRESENTS it at once: the caller is about to do slow disk I/O, during which
+; no key loop runs.  The rest of the screen stays as it was.
+;-----------------------------------------------------------------------------
+UI_Show_Busy
+	pha									; message lo
+	tya
+	pha									; message hi
+	jsr UI_Pen_LocRow
+	TXT_AT 0, 2, UI_Str_Loc				; label too - not drawn yet at boot
+	TXT_AT 0, 12, UI_Str_StatusBlank+12	; 68 spaces: clear the old path + counter
+	pla
+	sta Txt_Ptr + $01
+	pla
+	sta Txt_Ptr
+	jsr Text_PutStrAt					; the message (Txt_Row/Col still 0/12)
+	jmp Text_Present					; (tail) on screen now, before the I/O
 
 ;-----------------------------------------------------------------------------
 Selector_DrawList
@@ -998,7 +1012,7 @@ Selector_DrawStatus
 	sec
 	sbc FileStart						; ordinal into the *.V1K group
 	sta Nfo_Name_Ord
-	jsr Nfo_Name_MapSlot				; Ptr_Lo/Hi -> slot, bank $2A..$2D mapped
+	jsr Nfo_Name_MapSlot				; Ptr_Lo/Hi -> slot, bank $37..$3E mapped
 	jsr Nfo_Name_Emit					; Nfo_Name_Line = name padded to NFO_NAME_CAP + NUL
 	lda #<Nfo_Name_Line
 	sta Txt_Ptr
@@ -1122,7 +1136,7 @@ Nfo_Name_LoadManifest_Got				; (a long record is cut to NFO_NAME_CAP below, not 
 	jsr Nfo_Name_Match					; key = Nfo_Name_Line[0..7]  -> A = ordinal
 	bcs Nfo_Name_LoadManifest_Line		; no matching *.V1K row - drop the line
 	sta Nfo_Name_Ord
-	jsr Nfo_Name_MapSlot				; Ptr_Lo/Hi -> slot, bank $2A..$2D mapped
+	jsr Nfo_Name_MapSlot				; Ptr_Lo/Hi -> slot, bank $37..$3E mapped
 	ldy #$00
 Nfo_Name_LoadManifest_Copy
 	lda Nfo_Name_Line + 8,y
@@ -1746,8 +1760,7 @@ Sel_Key_Drive_SeedSet
 	jmp Read_Key_Done
 
 ; Drive_Draw - paint the drive window (frame, title, drive rows) over the saved
-; rectangle.  Also called by UI_Toggle_Font while the window is up, to redraw
-; the frame in the new font's line glyphs.
+; rectangle, in the back buffer - Read_Key_Done shows it in one blit.
 Drive_Draw
 	jsr UI_Pen_Frame
 	jsr Drive_Win_Geom
@@ -1919,9 +1932,8 @@ Sel_Key_Quit
 	sta UI_Mode
 	jmp Read_Key_Done
 
-; Quit_Draw - paint the quit box (frames + text) over the saved rectangle.
-; Also called by UI_Toggle_Font while the box is up, to redraw the frames in
-; the new font's line glyphs (Text_Window_Frame picks them by Font_Sel).
+; Quit_Draw - paint the quit box (frames + text) over the saved rectangle, in
+; the back buffer - Read_Key_Done shows it in one blit.
 Quit_Draw
 	jsr UI_Pen_Frame
 	jsr Quit_Win_Geom
@@ -1960,35 +1972,6 @@ Quit_Draw
 	lda #>UI_Str_QuitNo
 	sta Txt_Ptr + $01
 	jmp Text_PutStrAt					; tail
-
-;-----------------------------------------------------------------------------
-; UI_Toggle_Font - the F key (Handle_Keys, any screen): flip the font, and if
-; a popup (drive picker / quit box) is up, repaint it so its box lines use
-; the new font's glyphs.
-;-----------------------------------------------------------------------------
-UI_Toggle_Font
-	jsr Toggle_Font
-	lda UI_Mode							; selector, or a popup over it (row 22
-	beq UI_Toggle_Font_Legend			; is never covered): redraw the legend
-	cmp #$03							; so its arrow glyphs follow the font
-	beq UI_Toggle_Font_Legend
-	cmp #$05
-	beq UI_Toggle_Font_Legend
-	cmp #$04							; info viewer: its own "Nav:" footer line
-	bne UI_Toggle_Font_Done
-	jmp Info_DrawFooter					; tail
-UI_Toggle_Font_Legend
-	jsr Selector_DrawLegend
-	lda UI_Mode
-	cmp #$03
-	bne UI_Toggle_Font_NotDrive
-	jmp Drive_Draw						; tail
-UI_Toggle_Font_NotDrive
-	cmp #$05
-	bne UI_Toggle_Font_Done
-	jmp Quit_Draw						; tail
-UI_Toggle_Font_Done
-	rts
 
 ; A = left column of a QUIT_BTN_W x 3 single-line button box (rows 2-4 of the
 ; quit window), drawn in the current pen.
@@ -2043,11 +2026,10 @@ Quit_Confirm_Cancel
 View_Selected
 	lda Sel_Index
 	sta File_Index
-	jsr Text_Deactivate
-	jsr Clear_Screen
-	jsr Load_Image
-	jsr Enable_Colour_Map
-	rts
+	jsr Clear_Screen					; framebuffer + CRAM to 0 while the menu is still up
+	jsr Wait_VBlank
+	jsr Text_Deactivate					; = XDL_Image_Attribute: all-transparent black, so the
+	jmp Load_Image						; palette apply is unseen; the pixels stream in (tail)
 
 ;-----------------------------------------------------------------------------
 ; Selector_Sync_Cursor - pull the selector highlight back onto File_Index.
@@ -2078,25 +2060,60 @@ Selector_Sync_Zero
 	rts
 
 ;-----------------------------------------------------------------------------
-; Selector_Handle_P - "P" key: load the highlighted .V1K's .PAL block (all 4
-; palette registers) and show its 2x2 grid of ramp squares, one per
-; palette, zoomed 7x and centered on the image screen (UI_Mode 6,
+; Selector_Handle_P - "P" key: show a 2x2 grid of ramp squares, one per
+; palette register, zoomed 7x and centered on the image screen (UI_Mode 6,
 ; Esc-only - see Pal_Preview_Keys).
+;   * on a *.V1K row: "Reading palette..." in row 0, read the .PAL block to
+;     $21000 with the selector still up; a missing / short file leaves the
+;     selector up (row 0 restored).  Only once it has loaded is the preview
+;     built (unseen) and swapped in, with the registers rewritten under a
+;     blanked overlay.
+;   * on "..", a directory or an empty list: no disk access at all - the
+;     registers already hold the menu's own palettes 0-3, so just show them.
 ;-----------------------------------------------------------------------------
 Selector_Handle_P
+	lda ImageCount
+	ora ImageCount+1
+	beq Selector_Handle_P_Menu			; empty list -> the menu palettes
+	lda Sel_Index
+	jsr UI_RowType
+	bne Selector_Handle_P_Menu			; dir / ".." -> the menu palettes
+
 	lda Sel_Index
 	sta File_Index
-	jsr Text_Deactivate
-	jsr Clear_Screen
-	jsr Load_Image_Palette
+	lda #<UI_Str_ReadPal
+	ldy #>UI_Str_ReadPal
+	jsr UI_Show_Busy					; "Reading palette..." - on screen now
+	jsr Read_Image_Palette				; .PAL block -> $21000, registers untouched
+	bcc Selector_Handle_P_Loaded
+	jmp Selector_Restore_LocRow			; failed - selector stays up (tail)
+
+Selector_Handle_P_Loaded
+	jsr Pal_Preview_Build				; framebuffer + CRAM, all unseen
+	jsr Display_Off						; blank while the registers change
+	jsr Apply_Image_Palette				; sets Pal_Image -> Enter_Selector restores
 	lda #MEMAC_GLOBAL_DISABLE
 	vbsta VBXE_MA_BSEL
-	jsr Fill_Pal_Preview_Cmap
-	jsr Draw_Pal_Preview_Squares
-	jsr Enable_Colour_Map
+	jsr Text_Deactivate					; = XDL_Image_Attribute
+	jsr Display_On
+	jmp Selector_Handle_P_Mode
+
+Selector_Handle_P_Menu
+	jsr Pal_Preview_Build
+	jsr Wait_VBlank
+	jsr Text_Deactivate					; a pure XDL swap - no palette change
+Selector_Handle_P_Mode
+	jsr Selector_Restore_LocRow			; row 0 tidy for the way back (back buffer)
 	lda #$06
 	sta UI_Mode
 	rts
+
+; Pal_Preview_Build - the 2x2 squares + their attribute cells into the
+; (hidden) framebuffer / CRAM, by blitter.
+Pal_Preview_Build
+	jsr Clear_Screen
+	jsr Fill_Pal_Preview_Cmap
+	jmp Draw_Pal_Preview_Squares		; (tail)
 
 ;=============================================================================
 ; P-preview screen keys (UI_Mode = 6) - Esc only; every other key ignored
@@ -2115,19 +2132,30 @@ Pal_Preview_Keys_None
 
 ;-----------------------------------------------------------------------------
 ; Selector_Handle_I - load the selected image's "<name>.NFO" and open the info
-; viewer (UI_Mode 4).  Missing file -> stay on the selector, do nothing.
+; viewer (UI_Mode 4).  "Reading nfo..." shows in row 0 during the load; the
+; info screen is then built in the back buffer and shown by Read_Key_Done in
+; one blit.  Missing file -> row 0 restored, selector stays up.  A directory /
+; ".." row has no .NFO - ignored, no disk access.
 ;-----------------------------------------------------------------------------
 Selector_Handle_I
 	lda ImageCount
 	ora ImageCount+1
 	beq Selector_Handle_I_Ret			; no images -> nothing to describe
 	lda Sel_Index
+	jsr UI_RowType
+	bne Selector_Handle_I_Ret			; dir / ".." -> nothing to describe
+	lda Sel_Index
 	sta File_Index
+	lda #<UI_Str_ReadNfo
+	ldy #>UI_Str_ReadNfo
+	jsr UI_Show_Busy					; "Reading nfo..." - on screen now
 	lda #$01							; ext selector 1 = .NFO
 	jsr Build_Filename					; FileNamePtr -> "D[n]:PATH<base>.NFO",0
 	jsr Info_Load						; stream into NFO_BUF_VRAM, count records
 	lda LoadStatus
-	beq Selector_Handle_I_Ret			; OPEN failed (no .nfo) - selector stays up
+	bne Selector_Handle_I_Show
+	jmp Selector_Restore_LocRow			; OPEN failed (no .nfo) - selector stays up (tail)
+Selector_Handle_I_Show
 	lda #$00
 	sta Nfo_Top
 	sta Nfo_Top + $01
@@ -2142,22 +2170,10 @@ Selector_Handle_I_Ret
 ;-----------------------------------------------------------------------------
 ; Info_DrawFooter - draw the info viewer's "Nav: ..." line in the footer band,
 ; on its 3rd/last row (row TEXT_MAIN_ROWS+2, i.e. row 22).  Called on entry to
-; Info mode, and by UI_Toggle_Font so the arrow glyphs follow the font; the
-; footer band's other two rows stay blank for this screen.
+; Info mode; the footer band's other two rows stay blank for this screen.  The
+; arrows are CP437 codes both fonts carry (Text_Load_Fonts).
 ;-----------------------------------------------------------------------------
 Info_DrawFooter
-	ldx #$00
-	jsr UI_Arrow_Glyph
-	sta UI_InfoHint_UD					; up
-	inx
-	jsr UI_Arrow_Glyph
-	sta UI_InfoHint_UD+1				; down
-	inx
-	jsr UI_Arrow_Glyph
-	sta UI_InfoHint_LR					; left
-	inx
-	jsr UI_Arrow_Glyph
-	sta UI_InfoHint_LR+1				; right
 	jsr UI_Pen_Normal
 	TXT_AT TEXT_MAIN_ROWS+2, 0, UI_Str_InfoHint
 	rts
@@ -2318,6 +2334,8 @@ Info_Count_Done
 ; records that exist.
 ;-----------------------------------------------------------------------------
 Info_Draw
+	lda #$01
+	sta Txt_Dirty						; the blit below writes the back buffer
 ; Reg6:Reg5 = Nfo_LineCount - Nfo_Top   (records available; >= 0 by scroll invariant)
 	sec
 	lda Nfo_LineCount
@@ -2620,7 +2638,7 @@ UI_Str_DelayHint	dta TXT_PEN,UI_PEN_VALUE,c' sec '
 					dta TXT_PEN,UI_PEN_KEY,c'>',TXT_PEN,UI_PEN_DESC,c' More                  Press '
 					dta TXT_PEN,UI_PEN_KEY,c'HELP',TXT_PEN,UI_PEN_DESC,c' for additional information',0
 UI_Str_Legend		dta TXT_PEN,UI_PEN_LOC,c'Nav: ',TXT_PEN,UI_PEN_KEY
-UI_Legend_Arrows	dta c'UDLR'							; patched per font - Selector_DrawLegend
+					dta $18,$19,$1B,$1A					; CP437 up down left right (both fonts)
 					dta TXT_PEN,UI_PEN_DESC,c' Select '
 					dta TXT_PEN,UI_PEN_KEY,c'Enter',TXT_PEN,UI_PEN_DESC,c' Choose '
 					dta TXT_PEN,UI_PEN_KEY,c'S',TXT_PEN,UI_PEN_DESC,c' Slideshow '
@@ -2630,11 +2648,11 @@ UI_Legend_Arrows	dta c'UDLR'							; patched per font - Selector_DrawLegend
 					dta TXT_PEN,UI_PEN_KEY,c'F',TXT_PEN,UI_PEN_DESC,c' Font '
 					dta TXT_PEN,UI_PEN_KEY,c'Q',TXT_PEN,UI_PEN_DESC,c' Quit',0
 ; Info screen row 22 (col 0, 80 cells) - same scheme as UI_Str_Legend; the two
-; arrow pairs are patched per font by Info_DrawFooter.
+; arrows are CP437 codes both fonts carry.
 UI_Str_InfoHint		dta TXT_PEN,UI_PEN_LOC,c'Nav: ',TXT_PEN,UI_PEN_KEY,c'ESC'
 					dta TXT_PEN,UI_PEN_DESC,c' Go Back ',TXT_PEN,UI_PEN_KEY
-UI_InfoHint_UD		dta c'UD',TXT_PEN,UI_PEN_DESC,c' scroll ',TXT_PEN,UI_PEN_KEY
-UI_InfoHint_LR		dta c'LR',TXT_PEN,UI_PEN_DESC,c' Page         Press '
+					dta $18,$19,TXT_PEN,UI_PEN_DESC,c' scroll ',TXT_PEN,UI_PEN_KEY
+					dta $1B,$1A,TXT_PEN,UI_PEN_DESC,c' Page         Press '
 					dta TXT_PEN,UI_PEN_KEY,c'HELP',TXT_PEN,UI_PEN_DESC,c' for additional information',0
 UI_Str_DriveTitle	dta c'Log Drive',0
 UI_Str_QuitConfirm	dta TXT_PEN,UI_PEN_QUITQ,c'Are You Sure To Quit',0
@@ -2643,6 +2661,8 @@ UI_Str_QuitNo		dta TXT_PEN,UI_PEN_NO,c'N',0
 UI_Str_Nfo			dta TXT_PEN,UI_PEN_LOC,c'Nfo:',TXT_PEN,UI_PEN_VALUE,c' ',0
 UI_Str_StatusBlank	dta c'                                                                                ',0	; 80 spaces (Nfo: + NFO_NAME_CAP)
 UI_Str_Scanning		dta c'Scanning directory...',0
+UI_Str_ReadNfo		dta c'Reading nfo...',0
+UI_Str_ReadPal		dta c'Reading palette...',0
 UI_Str_Of			dta c' of ',0
 UI_Str_Images		dta c' images',0
 UI_Str_Image1		dta c' image ',0

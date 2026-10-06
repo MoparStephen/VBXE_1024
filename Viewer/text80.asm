@@ -25,9 +25,10 @@
 ; is held across one below.
 ;
 ; PUBLIC API (called by ui.asm):
-;   Text_Init        stream CGA.F08 into VRAM once; blank the screen RAM.
+;   Text_Init        copy both fonts into VRAM once; blank the screen RAM.
 ;   Text_Activate    point VBXE_XDL_ADR0/1/2 at XDL_MainMenu.
 ;   Text_Deactivate  point them back at XDL_Image_Attribute (offset 0).
+;   Text_Present     blit the back buffer onto the displayed screen, in vblank.
 ;   Text_Clear       blitter zero-fill of the 80 x TEXT_ROWS cells (blank +
 ;                    transparent) - ONE contiguous buffer backing both the
 ;                    XDL's main-content and footer text bands, see xdl.asm.
@@ -41,6 +42,13 @@
 ;
 ; INPUT VARIABLES (set by ui.asm before the call):
 ;   Txt_Row .byte  0..(TEXT_ROWS-1)    Txt_Col .byte  0..79    Txt_Ptr .word  -> string
+;
+; DOUBLE BUFFERED.  Every draw call below writes the BACK buffer
+; (TEXT_BACK_VRAM), never the displayed one, and sets Txt_Dirty.  Nothing
+; appears until Text_Present copies the whole back buffer across with one blit
+; during vblank - Read_Key_Done does that after every key that drew anything,
+; and the transitions (Enter_Selector, UI_Show_Busy before slow disk I/O) call
+; it directly.  So a repaint, a dialog, a scroll is never seen half-built.
 ;=============================================================================
 
 ; --- placeholder tuning knobs (Stephen finalises with Make_Attr / the XDL) ---
@@ -55,7 +63,8 @@
 .var	Txt_Attr		.byte = $6B4	; current pen, as one cell attribute byte
 .var	Txt_FrameStyle	.byte = $6B5	; Text_Window_Frame border: FRAME_DOUBLE / FRAME_SINGLE
 .var	Txt_Bank		.byte = $6B6	; VBXE bank currently mapped by the cell writer
-;	$6B7 to $6FF free
+.var	Txt_Dirty		.byte = $6B7	; non-zero = back buffer changed since the last Text_Present
+;	$6B8 to $6FF free
 
 ;-----------------------------------------------------------------------------
 ; Text_Init - default pen, load the font, blank the screen.  Called once.
@@ -66,7 +75,8 @@ Text_Init
 	jsr Text_SetPen						; sets Txt_Attr
 
 	jsr Text_Load_Fonts					; embedded CGA.F08 + ATARI.F08 -> VRAM bank $22
-	jmp Text_Clear						; blank the screen RAM, then rts
+	jsr Text_Clear						; blank the back buffer...
+	jmp Text_Present					; ...and the displayed screen, then rts
 
 ;-----------------------------------------------------------------------------
 ; Text_Load_Fonts - copy both embedded 2048-byte fonts into VRAM bank
@@ -100,9 +110,59 @@ Text_Load_Fonts
 	sta Reg2
 	jsr Text_Copy_2K
 
+; Make the Atari font answer to the CP437 codes the UI draws with: copy its own
+; line / arrow glyphs into those slots (VRAM copy only - ATARI.F08 itself is
+; untouched).  Both fonts then render the same bytes, so F is a pure CHBASE
+; flip and nothing on screen ever needs redrawing for it.  The overwritten
+; slots are only inverse-video copies ($80+) and ATASCII Ctrl glyphs no UI
+; string or .NFO (plain ASCII) uses.
+	ldx #$00
+Text_Load_Fonts_Remap
+	lda Atari_Remap_Table,x				; source glyph -> Ptr = $2800 + src*8
+	jsr Text_Glyph_Addr
+	sta Ptr_Lo
+	sty Ptr_Hi
+	lda Atari_Remap_Table+1,x			; dest glyph   -> Reg1/2 = $2800 + dst*8
+	jsr Text_Glyph_Addr
+	sta Reg1
+	sty Reg2
+	ldy #$07
+Text_Load_Fonts_Glyph
+	lda (Ptr_Lo),y
+	sta (Reg1),y
+	dey
+	bpl Text_Load_Fonts_Glyph
+	inx
+	inx
+	cpx #[Atari_Remap_Table_End-Atari_Remap_Table]
+	bne Text_Load_Fonts_Remap
+
 	lda #MEMAC_GLOBAL_DISABLE
 	vbsta VBXE_MA_BSEL
 	rts
+
+; A = glyph code -> A/Y = lo/hi of that glyph's 8 bytes in the Atari font, as
+; mapped at VBXE_WINDOW + $800.  X preserved.
+Text_Glyph_Addr
+	ldy #>[[VBXE_WINDOW + $800] / 8]	; = $05 - becomes $28 after the x8 below
+	sty Reg3
+	asl
+	rol Reg3
+	asl
+	rol Reg3
+	asl
+	rol Reg3							; Reg3:A = $2800 + code*8
+	ldy Reg3
+	rts
+
+; {source, destination} glyph pairs, applied in order.  Box lines first: $1A
+; (ATASCII Ctrl-Z corner) is read here before the arrows overwrite it.
+; CP437 double and single box sets both map onto the Atari single-line set.
+Atari_Remap_Table
+	dta $11,$C9, $12,$CD, $05,$BB, $7C,$BA, $1A,$C8, $03,$BC	; double: TL - TR | BL BR
+	dta $11,$DA, $12,$C4, $05,$BF, $7C,$B3, $1A,$C0, $03,$D9	; single: TL - TR | BL BR
+	dta $1C,$18, $1D,$19, $1E,$1B, $1F,$1A						; arrows: up down left right
+Atari_Remap_Table_End
 
 ; Copy 2048 bytes (Ptr_Lo/Hi) -> (Reg1/Reg2), 8 pages.
 Text_Copy_2K
@@ -123,8 +183,9 @@ Text_Copy_2K_L1
 ; Toggle_Font - flip the text screen between the CGA ($44) and Atari ($45)
 ; font by rewriting the two XDLC_CHBASE bytes (main + footer text blocks) in
 ; XDL_MainMenu.  The VBXE re-reads the XDL each frame, so the change shows on
-; the next frame with no redraw.  Called from Handle_Keys on the F key, from
-; any screen.
+; the next frame with no redraw - Text_Load_Fonts gave the Atari font the same
+; box / arrow codes as CGA, so an open dialog or legend is right in either.
+; Called from Handle_Keys on the F key, from any screen.
 ;-----------------------------------------------------------------------------
 Toggle_Font
 	lda Font_Sel
@@ -161,6 +222,38 @@ Text_Deactivate							; back to XDL_Image_Attribute (offset 0)
 	rts
 
 ;-----------------------------------------------------------------------------
+; Text_Present - copy the whole back buffer (TEXT_BACK_VRAM) onto the displayed
+; text screen (TEXT_SCREEN_VRAM) with one BLT_TEXT_RECT blit, kicked in vblank
+; (Wait_VBlank) so the change lands between frames.  Clears Txt_Dirty.
+; Clobbers A/Y.
+;-----------------------------------------------------------------------------
+Text_Present
+	lda #MEMAC_GLOBAL_ENABLE				; map VBXE bank $00 -> $2000 window (patch the BCB)
+	vbsta VBXE_MA_BSEL
+	lda #<TEXT_BACK_VRAM
+	sta BLT_TEXT_RECT + Src_Adr0
+	lda #>TEXT_BACK_VRAM
+	sta BLT_TEXT_RECT + Src_Adr1
+	lda #[TEXT_BACK_VRAM >> 16]
+	sta BLT_TEXT_RECT + Src_Adr2
+	lda #<TEXT_SCREEN_VRAM
+	sta BLT_TEXT_RECT + Dest_Adr0
+	lda #>TEXT_SCREEN_VRAM
+	sta BLT_TEXT_RECT + Dest_Adr1
+	lda #[TEXT_SCREEN_VRAM >> 16]
+	sta BLT_TEXT_RECT + Dest_Adr2
+	lda #<[TEXT_PITCH-1]
+	sta BLT_TEXT_RECT + Blt_W0			; Width-1  = 159 bytes (80 cells)
+	lda #>[TEXT_PITCH-1]
+	sta BLT_TEXT_RECT + Blt_W1
+	lda #TEXT_ROWS-1
+	sta BLT_TEXT_RECT + Blt_H			; Height-1 = every row, both bands
+	lda #$00
+	sta Txt_Dirty
+	jsr Wait_VBlank						; swap between frames
+	jmp Text_Window_Kick				; unmap, kick, wait (tail)
+
+;-----------------------------------------------------------------------------
 ; Text_SetPen - A = foreground palette entry (0-127),
 ;               X = background: 0 = transparent, non-zero = opaque.
 ;-----------------------------------------------------------------------------
@@ -186,12 +279,14 @@ Make_Attr_Done
 	rts
 
 ;-----------------------------------------------------------------------------
-; Text_Clear - blitter zero-fill of TEXT_SCREEN_VRAM .. +TEXT_SCREEN_BYTES.
+; Text_Clear - blitter zero-fill of the back buffer (TEXT_BACK_VRAM ..
+; +TEXT_SCREEN_BYTES).
 ; Kicks BLT_CLEAR_TEXT (constant-source fast fill, MODE 0) and waits for it to
-; finish - callers poke glyphs into the same VRAM immediately after.  The blit
-; crosses the $24000 bank boundary on its own (24-bit destination address).
+; finish - callers poke glyphs into the same VRAM immediately after.
 ;-----------------------------------------------------------------------------
 Text_Clear
+	lda #$01
+	sta Txt_Dirty
 	lda #BLT_CLEAR_TEXT-BLT_CLEAR
 	vbsta VBXE_BL_ADR0					; Point the blitter at BLT_CLEAR_TEXT
 	lda #$00
@@ -218,6 +313,8 @@ Text_Clear_L2
 ;-----------------------------------------------------------------------------
 Text_FillColour
 	sta Reg3							; Reg3 = attribute (Xor mask / fill value)
+	lda #$01
+	sta Txt_Dirty
 ; Reg5:Reg4 = Txt_Row * TEXT_PITCH + Txt_Col*2 + 1  (attribute byte offset)
 	lda #$00
 	sta Reg4
@@ -253,8 +350,10 @@ Text_FillColour_Patch
 	sta BLT_FILL_COLOUR + Dest_Adr0		; dest lo  = offset lo
 	lda Reg5
 	clc
-	adc #$30							; + $30  (low 16 bits of TEXT_SCREEN_VRAM = $3000)
-	sta BLT_FILL_COLOUR + Dest_Adr1		; dest mid ; dest hi stays $02 (BCB default)
+	adc #>TEXT_BACK_VRAM				; + the back buffer's mid byte (offset < $1000, no carry)
+	sta BLT_FILL_COLOUR + Dest_Adr1		; dest mid
+	lda #[TEXT_BACK_VRAM >> 16]
+	sta BLT_FILL_COLOUR + Dest_Adr2		; dest hi
 	lda Reg1
 	sta BLT_FILL_COLOUR + Blt_W0			; Width-1  (cells - 1)
 	lda Reg2
@@ -283,7 +382,7 @@ Text_FillColour_L2
 
 ;-----------------------------------------------------------------------------
 ; Text_Window_Save / Text_Window_Restore - blit a rectangle of {glyph,attr}
-; cells between the text screen and WIN_SAVE_VRAM (a save-under buffer held at
+; cells between the (back buffer) text screen and WIN_SAVE_VRAM (a save-under buffer held at
 ; screen pitch).  Inputs: Txt_Row / Txt_Col = top-left cell, Reg1 = width-1
 ; (cells), Reg2 = height-1 (rows).  Patches BLT_TEXT_RECT and waits.  The rect
 ; must fit WIN_SAVE_VRAM: 4K / TEXT_PITCH = 25 rows max.
@@ -296,9 +395,9 @@ Text_Window_Save
 	sta BLT_TEXT_RECT + Src_Adr0
 	lda Reg5
 	clc
-	adc #$30							; low 16 bits of TEXT_SCREEN_VRAM = $3000
+	adc #>TEXT_BACK_VRAM				; back buffer mid byte (offset < $1000, no carry)
 	sta BLT_TEXT_RECT + Src_Adr1
-	lda #$02
+	lda #[TEXT_BACK_VRAM >> 16]
 	sta BLT_TEXT_RECT + Src_Adr2
 	lda #<WIN_SAVE_VRAM
 	sta BLT_TEXT_RECT + Dest_Adr0
@@ -309,6 +408,8 @@ Text_Window_Save
 	jmp Text_Window_Kick
 
 Text_Window_Restore
+	lda #$01
+	sta Txt_Dirty
 	jsr Text_Window_Setup
 	lda #<WIN_SAVE_VRAM
 	sta BLT_TEXT_RECT + Src_Adr0
@@ -320,9 +421,9 @@ Text_Window_Restore
 	sta BLT_TEXT_RECT + Dest_Adr0
 	lda Reg5
 	clc
-	adc #$30
+	adc #>TEXT_BACK_VRAM
 	sta BLT_TEXT_RECT + Dest_Adr1
-	lda #$02
+	lda #[TEXT_BACK_VRAM >> 16]
 	sta BLT_TEXT_RECT + Dest_Adr2
 	jmp Text_Window_Kick
 
@@ -391,27 +492,19 @@ Text_Window_Kick_L2
 ; Text_Window_Frame - draw a box with a blank interior over Txt_Row / Txt_Col /
 ; Reg1 (width-1) / Reg2 (height-1), using the current pen.  Txt_FrameStyle
 ; picks the border: the CP437 box-drawing glyphs FRAME_DOUBLE / FRAME_SINGLE.
-; With the Atari font up (Font_Sel = 1) both switch to FRAME_ATARI - the
-; ATASCII Ctrl-key line glyphs (Ctrl-Q/R/E/Z/C + '|'), single lines only -
-; since the Atari font has other glyphs at the CP437 codes.  Uses Txt_Line as
-; scratch.  Clobbers A/X/Y, Reg1..Reg8, Txt_FrameStyle.
+; The Atari font carries its own single-line glyphs at those same codes (see
+; Text_Load_Fonts), so the frame is right in either font with no redraw.
+; Uses Txt_Line as scratch.  Clobbers A/X/Y, Reg1..Reg8.
 ;-----------------------------------------------------------------------------
 .def	FRAME_DOUBLE	= 0				; Text_Window_Frame_Chars offsets (9 bytes per style)
 .def	FRAME_SINGLE	= 9
-.def	FRAME_ATARI		= 18			; picked automatically for the Atari font
 
 ; Per style, three {left, fill, right} triples: top edge, interior row, bottom edge.
 Text_Window_Frame_Chars
 	dta $C9,$CD,$BB, $BA,' ',$BA, $C8,$CD,$BC	; FRAME_DOUBLE  (CP437 double lines)
 	dta $DA,$C4,$BF, $B3,' ',$B3, $C0,$C4,$D9	; FRAME_SINGLE  (CP437 single lines)
-	dta $11,$12,$05, '|',' ','|', $1A,$12,$03	; FRAME_ATARI   (ATASCII Ctrl-Q R E / | / Ctrl-Z R C)
 
 Text_Window_Frame
-	lda Font_Sel
-	beq Text_Window_Frame_Go			; CGA font - the style as asked
-	lda #FRAME_ATARI
-	sta Txt_FrameStyle
-Text_Window_Frame_Go
 	lda Reg1
 	sta Reg7							; Reg7 = width-1 (survives Text_PutStrAt)
 	lda Txt_Col
@@ -477,8 +570,9 @@ Text_Window_Frame_PutRow
 
 ;-----------------------------------------------------------------------------
 ; Text_PutStrAt - write {ASCII, Txt_Attr} pairs for the $00-terminated string
-; at Txt_Ptr, starting at cell (Txt_Col, Txt_Row).  Tracks bank + window
-; offset explicitly (a row near the bottom straddles the $24000 boundary).
+; at Txt_Ptr, starting at cell (Txt_Col, Txt_Row), in the back buffer.  Tracks
+; bank + window offset explicitly (kept general - the 3680-byte buffer sits in
+; one bank today, but a cell walk past $xxFFF still steps to the next).
 ; Inline colour: TXT_PEN, attr switches the pen mid-string (takes no column),
 ; e.g. dta TXT_PEN,UI_PEN_LABEL,c'Location'.  The caller's pen (Txt_Fg/Txt_Bg)
 ; is restored on exit, so an escape never leaks into the next draw.
@@ -486,6 +580,8 @@ Text_Window_Frame_PutRow
 .def	TXT_PEN			= $01			; pen-change escape (CP437 smiley - never in names/descriptions)
 
 Text_PutStrAt
+	lda #$01
+	sta Txt_Dirty
 ; --- Reg2:Reg1 = Txt_Row * TEXT_PITCH + Txt_Col * 2  (cell byte offset) -------
 	lda #$00
 	sta Reg1
@@ -511,14 +607,14 @@ Text_PutStrAt_Col
 	bcc Text_PutStrAt_ColNC
 	inc Reg2
 Text_PutStrAt_ColNC
-; --- fold in TEXT_SCREEN_VRAM: offset (0..$12BF) -> bank + window pointer -----
+; --- fold in TEXT_BACK_VRAM: offset (0..$E5F) -> bank + window pointer --------
 	lda Reg2
 	and #$10							; offset bit 12 = "second bank"
 	beq Text_PutStrAt_Bank0
-	lda #TEXT_SCREEN_BANK+1
+	lda #TEXT_BACK_BANK+1
 	bne Text_PutStrAt_SetBank
 Text_PutStrAt_Bank0
-	lda #TEXT_SCREEN_BANK
+	lda #TEXT_BACK_BANK
 Text_PutStrAt_SetBank
 	sta Txt_Bank
 	lda Reg1
