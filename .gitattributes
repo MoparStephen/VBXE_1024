@@ -1,0 +1,8 @@
+# Keep source in the repo and the working tree as LF (a Windows editor/tool
+# rewrote a batch of files as CRLF once, which turned every line into a diff).
+* text=auto eol=lf
+
+# Files that are committed as CRLF on purpose - leave them byte-for-byte.
+*.lab -text
+*.lst -text
+Convertor/palgui/presets/*.json -text
