@@ -399,8 +399,8 @@ everywhere) duplicate heavily; the duplicates fill the slots and the colours tha
 no longer fit get merged away. Smooth images, where each colour lives in a
 localized region, barely duplicate and keep almost everything.
 
-The report makes this visible: compare `master colours` (input) with `output
-colours` (result), and read `duplicated across palettes`. A large duplicated
+The report makes this visible: compare `Master colours` (input) with `Output
+colours` (result), and read `Duplicated Colours`. A large duplicated
 count with `output < master` is the signature of this problem.
 
 Colour count and per-pixel accuracy trade off against each other, controlled by
@@ -425,26 +425,26 @@ The bias slider chooses how to spend the slot budget: low bias spends slots on
 duplicates (exact colours, no blocks, fewer distinct colours); high bias spends
 them on distinct colours (more colours, more recolouring).
 
-To judge a given bias, read the report's **`accuracy vs the ideal`** block
-rather than `mean OKLab error` on its own — that one averages over *recoloured
+To judge a given bias, read the report's **accuracy rows** (`Identical
+pixels` down to `Cell seams`, straight after the `Result` block) rather than
+the first `Mean OKLab error` on its own — that one averages over *recoloured
 pixels only*, so it can fall while a run gets worse simply because the run
-recoloured more pixels more gently. The block compares the displayed image
+recoloured more pixels more gently. The accuracy rows compare the displayed image
 against the same image quantized to the same colours with no cell restriction,
 so the quantization loss cancels and what remains is exactly what the 8-pixel
 cell cost:
 
 ```
-accuracy vs the ideal (what the 8-px cell rule cost):
-  identical pixels   : 75016 / 76800  (97.68% of opaque px)
-  RMSE (sRGB)        : 2.84     <- the norm distance
-  PSNR               : 39.1 dB
-  mean OKLab error   : 0.0006  (every pixel, not just the recoloured ones)
-  worst OKLab error  : 0.2009
-  cells damaged      : 674 / 9600  (7.0%)
-  cell seams         : 1.38x
+Identical pixels     : 75016 / 76800  (97.68% of opaque px)
+RMSE (sRGB)          : 2.84     <- the norm distance
+PSNR                 : 39.1 dB
+Mean OKLab error     : 0.0006  (every pixel, not just the recoloured ones)
+Worst OKLab error    : 0.2009
+Cells damaged        : 674 / 9600  (7.0%)
+Cell seams           : 1.38x
 ```
 
-`cell seams` is the blockiness measure, and it is the reason the block exists:
+`Cell seams` is the blockiness measure, and it is the reason these rows exist:
 the run above scores 39 dB and damages only 7% of its cells, yet its cell
 boundaries jump **38% harder than the ideal's do**, which is visible striping.
 No distance metric can report that — the same total error scores identically
@@ -568,18 +568,30 @@ than 80 chars (usually a long `Input` filename) is clipped to 80 in the `.nfo`
 | `Input` | Source image filename (basename only). |
 | `Description` | The text the viewer's selector status line shows for this image (`--description`, else the input filename without its extension); wrapped onto a continuation line past 57 characters so the `.nfo` never clips it. |
 | `Dimensions` | Pixel size of the **source file**, before any resample. |
-| `Resampled` | Working size the packer ran at, the filter, and the fit mode — or `none (native WxH)` when `--resize` was not used. |
+| `Resampled` | Working size the packer ran at, the filter, and the fit mode — or `None (native WxH)` when `--resize` was not used. |
 | `Cell width` | `cell_w` px per attribute cell, and the resulting cell grid (`cells/line × lines`). |
 | `Palettes x slots` | Palette count × slots each, and the usable slots per palette (255 when slot 0 is reserved transparent). |
 | `Pre-quantized` | Distinct colours in the source file. `-> reduced to N` is appended only when that count exceeds the master budget, i.e. a genuine pre-quantisation happened (resampling a small-palette source can still push the *working* image over budget without this note). |
 | `Master colours` | Colours going into the packer after any pre-quantisation — the pool it distributes across the four palettes. |
 | `Output colours` | Distinct RGB values actually visible in the packed result. `Output < Master` means colours were merged away to cross-palette duplication (see [Maximizing colour count](#maximizing-colour-count)). |
 | `Convertor Version` | The release (`palgui/__init__.py` `__version__`) of the converter that wrote the file. |
-| `Strategy` | `lossless`, or `fidelity (bias b)` / `balanced (bias b)` for Phase B (see [`--color-bias`](#maximizing-colour-count)). |
-| `RESULT: LOSSLESS / LOSSY` | Whether any pixel had to be recoloured. |
-| `recoloured pixels` / `mean OKLab error` | (LOSSY only) How many pixels were substituted and the mean perceptual error over *just those* pixels. |
-| `Accuracy vs the ideal` block | What the 8-pixel cell rule cost, measured against the same image quantised to the same colours with **no** cell restriction — see [Maximizing colour count](#maximizing-colour-count). `not measured in this conversion` on reports migrated from the older `_report.txt` format. |
-| `Per-palette colours` | `P0: n P1: n P2: n P3: n / cap colours` — per palette, how many of its colours appear in **no other** palette; `cap` is the usable slots per palette (255 or 256). The following `duplicated across palettes` line gives the total distinct colours across all four and how many palette entries are duplicates. |
+| `Strategy` | `Lossless`, or `Fidelity (bias b)` / `Balanced (bias b)` for Phase B (see [`--color-bias`](#maximizing-colour-count)). |
+| `Result` | `Lossless` (green) or `Lossy` (red) — whether any pixel had to be recoloured. |
+| `Recoloured pixels` / `Mean OKLab error` | (Lossy only) How many pixels were substituted and the mean perceptual error over *just those* pixels. |
+| `Identical pixels` … `Cell seams` | What the 8-pixel cell rule cost, measured against the same image quantised to the same colours with **no** cell restriction — see [Maximizing colour count](#maximizing-colour-count). `not measured in this conversion` on reports migrated from the older `_report.txt` format. |
+| `Per-palette colours` | `P0: n P1: n P2: n P3: n / cap colours` — per palette, how many of its colours appear in **no other** palette; `cap` is the usable slots per palette (255 or 256). |
+| `Duplicated Colours` | How many palette entries are duplicates, and the total distinct colours across all four palettes. |
+
+Every row is `Label : Value`, every label is flush left, and both sides start
+with a capital — except the `Input` filename and the `Description`, which keep
+the case they were given. Reports written before 0.21 (a free-form accuracy
+heading, `RESULT: LOSSY`, indented and lower-case labels) are brought up to this layout in place, with no
+reconversion, by `python Convertor/nfo_encode.py --restyle <file|folder>` —
+it rewrites each `_report.txt`, its `.nfo`, any staged lone `.nfo`, and the
+report embedded in `_summary.txt`. The numbers are left as they were; the
+`Convertor Version` row is set to the current release, since the text now
+follows its layout (`_stats.json` and the summary header keep the version
+that actually converted the image).
 
 ### `IMAGES.LST` — descriptions for the viewer's selector
 

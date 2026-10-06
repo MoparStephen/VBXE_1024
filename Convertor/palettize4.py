@@ -933,7 +933,12 @@ def main():
     total_px = H * W
     unique_out = len(np.unique(out_rgb.reshape(-1, 3), axis=0))
 
-    def row(label, value):
+    # Every label and value starts with a capital (nfo_encode.cap_first), so
+    # the About screen reads as one consistent "Label : Value" table.  Input
+    # and Description are as_entered - a filename / typed text keep their case.
+    def row(label, value, as_entered=False):
+        label = nfo_encode.cap_first(label.strip())   # labels flush left
+        value = str(value) if as_entered else nfo_encode.cap_first(str(value))
         return f"{label:<21}: {value}"
 
     def cont(text):
@@ -941,13 +946,13 @@ def main():
 
     lines = []
     lines.append("=" * 31 + "palettize_4 report" + "=" * 31)   # 80-col banner
-    lines.append(row("Input", os.path.basename(args.input)))
+    lines.append(row("Input", os.path.basename(args.input), as_entered=True))
     # Description: what IMAGES.LST shows on the selector status line.  Up to
     # DESC_CAP (75) chars, so wrap at the 57 left after the label rather than
     # letting the 80-col .nfo clip it.
     desc_lines = textwrap.wrap(description(args.description, args.input),
                                80 - 23) or [""]
-    lines.append(row("Description", desc_lines[0]))
+    lines.append(row("Description", desc_lines[0], as_entered=True))
     for extra in desc_lines[1:]:
         lines.append(cont(extra))
     lines.append(row("Dimensions", f"{orig_w} x {orig_h}  ({orig_w*orig_h} px)"))
@@ -982,38 +987,38 @@ def main():
     else:
         lines.append(row("Dithering", f"{args.dither}, strength {args.dither_strength:.2f}"
                          + ("" if prequant else "  (inert - source within colour budget)")))
+    # Result: the verdict word leads the value - nfo_encode colours it green
+    # (Lossless) or red (Lossy).
     if lossless:
-        lines.append(f"{'RESULT: LOSSLESS':<23}components packed into "
-                     f"{NP} palettes with no colour loss.")
+        lines.append(row("Result", f"Lossless - components packed into {NP} palettes"))
+        lines.append(cont("with no colour loss."))
     else:
         pct = 100.0 * sub_pixels / total_px
         mean_err = (sub_err_sum / sub_pixels) if sub_pixels else 0.0
-        lines.append(f"{'RESULT: LOSSY':<23}cells could not be partitioned cleanly.")
-        lines.append(row("  recoloured pixels", f"{sub_pixels} ({pct:.3f}% of image)"))
-        lines.append(row("  mean OKLab error", f"{mean_err:.4f}  (on recoloured pixels only)"))
+        lines.append(row("Result", "Lossy - cells could not be partitioned cleanly."))
+        lines.append(row("recoloured pixels", f"{sub_pixels} ({pct:.3f}% of image)"))
+        lines.append(row("mean OKLab error", f"{mean_err:.4f}  (on recoloured pixels only)"))
         if max_comp > cap and strategy.startswith("fidelity"):
-            lines.append(f"  note: a single component needs {max_comp} colours (> {cap});")
-            lines.append("  raise --color-bias (e.g. 0.5 or 1.0) to recover more colours.")
-    lines.append("")
-    lines.append("Accuracy vs the ideal (what the 8-px cell rule cost):")
-    lines.append(row("  the ideal here =",
-                     f"this source {'resized and ' if args.resize else ''}reduced to {N} colours"))
-    lines.append(cont("with no cell restriction applied"))
+            lines.append(row("note", f"a single component needs {max_comp} colours (> {cap});"))
+            lines.append(cont("raise --color-bias (e.g. 0.5 or 1.0) for more colours."))
+    # What the cell rule cost: the rows below compare the screen with the
+    # ideal - this same source (resized as above) at the same N colours, with
+    # no cell restriction (compare_to_ideal).
     seam = acc["seam_index"]
-    lines.append(row("  identical pixels", f"{acc['identical_pixels']} / "
+    lines.append(row("identical pixels", f"{acc['identical_pixels']} / "
                      f"{acc['compared_pixels']}  ({acc['identical_pct']:.2f}% of opaque px)"))
-    lines.append(row("  RMSE (sRGB)", f"{acc['rgb_rmse']:.2f}     <- the norm distance"))
-    lines.append(row("  PSNR", "identical - the cell rule cost nothing"
+    lines.append(row("RMSE (sRGB)", f"{acc['rgb_rmse']:.2f}     <- the norm distance"))
+    lines.append(row("PSNR", "identical - the cell rule cost nothing"
                      if acc["psnr_db"] is None else f"{acc['psnr_db']:.1f} dB"))
-    lines.append(row("  mean OKLab error",
+    lines.append(row("mean OKLab error",
                      f"{acc['mean_oklab_error']:.4f}  (every pixel, not just the recoloured ones)"))
-    lines.append(row("  worst OKLab error", f"{acc['max_oklab_error']:.4f}"))
-    lines.append(row("  cells damaged", f"{acc['cells_damaged']} / "
+    lines.append(row("worst OKLab error", f"{acc['max_oklab_error']:.4f}"))
+    lines.append(row("cells damaged", f"{acc['cells_damaged']} / "
                      f"{acc['cells_compared']}  ({acc['cells_damaged_pct']:.1f}%)"))
     if seam is None:
-        lines.append(row("  cell seams", "n/a (no column detail to measure)"))
+        lines.append(row("cell seams", "n/a (no column detail to measure)"))
     else:
-        lines.append(row("  cell seams", f"{seam:.2f}x  (the cell grid added no visible seam)"))
+        lines.append(row("cell seams", f"{seam:.2f}x  (the cell grid added no visible seam)"))
         lines.append(cont("RMSE and PSNR above cannot see this"))
     lines.append("")
     # how many palettes each colour appears in (to find entries unique to one)
@@ -1031,9 +1036,9 @@ def main():
         per_palette.append({"colours": len(final_colors[b]), "unique_to_palette": uniq_b})
         parts.append(f"P{b}: {uniq_b}")
     lines.append(row("Per-palette colours", " ".join(parts) + f" / {cap} colours"))
-    lines.append(f"  duplicated across palettes: {duplicated} "
-                 f"entr{'y' if duplicated == 1 else 'ies'} "
-                 f"({len(all_pal_colors)} distinct colours in all palettes)")
+    lines.append(row("Duplicated Colours", f"{duplicated} "
+                     f"entr{'y' if duplicated == 1 else 'ies'} "
+                     f"({len(all_pal_colors)} distinct colours in all palettes)"))
     report = "\n".join(lines)
     with open(os.path.join(args.out, base + "_report.txt"), "w") as f:
         f.write(report + "\n")

@@ -143,7 +143,7 @@ def settings_from_stats(stats, report=''):
     else:
         m = _DITHERING.search(report or '')
         if m:
-            s.dither = m.group(1)
+            s.dither = m.group(1).lower()      # 0.21+ reports say "Blue"
             if m.group(2):
                 s.dither_strength = float(m.group(2))
     return s, False

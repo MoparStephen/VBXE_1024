@@ -32,6 +32,7 @@ from palgui.settings import (DITHERS, FILTERS, FITS, RESIZE_FIXED,
                             Settings, split_command_line)
 
 CONVERTOR = runner.CONVERTOR
+nfo_encode = describe.nfo_encode        # Convertor/nfo_encode.py, as palgui loads it
 
 #: Flags the GUI deliberately does not offer as controls, with the reason.  A
 #: flag may only be in this list because it has a good reason to be, and that
@@ -1261,8 +1262,22 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(labels[i + 1], 'Coherence')
         self.assertIn('2.00  (attribute-map smoothing)', lines[i + 1])
         self.assertEqual(labels[i + 2], 'Dithering')
-        self.assertIn('floyd, strength 0.50', lines[i + 2])
+        self.assertIn('Floyd, strength 0.50', lines[i + 2])
         self.assertTrue(all(len(ln) <= 80 for ln in lines))
+        # every row's label and value start with a capital or a digit -
+        # except Input / Description, which keep the case they were given
+        for ln in lines:
+            if len(ln) > 21 and ln[21] == ':' and ln[:21].strip():
+                label = ln[:21].strip()
+                self.assertTrue(label[0].isupper(), ln)
+                if label not in ('Input', 'Description'):
+                    v = ln[23:]
+                    self.assertTrue(v[:1].isupper() or v[:1].isdigit(), ln)
+        # ... and a current report is already in the current layout
+        text = '\n'.join(lines)
+        self.assertEqual(nfo_encode.restyle(text), text)
+        self.assertEqual(recover.settings_from_stats(
+            {'name': 'x'}, text)[0].dither, 'floyd')
 
     def test_preview_and_convert_agree(self):
         """The claim the whole app rests on: a preview is the real conversion.
@@ -1286,6 +1301,128 @@ class TestEndToEnd(unittest.TestCase):
                 self.assertEqual(ba, bb, '%s differs' % key)
         finally:
             shutil.rmtree(other, ignore_errors=True)
+
+
+class TestRestyle(unittest.TestCase):
+    """nfo_encode.restyle brings a pre-0.21 report to the current layout
+    without reconverting - and leaves a current one alone."""
+
+    OLD = '\n'.join([
+        '=' * 31 + 'palettize_4 report' + '=' * 31,
+        'Input                : plasma.bmp',
+        'Description          : plasma lower case stays',
+        'Resampled            : none (native 320x240)',
+        'Convertor Version    : 0.19',
+        'Strategy             : fidelity (bias 0.00)',
+        'Dithering            : blue, strength 1.00',
+        'RESULT: LOSSY          cells could not be partitioned cleanly.',
+        '  recoloured pixels  : 2348 (3.057% of image)',
+        '  note: a single component needs 1020 colours (> 255);',
+        '  raise --color-bias (e.g. 0.5 or 1.0) to recover more colours.',
+        '',
+        'Accuracy vs the ideal (what the 8-px cell rule cost):',
+        '  the ideal here =   : this source resized and reduced to 1020 colours',
+        '                       with no cell restriction applied',
+        '  PSNR               : identical - the cell rule cost nothing',
+        '  cell seams         : n/a (no column detail to measure)',
+        '',
+        'Per-palette colours  : P0: 225 P1: 212 P2: 238 P3: 217 / 255 colours',
+        '  duplicated across palettes: 64 entries (956 distinct colours in all '
+        'palettes)',
+    ])
+    NEW = '\n'.join([
+        '=' * 31 + 'palettize_4 report' + '=' * 31,
+        'Input                : plasma.bmp',
+        'Description          : plasma lower case stays',
+        'Resampled            : None (native 320x240)',
+        'Convertor Version    : 0.19',
+        'Strategy             : Fidelity (bias 0.00)',
+        'Dithering            : Blue, strength 1.00',
+        'Result               : Lossy - cells could not be partitioned cleanly.',
+        'Recoloured pixels    : 2348 (3.057% of image)',
+        'Note                 : A single component needs 1020 colours (> 255);',
+        '                       raise --color-bias (e.g. 0.5 or 1.0) for more '
+        'colours.',
+        'PSNR                 : Identical - the cell rule cost nothing',
+        'Cell seams           : N/A (no column detail to measure)',
+        '',
+        'Per-palette colours  : P0: 225 P1: 212 P2: 238 P3: 217 / 255 colours',
+        'Duplicated Colours   : 64 entries (956 distinct colours in all '
+        'palettes)',
+    ])
+
+    def test_old_report_becomes_the_current_layout(self):
+        self.assertEqual(nfo_encode.restyle(self.OLD), self.NEW)
+
+    def test_interim_accuracy_rows_are_dropped(self):
+        """Both interim 0.21 accuracy forms - heading + Ideal row +
+        continuation, and the single "Same source" row - go, with the blank
+        line above them; the labels below come out flush left."""
+        for block in (
+                ['Accuracy vs. Ideal   : This is what the 8-px cell rule cost',
+                 '  Ideal              : This source resized and reduced to '
+                 '1012 colours',
+                 '                       with no cell restriction applied'],
+                ['Accuracy vs. Ideal   : Same source at 1012 colours, without '
+                 'the 8-px cell rule']):
+            mid = '\n'.join(['  Mean OKLab error   : 0.0239', ''] + block
+                            + ['  PSNR               : 38.7 dB'])
+            self.assertEqual(nfo_encode.restyle(mid).split('\n'), [
+                'Mean OKLab error     : 0.0239',
+                'PSNR                 : 38.7 dB'])
+
+    def test_version_stamp(self):
+        """--restyle stamps the current release: the text follows its layout."""
+        out = nfo_encode.restyle(self.OLD, '0.21').split('\n')
+        self.assertIn('Convertor Version    : 0.21', out)
+        self.assertNotIn('Convertor Version    : 0.19', out)
+        self.assertEqual(nfo_encode.restyle('\n'.join(out), '0.21'),
+                         '\n'.join(out))
+
+    def test_restyle_is_idempotent(self):
+        self.assertEqual(nfo_encode.restyle(self.NEW), self.NEW)
+        self.assertTrue(all(len(ln) <= 80 for ln in self.NEW.split('\n')))
+
+    def test_lossless_wraps_onto_a_continuation(self):
+        old = ('RESULT: LOSSLESS       components packed into 4 palettes '
+               'with no colour loss.')
+        self.assertEqual(nfo_encode.restyle(old).split('\n'), [
+            'Result               : Lossless - components packed into 4 '
+            'palettes',
+            '                       with no colour loss.'])
+
+    def test_verdict_word_is_coloured(self):
+        for line, pen in (
+                ('Result               : Lossy - cells could not', 'PEN_BAD'),
+                ('Result               : Lossless - components', 'PEN_GOOD')):
+            attrs = nfo_encode.line_attrs(line)
+            self.assertEqual(attrs[0], nfo_encode.PEN_LABEL)
+            self.assertEqual(attrs[21], nfo_encode.PEN_SEP)
+            self.assertEqual(attrs[23], getattr(nfo_encode, pen))
+            self.assertEqual(attrs[line.index(' - ') + 1],
+                             nfo_encode.PEN_VALUE)
+
+    def test_summary_restyles_only_its_report(self):
+        head = 'Conversion - X\n[result]\n  verdict              : lossy\n'
+        text = head + self.OLD
+        self.assertEqual(nfo_encode.restyle_summary(text), head + self.NEW)
+
+    def test_restyle_paths_rewrites_report_and_nfo(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            with open(os.path.join(tmp, 'X_report.txt'), 'w') as fh:
+                fh.write(self.OLD + '\n')
+            with open(os.path.join(tmp, 'X.nfo'), 'wb') as fh:
+                fh.write(nfo_encode.encode(self.OLD))
+            seen, changed = nfo_encode.restyle_paths([tmp])
+            self.assertEqual((seen, changed), (2, 2))
+            with open(os.path.join(tmp, 'X.nfo'), 'rb') as fh:
+                self.assertEqual(nfo_encode.decode(fh.read()).rstrip('\n'),
+                                 '\n'.join(ln.rstrip()
+                                           for ln in self.NEW.split('\n')))
+            self.assertEqual(nfo_encode.restyle_paths([tmp]), (2, 0))
+        finally:
+            shutil.rmtree(tmp)
 
 
 class TestImagesLst(unittest.TestCase):
