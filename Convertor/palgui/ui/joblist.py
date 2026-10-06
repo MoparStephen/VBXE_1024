@@ -26,7 +26,7 @@ anything rather than after; see jobs.Queue.collisions().
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QHeaderView,
-                               QLabel, QProgressBar, QPushButton,
+                               QLabel, QMessageBox, QProgressBar, QPushButton,
                                QTableWidget, QTableWidgetItem, QVBoxLayout,
                                QWidget)
 
@@ -104,6 +104,9 @@ class JobList(QWidget):
                                      'Write the current settings back into the '
                                      'selected row.')
         self.b_remove = self._button('Remove', 'Drop the selected job.')
+        self.b_clear = self._button(
+            'Clear', 'Empty the queue, after a Yes / No.  Nothing on disk is '
+            'touched - Save... first if you want the jobs back later.')
         self.b_up = self._button('Up', 'Move the selected job earlier.')
         self.b_down = self._button('Down', 'Move the selected job later.')
         self.b_save = self._button(
@@ -133,6 +136,7 @@ class JobList(QWidget):
         self.b_update.clicked.connect(
             lambda: self.update_requested.emit(self.current_row()))
         self.b_remove.clicked.connect(self._remove)
+        self.b_clear.clicked.connect(self._clear)
         self.b_up.clicked.connect(lambda: self._move(-1))
         self.b_down.clicked.connect(lambda: self._move(1))
         self.b_run.clicked.connect(self.run_requested)
@@ -145,7 +149,7 @@ class JobList(QWidget):
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
         for b in (self.b_add, self.b_files, self.b_retarget, self.b_update,
-                  self.b_remove, self.b_up, self.b_down):
+                  self.b_remove, self.b_clear, self.b_up, self.b_down):
             row.addWidget(b)
         row.addStretch(1)
         for b in (self.b_save, self.b_load, self.b_preview, self.b_run,
@@ -271,6 +275,22 @@ class JobList(QWidget):
             self.queue.remove(r)
             self.refresh(keep=min(r, len(self.queue) - 1))
 
+    def _clear(self):
+        """Empty the queue.  ASKS FIRST: an unsaved queue is fifteen jobs
+        of settings with no other copy anywhere."""
+        if not len(self.queue):
+            return
+        n = len(self.queue)
+        if QMessageBox.question(
+                self, 'Clear the queue',
+                'Remove all %d job%s from the queue?  Output already on '
+                'disk is not touched.' % (n, '' if n == 1 else 's'),
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No) != QMessageBox.Yes:
+            return
+        self.queue.clear()
+        self.refresh()
+
     def _move(self, delta):
         r = self.current_row()
         if r >= 0:
@@ -281,7 +301,8 @@ class JobList(QWidget):
         self.b_run.setEnabled(not running)
         self.b_stop.setEnabled(running)
         for b in (self.b_add, self.b_files, self.b_retarget, self.b_update,
-                  self.b_remove, self.b_up, self.b_down, self.b_save,
+                  self.b_remove, self.b_clear, self.b_up, self.b_down,
+                  self.b_save,
                   self.b_load, self.b_preview):
             b.setEnabled(not running)
         self.progress.setVisible(running)

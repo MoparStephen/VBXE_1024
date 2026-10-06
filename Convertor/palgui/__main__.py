@@ -74,10 +74,11 @@ def _selftest(argv):
     import tempfile
     import time
 
+    from PySide6.QtCore import Qt
     from PySide6.QtGui import QImage
     from PySide6.QtWidgets import QApplication
 
-    from . import jobs, presets, review, runner, summary
+    from . import __version__, jobs, presets, review, runner, summary
     from .settings import Settings
     from .ui.main import MainWindow, dark_palette
 
@@ -86,7 +87,12 @@ def _selftest(argv):
 
     # A sample that is certainly there, and certainly over the colour budget,
     # so the run exercises the reduce-and-dither path rather than skipping it.
+    # Convertor/ first, then the repo's "Images To Convert" folder, which is
+    # where the sources live now.
     sample = argv[1] if len(argv) > 1 else os.path.join(CONVERTOR, 'plasma.bmp')
+    if len(argv) <= 1 and not os.path.isfile(sample):
+        sample = os.path.join(os.path.dirname(CONVERTOR), 'Images To Convert',
+                              'plasma.bmp')
     if not os.path.isfile(sample):
         sys.exit('selftest FAILED: no sample image at %s' % sample)
 
@@ -458,6 +464,61 @@ def _selftest(argv):
     w.queue.clear()
     w.joblist.refresh()
     w.options.set_snapshots_wanted(was_wanted)
+
+    # Marking a preview arms Delete marked... - the delete itself asks Yes /
+    # No, so it is left to the headless review.delete test.
+    if w.review.b_delete.isEnabled():
+        sys.exit('selftest FAILED: Delete marked... armed with nothing ticked')
+    w.review.table.item(0, 0).setCheckState(Qt.Checked)
+    if not w.review.b_delete.isEnabled() or len(w.review.marked()) != 1:
+        sys.exit('selftest FAILED: ticking a preview did not mark it')
+    w.review.table.item(0, 0).setCheckState(Qt.Unchecked)
+    print('  %-16s ok  tick arms Delete marked...' % 'delete previews')
+
+    # File > Edit descriptions: names are skipped by the keyboard, and the
+    # editor refuses what Save would (over 75 chars, non-ASCII).
+    from PySide6.QtGui import QValidator
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QStyleOptionViewItem
+    dlg, t = w._descriptions_dialog('x', ['a/ONE', 'a/TWO'], ['one', 'two'])
+    dlg.show()
+    app.processEvents()
+    if t.item(0, 0).flags() & Qt.ItemIsEnabled:
+        sys.exit('selftest FAILED: description dialog names are enabled')
+    t.setFocus()
+    QTest.keyClick(t, Qt.Key_Left)
+    QTest.keyClick(t, Qt.Key_Down)
+    if (t.currentRow(), t.currentColumn()) != (1, 1):
+        sys.exit('selftest FAILED: keyboard reached the name column (%d, %d)'
+                 % (t.currentRow(), t.currentColumn()))
+    ed = t.itemDelegateForColumn(1).createEditor(
+        t.viewport(), QStyleOptionViewItem(), t.model().index(0, 1))
+    if ed.maxLength() != 75:
+        sys.exit('selftest FAILED: description editor allows %d chars'
+                 % ed.maxLength())
+    if ed.validator().validate('café', 0)[0] != QValidator.Invalid:
+        sys.exit('selftest FAILED: description editor accepts non-ASCII')
+    dlg.reject()
+    print('  %-16s ok  names skipped, 75-char printable-ASCII editor'
+          % 'descriptions')
+
+    # File > Close image: the picture goes, the settings stay.
+    if __version__ not in w.windowTitle():
+        sys.exit('selftest FAILED: the title bar does not carry v%s'
+                 % __version__)
+    w.options.from_settings(Settings(input=sample, dither='blue',
+                                     description='about to close'))
+    app.processEvents()
+    w._close_image()
+    app.processEvents()
+    after = w.options.to_settings()
+    if after.input or after.description or after.dither != 'blue':
+        sys.exit('selftest FAILED: Close image kept the image or lost a '
+                 'setting (%r)' % after)
+    if w.compare.result.has_image() or w.review.count():
+        sys.exit('selftest FAILED: Close image left a picture on screen')
+    print('  %-16s ok  image cleared, settings kept, title v%s'
+          % ('close image', __version__))
 
     # THE GUARD THAT SHOULD HAVE BEEN HERE ALL ALONG.  Every run above is
     # supposed to go to a temporary directory, and the one time that stopped

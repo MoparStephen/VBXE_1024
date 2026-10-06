@@ -21,16 +21,19 @@ import os
 import shutil
 import tempfile
 
-from PySide6.QtCore import QSettings, Qt
-from PySide6.QtGui import QAction, QImage, QKeySequence
-from PySide6.QtWidgets import (QApplication, QComboBox, QDialog,
-                               QDialogButtonBox, QDockWidget,
-                               QDoubleSpinBox, QFileDialog,
-                               QInputDialog, QLabel, QMainWindow, QMessageBox,
-                               QPlainTextEdit, QScrollArea, QToolBar,
-                               QVBoxLayout)
+from PySide6.QtCore import QRegularExpression, QSettings, Qt
+from PySide6.QtGui import (QAction, QImage, QKeySequence,
+                           QRegularExpressionValidator)
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QComboBox,
+                               QDialog, QDialogButtonBox, QDockWidget,
+                               QDoubleSpinBox, QFileDialog, QHeaderView,
+                               QInputDialog, QLabel, QLineEdit, QMainWindow,
+                               QMessageBox, QPlainTextEdit, QScrollArea,
+                               QStyledItemDelegate, QTableWidget,
+                               QTableWidgetItem, QToolBar, QVBoxLayout)
 
-from .. import gather, imageslst, jobs, presets, runner, snapshot, summary
+from .. import (__version__, describe, gather, jobs, presets, recover, runner,
+               snapshot, summary)
 from . import theme
 from .compare import FLIP, FLIP_MS, SIDE_BY_SIDE, ComparePane
 from .imageview import FIT
@@ -61,7 +64,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, initial_input=''):
         QMainWindow.__init__(self)
-        self.setWindowTitle('VBXE PAL Studio')
+        self.setWindowTitle('VBXE PAL Studio v%s' % __version__)
         self.resize(1500, 940)
 
         #: Where Preview writes.  One directory for the whole session, reused,
@@ -206,20 +209,29 @@ class MainWindow(QMainWindow):
         m = self.menuBar().addMenu('&File')
         self._act(m, 'Open image...', QKeySequence.Open,
                   self.options._browse_input)
+        self._act(m, 'Close image', QKeySequence.Close, self._close_image,
+                  'Clear the image and the result panes, keeping every '
+                  'other setting')
         m.addSeparator()
+        self._act(m, 'Load settings from...', '', self._load_settings,
+                  'Put back every setting from a conversion _summary.txt, '
+                  'a Preview_NN.txt or a _stats.json')
         self._act(m, 'Browse previews...', '', self._browse_previews,
                   'Read a folder of saved previews back in and step through '
                   'them')
         m.addSeparator()
         self._act(m, 'Save queue...', '', self._queue_save)
         self._act(m, 'Load queue...', '', self._queue_load)
+        self._act(m, 'Build re-conversion queue...', '', self._recover_queue,
+                  'Recover the settings every image under a folder was '
+                  'converted with, and queue them all to be converted again')
         m.addSeparator()
         self._act(m, 'Copy command line', 'Ctrl+Shift+C', self._copy_command,
                   'Put the equivalent palettize4.py command on the clipboard')
         self._act(m, 'Open output folder', '', self._open_output)
-        self._act(m, 'Build images.lst...', '', self._build_images_lst,
-                  'Scan a folder of converted images and write the images.lst '
-                  'manifest the Atari viewer reads for image descriptions')
+        self._act(m, 'Edit descriptions...', '', self._edit_descriptions,
+                  'Change the description of converted images - stats, '
+                  'report, .nfo and summary - without re-converting')
         self._act(m, 'Gather images for Atari...', '', self._gather_images,
                   'Copy every .v1k/.nfo under a folder into one staging folder '
                   'with 8-char names, and write its images.lst')
@@ -506,6 +518,15 @@ class MainWindow(QMainWindow):
                                                command, report)
             line += fragment
             if not ok:
+                colour = theme.WARN
+        elif out != self.scratch:
+            # A REAL CONVERSION KEEPS ITS RECIPE - see
+            # snapshot.write_conversion.  Never costs you the run.
+            try:
+                snapshot.write_conversion(out, settings, stats, command,
+                                          report)
+            except (OSError, KeyError, ValueError) as exc:  # noqa: BLE001
+                line += '   -  SUMMARY NOT WRITTEN: %s' % exc
                 colour = theme.WARN
         self._say(line, colour)
         if self._batch is not None:
@@ -842,6 +863,106 @@ class MainWindow(QMainWindow):
             self._say('%d preview%s loaded - Alt+Left / Alt+Right to step '
                       'through them' % (found, '' if found == 1 else 's'))
 
+    # --- clearing, and getting a recipe back -----------------------------------
+    def _close_image(self):
+        """Back to a window with no image in it - the settings stay.
+
+        INPUT, NAME AND DESCRIPTION GO WITH THE IMAGE, because they describe
+        it: a description left behind would be written onto the next picture
+        opened.  Everything else is how you like to convert, and survives.
+        """
+        if self.worker.busy():
+            self._say('a run is going - cancel it first', theme.WARN)
+            return
+        s = self.options.to_settings()
+        s.input = s.name = s.description = ''
+        self.options.from_settings(s)
+        self._load_source('')
+        self.compare.clear_result()
+        self.stats.clear()
+        self.stats.set_report('')
+        self.palettes.clear()
+        self.options.set_dither_note('')
+        self.shown = None
+        self.shown_stats = None
+        self.stale = False
+        self._last = self.options.to_settings()
+        self._say('no image - File > Open image...')
+
+    def _load_settings(self):
+        """Every setting back from a record of an earlier run.
+
+        A PRESET IS A RECIPE FOR ANY IMAGE; THIS IS ONE IMAGE'S RECIPE, which
+        is why it restores the input and description too and is not saved as
+        a preset.  See palgui/recover.py for what each file type can give.
+        """
+        start = runner.resolve(runner.job_dir(self.options.to_settings()))
+        if not os.path.isdir(start):
+            start = runner.resolve(self.options.to_settings().out)
+        path, _ = QFileDialog.getOpenFileName(
+            self, 'Load settings from a conversion or preview', start,
+            'Summaries and stats (*_summary.txt Preview_*.txt *_stats.json);;'
+            'All files (*)')
+        if not path:
+            return
+        try:
+            s, how = recover.settings_from_file(path)
+        except (OSError, ValueError) as exc:    # noqa: BLE001 - shown
+            self._say('could not load settings: %s' % exc, theme.ERR)
+            return
+        self.options.from_settings(s)
+        self._load_source(s.input)
+        self._say('settings loaded from %s - %s'
+                  % (os.path.basename(path), how),
+                  theme.OK if how.startswith('exact') else theme.WARN)
+
+    def _recover_queue(self):
+        """File > Build re-conversion queue - recover.plan over a folder.
+
+        Asks for the folder of conversions, then (optionally) a folder the
+        source images may have moved to, and replaces the Queue with one job
+        per image that can be converted again.  Nothing on disk is written
+        until you press Run queue.
+        """
+        start = runner.resolve(self.options.to_settings().out)
+        if not os.path.isdir(start):
+            start = str(runner.CONVERTOR)
+        root = QFileDialog.getExistingDirectory(
+            self, 'Folder of conversions (one subfolder per image)', start)
+        if not root:
+            return
+        search = QFileDialog.getExistingDirectory(
+            self, 'Where are the source images now?  (Cancel to use only '
+            'the recorded paths)', os.path.dirname(root))
+        if len(self.queue) and QMessageBox.question(
+                self, 'Replace the queue?',
+                'The queue holds %d job%s.  Replace them with the '
+                're-conversion queue?' % (len(self.queue),
+                                          '' if len(self.queue) == 1 else 's'),
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No) != QMessageBox.Yes:
+            return
+        self._say('recovering settings - unrecorded dithers are re-run to '
+                  'check, this takes a while...', theme.ACCENT)
+        self._set_busy_cursor(True)
+        try:
+            recs = recover.plan(
+                root, [search] if search else [],
+                on_folder=lambda _n: QApplication.processEvents())
+        except OSError as exc:                  # noqa: BLE001 - shown
+            self._set_busy_cursor(False)
+            self._say('could not scan %s: %s' % (root, exc), theme.ERR)
+            return
+        self._set_busy_cursor(False)
+        q = recover.build_queue(recs)
+        self.queue.jobs = q.jobs
+        self.joblist.refresh(keep=0)
+        self.d_queue.show()
+        self.d_queue.raise_()
+        self._show_text('Re-conversion queue', recover.report_text(recs))
+        self._say('%d job%s queued - Run > Run queue (convert) to re-convert'
+                  % (len(q), '' if len(q) == 1 else 's'))
+
     def _step_result(self, delta):
         """Previous / next, over whichever list has something in it.
 
@@ -1119,27 +1240,85 @@ class MainWindow(QMainWindow):
         except Exception as exc:                     # noqa: BLE001 - shown
             self._say('could not open %s: %s' % (out, exc), theme.ERR)
 
-    def _build_images_lst(self):
-        """Scan a folder of .MAP/.NFO output and write its images.lst manifest.
+    def _edit_descriptions(self):
+        """A table of every conversion under a folder, descriptions editable.
 
-        RUN IT ON THE STAGING FOLDER.  The keys are the 8.3 base names the
-        viewer sees on the disk, so point this at the folder you build the ATR
-        from - not necessarily the same as out/<image>/.
+        Save rewrites only the rows you changed, through describe.py - the
+        same four files set_description.py touches, never the picture.
         """
         start = runner.resolve(self.options.to_settings().out)
         if not os.path.isdir(start):
             start = str(runner.CONVERTOR)
-        where = QFileDialog.getExistingDirectory(
-            self, 'Folder to index for images.lst', start)
-        if not where:
+        root = QFileDialog.getExistingDirectory(
+            self, 'Folder of conversions (one subfolder per image)', start)
+        if not root:
             return
-        try:
-            path, count = imageslst.write(where)
-        except Exception as exc:                      # noqa: BLE001 - shown
-            self._show_text('images.lst failed', repr(exc))
+        folders = describe.folders(root)
+        if not folders:
+            self._say('no conversions under %s' % root, theme.WARN)
             return
-        self._say('%s - %d entr%s' % (path, count,
-                                      'y' if count == 1 else 'ies'))
+        was = [describe.current(f) or '' for f in folders]
+        d, t = self._descriptions_dialog(root, folders, was)
+        if d.exec() != QDialog.Accepted:
+            return
+        done, errors = 0, []
+        for r, f in enumerate(folders):
+            text = t.item(r, 1).text()
+            if text.strip() == was[r]:
+                continue
+            try:
+                _old, _new, files = describe.set_description(f, text)
+                done += 1 if files else 0
+            except (describe.DescribeError, OSError, ValueError) as exc:
+                errors.append('%s: %s' % (os.path.basename(f), exc))
+        if errors:
+            self._show_text('Some descriptions were not saved',
+                            '\n'.join(errors))
+        self._say('%d description%s saved%s'
+                  % (done, '' if done == 1 else 's',
+                     ', %d refused' % len(errors) if errors else ''),
+                  theme.WARN if errors else theme.OK)
+
+    def _descriptions_dialog(self, root, folders, was):
+        """The Edit descriptions dialog, built but not shown -> (dialog, table).
+
+        Apart from _edit_descriptions so the selftest can check it without
+        exec().  THE NAMES ARE NOT ENABLED, so arrows and Tab skip them
+        (QTableView.moveCursor passes over disabled cells) - they are labels,
+        not fields.  THE EDITOR REFUSES WHAT SAVE WOULD: 75 characters of
+        printable ASCII, so describe.clean never has to say no here.
+        """
+        d = QDialog(self)
+        d.setWindowTitle('Edit descriptions - %s' % root)
+        d.resize(900, 600)
+        t = QTableWidget(len(folders), 2)
+        t.setHorizontalHeaderLabels(['image', 'description (max %d)'
+                                     % describe.NAME_CAP])
+        t.verticalHeader().hide()
+        t.setSelectionMode(QAbstractItemView.SingleSelection)
+        t.horizontalHeader().setSectionResizeMode(0, QHeaderView.Interactive)
+        t.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        t.setColumnWidth(0, 220)
+        t.setItemDelegateForColumn(1, _DescriptionDelegate(t))
+        for r, (f, text) in enumerate(zip(folders, was)):
+            name = QTableWidgetItem(os.path.basename(f))
+            name.setFlags(Qt.NoItemFlags)
+            name.setForeground(theme.TEXT)      # disabled, but not greyed
+            name.setToolTip(f)
+            t.setItem(r, 0, name)
+            t.setItem(r, 1, QTableWidgetItem(text))
+        if folders:
+            t.setCurrentCell(0, 1)
+        note = QLabel('Edit a cell, then Save.  Blank resets to the source '
+                      'filename.  Printable ASCII only.')
+        b = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        b.accepted.connect(d.accept)
+        b.rejected.connect(d.reject)
+        lay = QVBoxLayout(d)
+        lay.addWidget(t)
+        lay.addWidget(note)
+        lay.addWidget(b)
+        return d, t
 
     def _gather_images(self):
         """Collect every .V1K/.NFO under a root into an Atari staging folder.
@@ -1189,7 +1368,8 @@ class MainWindow(QMainWindow):
         d.exec()
 
     def _about(self):
-        self._show_text('VBXE PAL Studio', ABOUT % (runner.SCRIPT,
+        self._show_text('VBXE PAL Studio', ABOUT % (__version__,
+                                                    runner.SCRIPT,
                                                     self.scratch))
 
     # --- shutdown --------------------------------------------------------------------
@@ -1208,7 +1388,7 @@ class MainWindow(QMainWindow):
         ev.accept()
 
 
-ABOUT = """VBXE PAL Studio
+ABOUT = """VBXE PAL Studio v%s
 
 A front end for palettize4.py, which packs an image into four 256-entry
 palettes switched per 8-pixel cell.
@@ -1238,6 +1418,21 @@ difference rather than a movement.
 """
 
 
+class _DescriptionDelegate(QStyledItemDelegate):
+    """A description cell's editor: at most NAME_CAP printable ASCII chars.
+
+    The same two rules describe.clean enforces on Save, applied while typing
+    - so the dialog cannot build up an edit it will then refuse.
+    """
+
+    def createEditor(self, parent, option, index):
+        e = QLineEdit(parent)
+        e.setMaxLength(describe.NAME_CAP)
+        e.setValidator(QRegularExpressionValidator(
+            QRegularExpression('[ -~]*'), e))
+        return e
+
+
 def dark_palette(app):
     from PySide6.QtGui import QColor, QPalette
     p = QPalette()
@@ -1261,8 +1456,9 @@ def run(argv=None):
     import sys
     argv = list(sys.argv if argv is None else argv)
     app = QApplication(argv)
+    # NO setApplicationDisplayName: Qt appends it to every window title, which
+    # turned 'VBXE PAL Studio v0.19' into '... v0.19 - VBXE PAL Studio'.
     app.setApplicationName('VBXE PAL Studio')
-    app.setApplicationDisplayName('VBXE PAL Studio')
     dark_palette(app)
     initial = argv[1] if len(argv) > 1 else ''
     w = MainWindow(initial)

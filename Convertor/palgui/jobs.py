@@ -254,10 +254,7 @@ def run_queue(queue, on_progress=None, preview=False):
                     # image's eleven files into one flat folder while the same
                     # queue through the window made one folder per image.  Two
                     # answers to "where did my output go" is one too many.
-                    job.stats = runner.run_blocking(
-                        job.settings,
-                        out=runner.resolve(runner.job_dir(job.settings)),
-                        name=job.settings.name or None)
+                    _convert_one(job)
                 job.state = DONE
                 job.error = ''
             except runner.RunError as exc:
@@ -291,3 +288,25 @@ def _preview_one(job, scratch):
         out_root, settings, job.stats, paths, command,
         summary.report_text(paths.get('report')))
     job.snapshot = (png, txt)
+
+
+def _convert_one(job):
+    """One job converted for real, plus its {name}_summary.txt record.
+
+    The record is written HERE AND BY THE WINDOW through the same
+    snapshot.write_conversion, so a scripted queue and a clicked Convert
+    leave the same file.  A record that cannot be written does not fail the
+    job - the eleven real files are already on disk.
+    """
+    settings = job.settings
+    out = runner.resolve(runner.job_dir(settings))
+    job.stats = runner.run_blocking(settings, out=out,
+                                    name=settings.name or None)
+    paths = runner.output_paths(job.stats, out)
+    command = settings.command_line(script=os.path.basename(runner.SCRIPT),
+                                    out=runner.job_dir(settings))
+    try:
+        snapshot.write_conversion(out, settings, job.stats, command,
+                                  summary.report_text(paths.get('report')))
+    except (OSError, KeyError, ValueError):     # noqa: BLE001 - see above
+        pass

@@ -21,9 +21,9 @@ toolbar and to a shortcut.
 
 import os
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QHeaderView,
-                               QLabel, QPushButton, QTableWidget,
+                               QLabel, QMessageBox, QPushButton, QTableWidget,
                                QTableWidgetItem, QVBoxLayout, QWidget)
 
 from .. import review
@@ -32,7 +32,10 @@ from . import theme
 #: `dither` and `bias` because those are what an afternoon of previews varies.
 #: The source is not a column: a previews folder belongs to ONE image, so it
 #: would be the same string on every row.
-COLUMNS = ('preview', 'dither', 'bias', 'result')
+#: `del` is a tick box: ticking MARKS a row, Delete marked... acts on the
+#: marks.  Not the selection, because selecting a row loads it - a delete that
+#: followed the selection would target whatever you last looked at.
+COLUMNS = ('del', 'preview', 'dither', 'bias', 'result')
 
 
 class ReviewPane(QWidget):
@@ -61,6 +64,7 @@ class ReviewPane(QWidget):
             h.setSectionResizeMode(i, QHeaderView.ResizeToContents)
         h.setSectionResizeMode(len(COLUMNS) - 1, QHeaderView.Stretch)
         self.table.itemSelectionChanged.connect(self._selection)
+        self.table.itemChanged.connect(lambda _item: self._sync_delete())
 
         self.status = QLabel('')
         self.status.setFont(theme.label_font(8))
@@ -77,7 +81,12 @@ class ReviewPane(QWidget):
         self.b_clear = self._button(
             'Clear', 'Empty this list.  Nothing on disk is touched - these '
             'rows are files, not jobs.')
+        self.b_delete = self._button(
+            'Delete marked...',
+            'Delete the ticked previews - their Preview_NN.png AND .txt - '
+            'from disk, after a Yes / No confirmation.')
         self.b_open.clicked.connect(self.open_requested)
+        self.b_delete.clicked.connect(self.delete_marked)
         self.b_prev.clicked.connect(lambda: self.step(-1))
         self.b_next.clicked.connect(lambda: self.step(1))
         self.b_clear.clicked.connect(self.clear)
@@ -88,6 +97,7 @@ class ReviewPane(QWidget):
         row.addWidget(self.b_prev)
         row.addWidget(self.b_next)
         row.addStretch(1)
+        row.addWidget(self.b_delete)
         row.addWidget(self.b_clear)
         bar = QWidget()
         bar.setLayout(row)
@@ -178,18 +188,25 @@ class ReviewPane(QWidget):
         self._status()
         for b in (self.b_prev, self.b_next, self.b_clear):
             b.setEnabled(bool(self.shots))
+        self._sync_delete()
 
     def _append(self, shot):
         r = self.table.rowCount()
         self.table.insertRow(r)
+        mark = QTableWidgetItem('')
+        mark.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled
+                      | Qt.ItemIsSelectable)
+        mark.setCheckState(Qt.Unchecked)
+        mark.setToolTip('Tick to mark for Delete marked...')
+        self.table.setItem(r, 0, mark)
         values = (shot.label(), shot.dither(), shot.bias(), shot.result())
-        for c, v in enumerate(values):
+        for c, v in enumerate(values, 1):
             item = QTableWidgetItem(str(v))
-            if c == len(values) - 1 and not shot.stats:
+            if c == len(values) and not shot.stats:
                 # Not a failure - a file written before summaries carried
                 # their numbers.  Dim, so it reads as absent rather than bad.
                 item.setForeground(theme.TEXT_DIM)
-            elif c == 0:
+            elif c == 1:
                 item.setToolTip(shot.png)
             self.table.setItem(r, c, item)
 
@@ -208,6 +225,53 @@ class ReviewPane(QWidget):
             % (len(self.shots), '' if len(self.shots) == 1 else 's', where,
                ' - %d written before summaries carried their numbers'
                % older if older else ''))
+
+    # --- deleting ----------------------------------------------------------------
+    def marked(self):
+        """The Shots whose `del` box is ticked, in list order."""
+        out = []
+        for r, shot in enumerate(self.shots):
+            item = self.table.item(r, 0)
+            if item is not None and item.checkState() == Qt.Checked:
+                out.append(shot)
+        return out
+
+    def _sync_delete(self):
+        self.b_delete.setEnabled(bool(self.marked()))
+
+    def delete_marked(self):
+        """Delete the ticked pairs from disk - only after an explicit Yes.
+
+        DESTRUCTIVE, SO THE DIALOG NAMES EVERY FILE and defaults to No: a
+        stray Enter must not cost you an afternoon of previews.
+        """
+        doomed = self.marked()
+        if not doomed:
+            return
+        files = []
+        for shot in doomed:
+            files += [os.path.basename(p) for p in (shot.png, shot.txt) if p]
+        shown = files if len(files) <= 16 else files[:16] + [
+            '... and %d more' % (len(files) - 16)]
+        answer = QMessageBox.question(
+            self, 'Delete previews',
+            'Permanently delete %d preview%s from\n%s ?\n\n%s'
+            % (len(doomed), '' if len(doomed) == 1 else 's', self._dir,
+               '\n'.join(shown)),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if answer != QMessageBox.Yes:
+            return
+        removed, errors = review.delete(doomed)
+        if self._dir:
+            self.load(self._dir)
+        else:
+            self.refresh()
+        if errors:
+            QMessageBox.warning(self, 'Some files were not deleted',
+                                '\n'.join(errors))
+        self.status.setText('deleted %d file%s - %s'
+                            % (len(removed), '' if len(removed) == 1 else 's',
+                               self.status.text()))
 
     # --- selection ------------------------------------------------------------
     def _selection(self):

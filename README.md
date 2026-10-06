@@ -238,6 +238,42 @@ What it adds over the command line:
 - **Presets** (`Convertor/palgui/presets/*.json`, a recipe without the paths)
   and a **Copy command line** button that puts the equivalent
   `palettize4.py ...` invocation on the clipboard.
+- **Every conversion keeps its recipe** (0.19). A real Convert — single or
+  queued — also writes `out/<name>/{name}_summary.txt`: the same file a
+  `Preview_NN.txt` is, i.e. the `run with` line, every row of the Result tab,
+  `palettize4`'s report in full, and the `[data]` settings footer. It is the
+  record to go back to when an image needs converting again.
+  **`File > Load settings from...`** puts every setting (input and description
+  included) back into the panel from a `_summary.txt`, a `Preview_NN.txt` or a
+  `_stats.json` — one image's recipe, without saving a preset per image.
+- **Re-converting what is already converted.** `File > Build re-conversion
+  queue...` (or `python recover_queue.py out --search "..\Images To Convert"`)
+  looks at every `out/<image>/` folder, recovers the settings it was made with,
+  and fills the queue with one job per image, each writing back into its own
+  folder — then `Run queue (convert)`. Settings come from, best first: the
+  `_summary.txt`; a `previews/Preview_NN.png` that is pixel-identical to the
+  conversion's `_preview.png` (that snapshot's settings made it); or the
+  `_stats.json` + `_report.txt`, with an unrecorded dither settled by
+  re-running `none` and `blue` and keeping the one that reproduces the old
+  picture exactly. Each row says which (`exact` / `preview match` /
+  `verified` / `best guess`). Source images that have moved are found by
+  filename under the search folder. Old long-named files a re-conversion will
+  not replace (`Charger 01.v1k` beside the new `CHARGER0.v1k`) are listed, not
+  touched.
+- **Changing a description after converting.** `File > Edit descriptions...`
+  lists every conversion under a folder with its description editable; Save
+  rewrites the four files that carry it — `_stats.json` (what Gather puts in
+  `images.lst`), `_report.txt`, the `.nfo` Info screen and `_summary.txt` —
+  exactly as a conversion with `--description` would have, and never touches
+  the picture. From a shell: `python set_description.py out --export
+  descriptions.txt`, edit the `folder = description` lines, then
+  `python set_description.py out --apply descriptions.txt --go`.
+- **Deleting previews.** Tick the `del` box on rows in the Previews panel and
+  press `Delete marked...`; after a Yes / No confirmation naming every file,
+  their `.png` and `.txt` are removed from disk.
+- **`File > Close image`** (`Ctrl+F4`) empties the picture panes and the image
+  fields (input, name, description) and keeps every other setting.
+- The version is in the title bar and in `Help > About`.
 - **Panels you cannot lose.** All five docks are closable, and `View > Panels`
   lists them as checkable items (plus `Show all`); `View > Reset panels` puts
   the whole layout back where it started. The arrangement, the window geometry
@@ -502,7 +538,8 @@ the input filename without its extension (e.g. `dragon.png` → `dragon`):
 | `{name}_palettes.png` | —                    | Swatch sheet of all palettes (visual reference).            |
 | `{name}_report.txt` | —                    | Human-readable stats: colour counts, lossless/lossy, substitution error, etc. Fixed 80-column layout (see below). |
 | `{name}.nfo`     | records × 160 bytes  | The same report as the Atari viewer's **"About" screen** consumes it — see below. |
-| `{name}_stats.json` | —                    | The same stats, machine-readable (for tools / a GUI).       |
+| `{name}_stats.json` | —                    | The same stats, machine-readable (for tools / a GUI), plus `args` (every option the run was given) and `convertor_version`. |
+| `{name}_summary.txt` | —                   | GUI conversions only: Result tab + `run with` + report + restorable `[data]` settings. |
 
 `{name}_preview.png`, `{name}_palettes.png`, and `{name}_report.txt` are references for inspection
 and are not part of the data the hardware consumes.
@@ -529,6 +566,7 @@ than 80 chars (usually a long `Input` filename) is clipped to 80 in the `.nfo`
 | Field | Meaning |
 |-------|---------|
 | `Input` | Source image filename (basename only). |
+| `Description` | The text the viewer's selector status line shows for this image (`--description`, else the input filename without its extension); wrapped onto a continuation line past 57 characters so the `.nfo` never clips it. |
 | `Dimensions` | Pixel size of the **source file**, before any resample. |
 | `Resampled` | Working size the packer ran at, the filter, and the fit mode — or `none (native WxH)` when `--resize` was not used. |
 | `Cell width` | `cell_w` px per attribute cell, and the resulting cell grid (`cells/line × lines`). |
@@ -536,21 +574,24 @@ than 80 chars (usually a long `Input` filename) is clipped to 80 in the `.nfo`
 | `Pre-quantized` | Distinct colours in the source file. `-> reduced to N` is appended only when that count exceeds the master budget, i.e. a genuine pre-quantisation happened (resampling a small-palette source can still push the *working* image over budget without this note). |
 | `Master colours` | Colours going into the packer after any pre-quantisation — the pool it distributes across the four palettes. |
 | `Output colours` | Distinct RGB values actually visible in the packed result. `Output < Master` means colours were merged away to cross-palette duplication (see [Maximizing colour count](#maximizing-colour-count)). |
+| `Convertor Version` | The release (`palgui/__init__.py` `__version__`) of the converter that wrote the file. |
 | `Strategy` | `lossless`, or `fidelity (bias b)` / `balanced (bias b)` for Phase B (see [`--color-bias`](#maximizing-colour-count)). |
 | `RESULT: LOSSLESS / LOSSY` | Whether any pixel had to be recoloured. |
 | `recoloured pixels` / `mean OKLab error` | (LOSSY only) How many pixels were substituted and the mean perceptual error over *just those* pixels. |
 | `Accuracy vs the ideal` block | What the 8-pixel cell rule cost, measured against the same image quantised to the same colours with **no** cell restriction — see [Maximizing colour count](#maximizing-colour-count). `not measured in this conversion` on reports migrated from the older `_report.txt` format. |
 | `Per-palette colours` | `P0: n P1: n P2: n P3: n / cap colours` — per palette, how many of its colours appear in **no other** palette; `cap` is the usable slots per palette (255 or 256). The following `duplicated across palettes` line gives the total distinct colours across all four and how many palette entries are duplicates. |
 
-### `IMAGES.LST` — long filenames for the viewer's selector
+### `IMAGES.LST` — descriptions for the viewer's selector
 
-The Atari disk only holds 8.3 short names, so `IMG0.MAP` no longer carries the
-original `Input` filename. `build_images_lst.py <folder>` (also the GUI's
-**File ▸ Build images.lst**) scans a folder of output, pulls each `Input` name
-from the sibling `.nfo`, and writes `images.lst` — one `$9B`-terminated record
-of an 8-byte base-name key plus that filename. Drop it next to the images on
-the disk and the viewer shows `Src: <name>` on the selector status line. It is
-purely cosmetic and entirely optional.
+`gather_v1k.py ROOT OUTDIR` (also the GUI's **File ▸ Gather images for Atari**)
+copies every `.v1k` + `.nfo` under `ROOT` into one staging folder with legal
+8-char names and writes that folder's `images.lst` — one `$9B`-terminated
+record of an 8-byte base-name key plus the image's **description**: the
+`_stats.json` `description`, else the `.nfo` `Description` row, else the
+`Input` filename minus its extension. Copy the folder to the disk and the
+viewer shows it on the selector status line. (The separate *Build images.lst*
+step is gone: a manifest built apart from the copy could name files the disk
+does not hold.)
 
 ### Scripting / batch use
 For driving the converter from a GUI or batch script, use `--quiet` to silence the
@@ -559,8 +600,9 @@ text report and read `{name}_stats.json` (always written) for results, or use
 `master_colours`, `source_colours`, `source_width`, `source_height`,
 `recoloured_pixels`, `recoloured_pct`, `mean_oklab_error`, `components`,
 `largest_component`, `strategy`, `color_bias`, `coherence`,
-`duplicated_across_palettes`, `lossless`, `per_palette`, and a `files` map of
-every output filename produced.
+`duplicated_across_palettes`, `lossless`, `per_palette`, `description`,
+`convertor_version`, `args` (every option the run was given, so it can be
+repeated exactly), and a `files` map of every output filename produced.
 
 `ideal_vs_output` is a nested object holding the accuracy block described
 above: `compared_pixels`, `identical_pixels`, `identical_pct`, `rgb_rmse`,

@@ -49,11 +49,19 @@ most 8 chars, never a digit first - "Charger 01.jpg" -> CHARGER0)
                        IMAGES.LST carries to the viewer's selector status line
 """
 
-import argparse, os, sys, json
+import argparse, os, sys, json, textwrap
 import numpy as np
 from PIL import Image
 
 import atari_name
+
+# The repo's one release number (palgui/__init__.py has no imports, so this
+# pulls in no Qt).  Written into the report / .nfo and _stats.json so every
+# conversion says which converter made it.
+try:
+    from palgui import __version__ as CONVERTOR_VERSION
+except ImportError:                     # palettize4.py copied out on its own
+    CONVERTOR_VERSION = "unknown"
 
 # .v1k block sizes the viewer expects: .pal (4 x 256 x RGB), .map (40 x 240
 # cells), .raw (320 x 240 pixels).  Must match V1K_*_LEN in view1024.asm.
@@ -933,6 +941,14 @@ def main():
     lines = []
     lines.append("=" * 31 + "palettize_4 report" + "=" * 31)   # 80-col banner
     lines.append(row("Input", os.path.basename(args.input)))
+    # Description: what IMAGES.LST shows on the selector status line.  Up to
+    # DESC_CAP (75) chars, so wrap at the 57 left after the label rather than
+    # letting the 80-col .nfo clip it.
+    desc_lines = textwrap.wrap(description(args.description, args.input),
+                               80 - 23) or [""]
+    lines.append(row("Description", desc_lines[0]))
+    for extra in desc_lines[1:]:
+        lines.append(cont(extra))
     lines.append(row("Dimensions", f"{orig_w} x {orig_h}  ({orig_w*orig_h} px)"))
     if args.resize:
         lines.append(row("Resampled", f"{W}x{H} via {args.filter} (fit={args.fit}"
@@ -952,6 +968,7 @@ def main():
     lines.append(row("Master colours", N))
     lines.append(row("Output colours", f"{unique_out}  (distinct RGB on screen)"))
     lines.append("")
+    lines.append(row("Convertor Version", CONVERTOR_VERSION))
     lines.append(row("Strategy", strategy))
     # coherence only feeds run_balanced(), i.e. a lossy run with bias > 0
     coh_used = (not lossless) and strategy.startswith("balanced")
@@ -1049,6 +1066,11 @@ def main():
         "name": base,
         "source_name": os.path.basename(args.input),
         "description": description(args.description, args.input),
+        "convertor_version": CONVERTOR_VERSION,
+        # Every option this run was given, so it can be repeated exactly
+        # (palgui.recover reads this back).  --quiet/--json only shape stdout.
+        "args": {k: v for k, v in sorted(vars(args).items())
+                 if k not in ("quiet", "json")},
         "out_dir": args.out,
         "width": W, "height": H, "pixels": total_px,
         "source_width": orig_w, "source_height": orig_h,

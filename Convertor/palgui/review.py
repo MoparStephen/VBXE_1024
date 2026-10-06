@@ -184,3 +184,23 @@ def command_line(text):
             return stripped
         return ''
     return ''
+
+
+def delete(shots_to_go):
+    """Remove each shot's .png and .txt.  -> ([removed paths], [errors]).
+
+    NO CONFIRMATION HERE - that is the pane's job, which can show a dialog;
+    this is the part a test can run.  Numbering needs no repair afterwards:
+    snapshot.next_index is max + 1, so a gap is never refilled.
+    """
+    removed, errors = [], []
+    for shot in shots_to_go:
+        for path in (shot.png, shot.txt):
+            if not path or not os.path.isfile(path):
+                continue
+            try:
+                os.remove(path)
+                removed.append(path)
+            except OSError as exc:  # noqa: BLE001 - reported, keep going
+                errors.append('%s: %s' % (path, exc))
+    return removed, errors

@@ -24,8 +24,9 @@ import sys
 import tempfile
 import unittest
 
-from palgui import (gather, imageslst, jobs, presets, review, runner,
-                    snapshot, summary)
+import palgui
+from palgui import (describe, gather, imageslst, jobs, presets, recover,
+                    review, runner, snapshot, summary)
 from palgui.imageslst import atari_name
 from palgui.settings import (DITHERS, FILTERS, FITS, RESIZE_FIXED,
                             Settings, split_command_line)
@@ -44,10 +45,14 @@ NOT_A_CONTROL = {
 
 def _sample():
     """A source certainly present and certainly over the colour budget."""
-    for name in ('plasma.bmp', 'stanley.bmp', 'sunset.jpg', 'dragon.png'):
-        p = os.path.join(CONVERTOR, name)
-        if os.path.isfile(p):
-            return p
+    # Convertor/ first, then the repo's "Images To Convert", where the
+    # sources moved to - without it every end-to-end test quietly skips.
+    for where in (CONVERTOR, os.path.join(os.path.dirname(CONVERTOR),
+                                          'Images To Convert')):
+        for name in ('plasma.bmp', 'stanley.bmp', 'sunset.jpg', 'dragon.png'):
+            p = os.path.join(where, name)
+            if os.path.isfile(p):
+                return p
     return None
 
 
@@ -1284,7 +1289,11 @@ class TestEndToEnd(unittest.TestCase):
 
 
 class TestImagesLst(unittest.TestCase):
-    """imageslst.scan / build - the IMAGES.LST manifest the viewer reads."""
+    """imageslst - where an IMAGES.LST description comes from, and the bytes.
+
+    gather.py is the only writer now (File > Build images.lst is gone), so
+    these test the pieces it calls; TestGather covers the whole trip.
+    """
 
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix='palgui-lst-')
@@ -1300,102 +1309,85 @@ class TestImagesLst(unittest.TestCase):
         return path
 
     @staticmethod
-    def _nfo(input_name):
-        """A 2-record .NFO whose record 1 is the Input line, like palettize4."""
-        banner = ('=' * 31 + 'palettize_4 report' + '=' * 31)[:80].ljust(80)
-        rec1 = ('%-21s: %s' % ('Input', input_name))[:80].ljust(80)
+    def _nfo(input_name, description=None):
+        """An .NFO like palettize4's: banner, Input, then (0.19+) a
+        Description row wrapped onto continuation records."""
+        lines = [('=' * 31 + 'palettize_4 report' + '=' * 31),
+                 '%-21s: %s' % ('Input', input_name)]
+        if description is not None:
+            parts = description.split('|')
+            lines.append('%-21s: %s' % ('Description', parts[0]))
+            lines += [' ' * 23 + p for p in parts[1:]]
+            lines.append('%-21s: %s' % ('Dimensions', '320 x 240'))
         out = bytearray()
-        for line in (banner, rec1):
-            for ch in line:
+        for line in lines:
+            for ch in line[:80].ljust(80):
                 out.append(ord(ch) & 0xFF)
                 out.append(0x07)
+        out.extend(b'\x00' * 160)
         return bytes(out)
 
-    def test_scan_recovers_names_and_sorts_by_key(self):
-        self._touch('IMG1.map')
+    def _desc(self, name):
+        return imageslst._description(os.path.join(self.dir, name))
+
+    def test_nfo_input_then_report_then_stem(self):
         self._touch('IMG1.nfo', self._nfo('sunset_beach.png'))
-        self._touch('IMG0.map')
-        self._touch('IMG0.nfo', self._nfo('photo_of_a_cat.jpg'))
-        self._touch('IMG2.map')                       # bare - falls back to stem
-        self._touch(os.path.join('sub', 'IMG3.map'))  # one level down
-        self._touch(os.path.join('sub', 'IMG3_report.txt'),
+        self._touch('IMG3_report.txt',
                     ('banner\n%-21s: dragon_lores.bmp\n'
                      % 'Input').encode('latin-1'))
+        self.assertEqual(self._desc('IMG1.v1k'), 'sunset_beach')
+        self.assertEqual(self._desc('IMG3.v1k'), 'dragon_lores')
+        self.assertEqual(self._desc('IMG2.v1k'), 'IMG2')
 
-        rows = imageslst.scan(self.dir)
-        self.assertEqual([k for k, _ in rows],
-                         ['IMG0    ', 'IMG1    ', 'IMG2    ', 'IMG3    '])
-        self.assertEqual([n for _, n in rows],
-                         ['photo_of_a_cat', 'sunset_beach',
-                          'IMG2', 'dragon_lores'])
+    def test_build_rows_is_9b_terminated_keyed_records(self):
+        data = imageslst.build_rows([(imageslst.key_for('img1'), 'b'),
+                                     (imageslst.key_for('img0'), 'a' * 90)])
+        recs = data.split(bytes([imageslst.EOL]))
+        self.assertEqual(recs[-1], b'')
+        self.assertEqual(recs[0], b'IMG0    ' + b'a' * imageslst.NAME_CAP)
+        self.assertEqual(recs[1], b'IMG1    b')
 
-    def test_build_is_9b_terminated_keyed_records(self):
-        self._touch('IMG0.map')
-        self._touch('IMG0.nfo', self._nfo('photo_of_a_cat.jpg'))
-        data = imageslst.build(self.dir)
-        self.assertEqual(data.count(imageslst.EOL), 1)
-        self.assertEqual(data[:imageslst.KEY_LEN], b'IMG0    ')
-        self.assertIn(b'photo_of_a_cat', data)
-        self.assertEqual(data[-1], imageslst.EOL)
-
-    def test_stats_description_wins_over_the_filename(self):
-        self._touch('IMG0.map')
-        self._touch('IMG0.nfo', self._nfo('photo_of_a_cat.jpg'))
+    def test_stats_description_wins_over_everything(self):
+        self._touch('IMG0.nfo', self._nfo('photo_of_a_cat.jpg', 'From nfo'))
         self._touch('IMG0_stats.json',
                     json.dumps({'description': 'Tabby on a windowsill'})
                     .encode('utf-8'))
-        (key, name), = imageslst.scan(self.dir)
-        self.assertEqual(name, 'Tabby on a windowsill')
+        self.assertEqual(self._desc('IMG0.v1k'), 'Tabby on a windowsill')
+
+    def test_nfo_description_row_is_the_fallback_for_lost_stats(self):
+        """A staged .V1K/.NFO pair has no _stats.json beside it."""
+        self._touch('IMG0.nfo', self._nfo('cat.jpg',
+                                          'Tabby on a|windowsill at dusk'))
+        self.assertEqual(self._desc('IMG0.v1k'),
+                         'Tabby on a windowsill at dusk')
 
     def test_fallback_drops_extension_and_trailing_period(self):
-        self._touch('IMG0.map')
         self._touch('IMG0.nfo', self._nfo('my.photo.png'))
-        self._touch('IMG1.map')
         self._touch('IMG1.nfo', self._nfo('odd name.'))
-        self._touch('IMG2.map')                          # stats, no description
         self._touch('IMG2_stats.json', b'{"description": ""}')
         self._touch('IMG2.nfo', self._nfo('beach.jpg'))
-        self.assertEqual([n for _, n in imageslst.scan(self.dir)],
+        self.assertEqual([self._desc('IMG%d.v1k' % i) for i in range(3)],
                          ['my.photo', 'odd name', 'beach'])
 
-    def test_description_is_clipped_to_the_cap(self):
-        self._touch('IMG0.map')
-        self._touch('IMG0_stats.json',
-                    json.dumps({'description': 'x' * 90}).encode('utf-8'))
-        (key, name), = imageslst.scan(self.dir)
-        self.assertEqual(len(name), imageslst.NAME_CAP)
-
-    def test_write_defaults_into_the_folder(self):
-        self._touch('IMG0.map')
-        path, count = imageslst.write(self.dir)
-        self.assertEqual(path, os.path.join(self.dir, 'images.lst'))
-        self.assertEqual(count, 1)
-        self.assertTrue(os.path.isfile(path))
-
     def test_key_matches_the_disk_short_name(self):
-        """Spaces dropped and the gap closed; '_' kept - like the disk step.
+        """Spaces dropped and the gap closed; '_' kept - like the disk step."""
+        self.assertEqual(imageslst.key_for('Charger 01'), 'CHARGER0')
+        self.assertEqual(imageslst.key_for('Chrome_cr'), 'CHROME_C')
+        self.assertEqual(imageslst.key_for('FJ_Marceline_300'), 'FJ_MARCE')
+        self.assertEqual(imageslst.key_for('img0'), 'IMG0    ')
 
-        'Charger 01.map' -> CHARGER0.MAP, 'Chrome_cr.map' -> CHROME_C.MAP,
-        'FJ_Marceline_300.map' -> FJ_MARCE.MAP on the Atari.
-        """
-        self._touch('Charger 01.map')
-        self._touch('Chrome_cr.map')
-        self._touch('FJ_Marceline_300.map')
-        rows = dict(imageslst.scan(self.dir))
-        self.assertIn('CHARGER0', rows)
-        self.assertIn('CHROME_C', rows)
-        self.assertIn('FJ_MARCE', rows)
-
-    def test_v1k_only_folder_is_scanned_once_per_image(self):
-        """A single-file disk folder holds .V1K + .NFO and no .MAP; a folder
-        holding both for one image must still list it once."""
-        self._touch('IMG0.v1k')
-        self._touch('IMG0.nfo', self._nfo('photo_of_a_cat.jpg'))
-        self._touch('IMG1.map')
-        self._touch('IMG1.v1k')
-        rows = imageslst.scan(self.dir)
-        self.assertEqual(rows, [('IMG0    ', 'photo_of_a_cat'),
-                                ('IMG1    ', 'IMG1')])
+    def test_a_real_nfo_round_trips_its_description(self):
+        """What palettize4 writes is what gather reads back."""
+        sample = _sample()
+        if not sample:
+            self.skipTest('no sample image')
+        out = os.path.join(self.dir, 'run')
+        want = ('A long description that palettize4 has to wrap onto a '
+                'second .nfo line')
+        stats = runner.run_blocking(Settings(input=sample, description=want),
+                                    out=out, name='wrap')
+        nfo = os.path.join(out, stats['files']['nfo'])
+        self.assertEqual(imageslst._nfo_description(nfo), want)
 
 
 class TestAtariName(unittest.TestCase):
@@ -1486,6 +1478,279 @@ class TestGather(unittest.TestCase):
         self._v1k('IMG0.v1k')
         gather.plan(self.root, self.out)
         self.assertFalse(os.path.exists(self.out))
+
+
+class TestConversionRecord(unittest.TestCase):
+    """0.19: a real conversion keeps its recipe, and the recipe comes back.
+
+    Before this a Convert left only palettize4's _report.txt - the Result tab,
+    the `run with` line and the settings reached disk for previews only.
+    """
+
+    def setUp(self):
+        self.sample = _sample()
+        if not self.sample:
+            self.skipTest('no sample image in %s' % CONVERTOR)
+        self.out = tempfile.mkdtemp(prefix='palgui-rec-')
+
+    def tearDown(self):
+        shutil.rmtree(self.out, ignore_errors=True)
+
+    def _convert(self, **kw):
+        kw.setdefault('resize', '160x120')
+        q = jobs.Queue()
+        job = q.add(Settings(input=self.sample, out=self.out, **kw))
+        self.assertEqual(jobs.run_queue(q), (1, 0, 1))
+        folder = runner.resolve(runner.job_dir(job.settings))
+        return job, folder
+
+    def test_convert_writes_a_summary_that_restores_every_setting(self):
+        job, folder = self._convert(dither='blue', color_bias=0.4,
+                                    coherence=0.5,
+                                    description='Plasma, for the record')
+        path = os.path.join(folder, job.stats['name'] +
+                            snapshot.SUMMARY_SUFFIX)
+        self.assertTrue(os.path.isfile(path))
+        with open(path) as fh:
+            text = fh.read()
+        self.assertIn('run with', text)
+        self.assertIn('palettize4 report', text)       # the Report tab
+        self.assertIn('[accuracy vs ideal]', text)     # the Result tab
+        self.assertIn('Plasma, for the record', text)
+        self.assertIn('convertor  : %s' % palgui.__version__, text)
+        s, how = recover.settings_from_file(path)
+        self.assertTrue(how.startswith('exact'))
+        self.assertEqual(s.to_argv(), job.settings.to_argv())
+
+    def test_report_and_stats_carry_description_version_and_args(self):
+        job, folder = self._convert(description='Seen on the status line')
+        paths = runner.output_paths(job.stats, folder)
+        with open(paths['report']) as fh:
+            lines = fh.read().splitlines()
+        labels = [ln[:21].strip() for ln in lines]
+        self.assertEqual(labels[1:3], ['Input', 'Description'])
+        self.assertIn('Seen on the status line', lines[2])
+        i = labels.index('Strategy')
+        self.assertEqual(labels[i - 1], 'Convertor Version')
+        self.assertIn(palgui.__version__, lines[i - 1])
+        self.assertEqual(job.stats['convertor_version'], palgui.__version__)
+        args = job.stats['args']
+        self.assertEqual(args['description'], 'Seen on the status line')
+        self.assertNotIn('json', args)
+        s, how = recover.settings_from_file(paths['stats'])
+        self.assertTrue(how.startswith('exact'))
+        self.assertEqual(s.to_argv(out='x', name='y'),
+                         job.settings.to_argv(out='x', name='y'))
+
+
+class TestRecover(unittest.TestCase):
+    """recover.plan - one output folder per image, back to a queue.
+
+    Each case makes a real conversion and then strips it back to what a
+    pre-0.19 folder held: no _summary.txt, no "args", no dither in the stats.
+    """
+
+    def setUp(self):
+        self.sample = _sample()
+        if not self.sample:
+            self.skipTest('no sample image in %s' % CONVERTOR)
+        self.root = tempfile.mkdtemp(prefix='palgui-recover-')
+        self.out = os.path.join(self.root, 'out')
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def _old_conversion(self, name, **kw):
+        kw.setdefault('resize', '160x120')
+        s = Settings(input=self.sample, out=self.out, name=name, **kw)
+        folder = runner.resolve(runner.job_dir(s))
+        stats = runner.run_blocking(s, out=folder, name=name)
+        base = os.path.join(folder, stats['name'])
+        for key in ('args', 'dither', 'dither_strength', 'dither_applied',
+                    'convertor_version'):
+            stats.pop(key, None)
+        with open(base + '_stats.json', 'w') as fh:
+            json.dump(stats, fh)
+        os.remove(base + '_report.txt')         # the oldest had none
+        return s, folder, base
+
+    def test_unrecorded_dither_is_verified_by_trial(self):
+        self._old_conversion('BLUEONE', dither='blue')
+        rec, = recover.plan(self.out)
+        self.assertEqual(rec.confidence, recover.VERIFIED)
+        self.assertEqual(rec.settings.dither, 'blue')
+        self.assertEqual(rec.settings.name, 'BLUEONE')
+        self.assertEqual(rec.settings.out, os.path.abspath(self.out))
+        self.assertTrue(rec.ok())
+
+    def test_a_matching_preview_is_the_exact_recipe(self):
+        # 320x240: a snapshot is always that size, so only a full-size
+        # conversion can match one pixel for pixel.
+        s, folder, base = self._old_conversion('SNAP', dither='bayer4',
+                                               coherence=0.5,
+                                               resize='320x240')
+        where = os.path.join(folder, snapshot.DIRNAME)
+        decoy = s.clone()
+        decoy.dither = 'none'
+        _write_png(os.path.join(self.root, 'decoy.png'), (320, 240))
+        snapshot.save(where, os.path.join(self.root, 'decoy.png'), 'x',
+                      data={'settings': decoy.to_dict()})
+        snapshot.save(where, base + '_preview.png', 'x',
+                      data={'settings': s.to_dict()})
+        rec, = recover.plan(self.out, trial=False)
+        self.assertEqual(rec.confidence, recover.PREVIEW_MATCH)
+        self.assertEqual(rec.source, 'previews/Preview_02.txt')
+        self.assertEqual(rec.settings.dither, 'bayer4')
+        self.assertEqual(float(rec.settings.coherence), 0.5)
+
+    def test_a_moved_source_is_found_by_filename(self):
+        _s, folder, base = self._old_conversion('MOVED')
+        with open(base + '_stats.json') as fh:
+            stats = json.load(fh)
+        stats['input'] = os.path.join(self.root, 'gone',
+                                      os.path.basename(self.sample))
+        with open(base + '_stats.json', 'w') as fh:
+            json.dump(stats, fh)
+        rec, = recover.plan(self.out, trial=False)
+        self.assertFalse(rec.ok())
+        self.assertEqual(len(recover.build_queue([rec])), 0)
+        moved = os.path.join(self.root, 'sources', 'deep')
+        os.makedirs(moved)
+        shutil.copy(self.sample, moved)
+        rec, = recover.plan(self.out, [os.path.join(self.root, 'sources')],
+                            trial=False)
+        self.assertTrue(rec.ok())
+        self.assertEqual(os.path.dirname(rec.settings.input), moved)
+
+    def test_old_named_files_are_listed_not_touched(self):
+        _s, folder, _base = self._old_conversion('KEEP')
+        stale = os.path.join(folder, 'Keep Me Old.v1k')
+        with open(stale, 'wb') as fh:
+            fh.write(b'x')
+        rec, = recover.plan(self.out, trial=False)
+        self.assertEqual(rec.orphans, ['Keep Me Old.v1k'])
+        self.assertTrue(os.path.isfile(stale))
+        self.assertIn('Keep Me Old.v1k', recover.report_text([rec]))
+
+    def test_a_folder_without_stats_is_skipped(self):
+        os.makedirs(os.path.join(self.out, 'Samples'))
+        rec, = recover.plan(self.out)
+        self.assertIsNone(rec.settings)
+        self.assertEqual(len(recover.build_queue([rec])), 0)
+
+
+class TestDeletePreviews(unittest.TestCase):
+    """review.delete - the half of Delete marked... that touches disk."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix='palgui-del-')
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_delete_removes_both_files_and_numbering_does_not_reuse(self):
+        png = os.path.join(self.dir, 'src.png')
+        _write_png(png, (320, 240))
+        for _ in range(3):
+            snapshot.save(self.dir, png, 'x')
+        shots = review.shots(self.dir)
+        removed, errors = review.delete([shots[2]])
+        self.assertEqual(errors, [])
+        self.assertEqual(sorted(os.path.basename(p) for p in removed),
+                         ['Preview_03.png', 'Preview_03.txt'])
+        self.assertEqual([s.index for s in review.shots(self.dir)], [1, 2])
+        review.delete([review.shots(self.dir)[0]])
+        self.assertEqual(snapshot.next_index(self.dir), 3)
+
+
+class TestDescribe(unittest.TestCase):
+    """describe.py - a new description on a finished conversion, four files
+    kept in step, the picture untouched."""
+
+    LONG = ('A 1970 Dodge Charger at a car show, long enough that the report '
+            'wraps it')
+
+    def setUp(self):
+        self.sample = _sample()
+        if not self.sample:
+            self.skipTest('no sample image in %s' % CONVERTOR)
+        self.out = tempfile.mkdtemp(prefix='palgui-desc-')
+
+    def tearDown(self):
+        shutil.rmtree(self.out, ignore_errors=True)
+
+    def _convert(self, name, **kw):
+        q = jobs.Queue()
+        job = q.add(Settings(input=self.sample, out=self.out, name=name,
+                             resize='160x120', **kw))
+        self.assertEqual(jobs.run_queue(q), (1, 0, 1))
+        folder = runner.resolve(runner.job_dir(job.settings))
+        return folder, os.path.join(folder, job.stats['name'])
+
+    @staticmethod
+    def _bytes(path):
+        with open(path, 'rb') as fh:
+            return fh.read()
+
+    def test_all_four_files_match_a_fresh_conversion(self):
+        """Edited after the fact == converted with --description, in every
+        row that carries it; the picture files do not change at all."""
+        folder, base = self._convert('EDITED')
+        _fresh_folder, fresh = self._convert('FRESH', description=self.LONG)
+        pictures = dict((ext, self._bytes(base + ext))
+                        for ext in ('.raw', '.map', '.pal', '_preview.png'))
+        with open(base + snapshot.SUMMARY_SUFFIX) as fh:
+            when = [ln for ln in fh.read().splitlines()
+                    if ln.startswith('when')]
+
+        old, new, files = describe.set_description(folder, self.LONG)
+        self.assertEqual(new, self.LONG)
+        self.assertEqual(len(files), 4)
+
+        with open(base + '_report.txt') as a, open(fresh + '_report.txt') as b:
+            got, want = a.read().splitlines(), b.read().splitlines()
+        self.assertEqual(got[1:4], want[1:4])        # Input + 2 Description
+        self.assertEqual(len(got), len(want))
+        self.assertEqual(imageslst._nfo_description(base + '.nfo'), self.LONG)
+        with open(base + '_report.txt') as fh:
+            self.assertEqual(self._bytes(base + '.nfo'),
+                             describe.nfo_encode.encode(fh.read()))
+        with open(base + '_stats.json') as fh:
+            stats = json.load(fh)
+        self.assertEqual(stats['description'], self.LONG)
+        self.assertEqual(stats['args']['description'], self.LONG)
+        s, _how = recover.settings_from_file(base + snapshot.SUMMARY_SUFFIX)
+        self.assertEqual(s.description, self.LONG)
+        with open(base + snapshot.SUMMARY_SUFFIX) as fh:
+            self.assertEqual([ln for ln in fh.read().splitlines()
+                              if ln.startswith('when')], when)
+        for ext, data in pictures.items():
+            self.assertEqual(self._bytes(base + ext), data, ext)
+
+        # ... and it is what Gather puts in IMAGES.LST (gather.plan asks
+        # imageslst._description; a 160x120 run has no .v1k to stage).
+        self.assertEqual(imageslst._description(base + '.v1k'), self.LONG)
+
+    def test_list_round_trip_and_refusals(self):
+        folder, _base = self._convert('LISTED')
+        lst = os.path.join(self.out, 'd.txt')
+        self.assertEqual(describe.export_list(self.out, lst), 1)
+        rows = describe.apply_list(self.out, lst)
+        self.assertEqual(rows[0][3], [])            # unchanged -> no files
+        with open(lst, 'a') as fh:
+            fh.write('LISTED = Tabby on a windowsill\n')
+        (_n, old, new, files), = describe.apply_list(self.out, lst)[-1:]
+        self.assertTrue(files)
+        self.assertEqual(describe.current(folder), old)   # dry run by default
+        describe.apply_list(self.out, lst, dry_run=False)
+        self.assertEqual(describe.current(folder), 'Tabby on a windowsill')
+        # blank resets to the filename default
+        describe.set_description(folder, '')
+        self.assertEqual(describe.current(folder),
+                         os.path.splitext(os.path.basename(self.sample))[0])
+        for bad in ('café', 'x' * 76):
+            with self.assertRaises(describe.DescribeError):
+                describe.set_description(folder, bad)
 
 
 if __name__ == '__main__':

@@ -35,8 +35,11 @@ import re
 import shutil
 import time
 
-from . import summary
+from . import __version__, summary
 
+
+#: {name}_summary.txt - the record a real CONVERSION leaves beside its files.
+SUMMARY_SUFFIX = '_summary.txt'
 
 #: The subdirectory, under the per-image output folder.  Snapshots pile up -
 #: forty of them is a normal afternoon - and burying a conversion's eleven real
@@ -155,12 +158,48 @@ def write_for_run(out_root, settings, stats, paths, command, report):
         settings, stats, command=command, report=report,
         header='Preview %02d' % index,
         extra=[('when', time.strftime('%Y-%m-%d %H:%M:%S')),
+               ('convertor', __version__),
                ('image', '%s.png   %d x %d, %d colour%s%s'
                 % (STEM % index, w, h, colours,
                    '' if colours == 1 else 's',
                    '  (nearest-resampled from the run)' if resampled else ''))])
     return save(where, paths['preview'], text, index=index,
                 data={'settings': settings.to_dict(), 'stats': stats})
+
+
+def write_conversion(out_dir, settings, stats, command, report, when=None,
+                     convertor=None):
+    """{name}_summary.txt beside a finished CONVERSION.  -> its path.
+
+    A CONVERSION USED TO LEAVE NO RECORD OF HOW IT WAS MADE.  palettize4's
+    _report.txt is the Atari Info screen and stays exactly that; the Result
+    tab, the `run with` line and the settings themselves only ever reached disk
+    for previews.  This is the same file a Preview_NN.txt is - same renderer,
+    same [data] footer - so File > Load settings from... and palgui/recover.py
+    read either one, and re-converting next month is one click, not a guess.
+
+    One per image, overwritten by the next conversion, like the eleven files
+    it describes.  Below ui/ for the same reason write_for_run is: the window
+    and jobs.run_queue() both call it.
+
+    `when` / `convertor` default to now and this release.  palgui/describe.py
+    passes the originals when it rewrites a summary after the fact - editing a
+    description is not a new conversion.
+    """
+    name = stats.get('name') or settings.effective_name() or 'image'
+    path = os.path.join(out_dir, name + SUMMARY_SUFFIX)
+    text = summary.as_text(
+        settings, stats, command=command, report=report,
+        header='Conversion - %s' % name,
+        extra=[('when', when or time.strftime('%Y-%m-%d %H:%M:%S')),
+               ('convertor', convertor or __version__)])
+    body = text.rstrip('\n') + '\n\n' + data_block(
+        {'settings': settings.to_dict(), 'stats': stats})
+    tmp = path + '.tmp'
+    with open(tmp, 'w') as fh:
+        fh.write(body + '\n')
+    os.replace(tmp, path)
+    return path
 
 
 def describe(preview_png):

@@ -272,9 +272,12 @@ def as_text(settings, stats, command='', report='', header='', extra=()):
     if header:
         lines.append(header)
         lines.append('=' * 64)
-    lines.append('%-8s: %s' % ('input', settings.input))
+    lines.append('%-11s: %s' % ('input', settings.input))
+    if (settings.description or '').strip():
+        lines.append('%-11s: %s'
+                     % ('description', settings.description.strip()))
     for key, value in extra:
-        lines.append('%-8s: %s' % (key, value))
+        lines.append('%-11s: %s' % (key, value))
     lines.append('')
 
     # The command goes in its own block rather than through rows(), so it is

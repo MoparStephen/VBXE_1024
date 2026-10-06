@@ -34,11 +34,12 @@ matches a record to a row by that key, so extra or out-of-order records are
 harmless.
 No `IMAGES.LST` -> the line is just blank.
 
-Build it with **`build_images_lst.py <folder>`** or the converter GUI's
-**File > Build images.lst...**. Run it on the folder you build the disk image
-from, after any renaming to `IMGn`, so the keys match the on-disk names. The
-names themselves come from each image's `.NFO` record 1 (the converter's
-`Input : <name>` line).
+It is written by **`gather_v1k.py ROOT OUTDIR`** or the converter GUI's
+**File > Gather images for Atari...**, which stages the `.V1K`/`.NFO` files
+under their 8-char names and writes the manifest in the same step, so the keys
+always match the on-disk names. The text is each image's description: its
+`_stats.json` `description`, else the `.NFO` `Description` row, else the
+`Input` filename minus its extension.
 
 **`MAX_IMAGES` = 255, by design.** Each image is a ~90 kB `.PAL`/`.MAP`/`.RAW`
 set, so 255 already far exceeds any realistic slideshow on one partition, and a
