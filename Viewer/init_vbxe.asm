@@ -615,6 +615,24 @@ Menu_Ramp_Green
 Menu_Ramp_Blue
 	ins 'Assets/RAMP_BLU.PAL'
 
+; Step $0A - Menu separator row: assembly-embed the 160-byte pattern table
+; (Assets/MENU_SEP.RAW, built by Convertor/make_logo.py --export-sep) directly
+; into MENU_SEP_VRAM (bank $33) - same "select bank, then org+ins" idiom as
+; Load_Menu_Ramps.  Loaded once here and never written again; all three
+; separator rows of XDL_MainMenu point at it.  No message / progress dots -
+; this is a tiny load, part of the menu ramps stage.
+	org LOAD_ADDRESS + $300
+.proc Load_Menu_Sep
+	lda #(MENU_SEP_VRAM / $1000) | MEMAC_GLOBAL_ENABLE	; Bank $33 VBXE Window Enabled
+	vbsta VBXE_MA_BSEL
+	rts
+.endp
+	ini Load_Menu_Sep
+
+	org VBXE_WINDOW + (MENU_SEP_VRAM & $FFF)	; -> MENU_SEP_VRAM
+Menu_Sep_Data
+	ins 'Assets/MENU_SEP.RAW'
+
 ; The image-list scan (Build_Image_List / Parse_Dir_Line) and the old
 ; "press a key to start" gate (Wait_Start) used to live here as init steps.
 ; They moved to ui.asm (main segment): the scan location is now user-selectable

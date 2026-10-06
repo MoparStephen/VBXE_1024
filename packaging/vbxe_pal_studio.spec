@@ -47,6 +47,7 @@ gui_a = Analysis(
     hiddenimports=[
         'palettize4',                       # runner.palettize4() imports it when frozen
         'atari_name',                       # imported by palettize4 + palgui.imageslst
+        'nfo_encode',                       # imported by palettize4 + palgui.describe
         'PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtWidgets',
         'PIL.Image', 'PIL.ImageDraw',
         'scipy.ndimage', 'scipy.spatial', 'scipy.spatial.distance',
@@ -65,6 +66,7 @@ cli_a = Analysis(
     datas=[],
     hiddenimports=[
         'scipy.ndimage', 'scipy.spatial', 'scipy.spatial._ckdtree',
+        'palgui',                           # __version__ for the report/.nfo
     ],
     hookspath=[],
     runtime_hooks=[],

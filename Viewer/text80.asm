@@ -53,7 +53,7 @@
 .var	Txt_Fg			.byte = $6B2
 .var	Txt_Bg			.byte = $6B3
 .var	Txt_Attr		.byte = $6B4	; current pen, as one cell attribute byte
-;	$6B5 free  (was Txt_ClearAttr - the blitter Text_Clear zero-fills, no attr byte)
+.var	Txt_FrameStyle	.byte = $6B5	; Text_Window_Frame border: FRAME_DOUBLE / FRAME_SINGLE
 .var	Txt_Bank		.byte = $6B6	; VBXE bank currently mapped by the cell writer
 ;	$6B7 to $6FF free
 
@@ -388,11 +388,30 @@ Text_Window_Kick_L2
 	rts
 
 ;-----------------------------------------------------------------------------
-; Text_Window_Frame - draw a simple ASCII box ('+' '-' '|') with a blank
-; interior over Txt_Row / Txt_Col / Reg1 (width-1) / Reg2 (height-1), using the
-; current pen.  Uses Txt_Line as scratch.  Clobbers A/X/Y, Reg1..Reg8.
+; Text_Window_Frame - draw a box with a blank interior over Txt_Row / Txt_Col /
+; Reg1 (width-1) / Reg2 (height-1), using the current pen.  Txt_FrameStyle
+; picks the border: the CP437 box-drawing glyphs FRAME_DOUBLE / FRAME_SINGLE.
+; With the Atari font up (Font_Sel = 1) both switch to FRAME_ATARI - the
+; ATASCII Ctrl-key line glyphs (Ctrl-Q/R/E/Z/C + '|'), single lines only -
+; since the Atari font has other glyphs at the CP437 codes.  Uses Txt_Line as
+; scratch.  Clobbers A/X/Y, Reg1..Reg8, Txt_FrameStyle.
 ;-----------------------------------------------------------------------------
+.def	FRAME_DOUBLE	= 0				; Text_Window_Frame_Chars offsets (9 bytes per style)
+.def	FRAME_SINGLE	= 9
+.def	FRAME_ATARI		= 18			; picked automatically for the Atari font
+
+; Per style, three {left, fill, right} triples: top edge, interior row, bottom edge.
+Text_Window_Frame_Chars
+	dta $C9,$CD,$BB, $BA,' ',$BA, $C8,$CD,$BC	; FRAME_DOUBLE  (CP437 double lines)
+	dta $DA,$C4,$BF, $B3,' ',$B3, $C0,$C4,$D9	; FRAME_SINGLE  (CP437 single lines)
+	dta $11,$12,$05, '|',' ','|', $1A,$12,$03	; FRAME_ATARI   (ATASCII Ctrl-Q R E / | / Ctrl-Z R C)
+
 Text_Window_Frame
+	lda Font_Sel
+	beq Text_Window_Frame_Go			; CGA font - the style as asked
+	lda #FRAME_ATARI
+	sta Txt_FrameStyle
+Text_Window_Frame_Go
 	lda Reg1
 	sta Reg7							; Reg7 = width-1 (survives Text_PutStrAt)
 	lda Txt_Col
@@ -403,47 +422,44 @@ Text_Window_Frame
 	sta Reg6							; Reg6 = bottom-edge screen row
 	lda Txt_Row
 	sta Reg5							; Reg5 = current screen row
-	jsr Text_Window_Frame_EdgeRow		; top edge
+	ldx Txt_FrameStyle
+	jsr Text_Window_Frame_Row			; top edge
 Text_Window_Frame_Mid
 	inc Reg5
 	lda Reg5
 	cmp Reg6
 	bcs Text_Window_Frame_Bottom
-	jsr Text_Window_Frame_MidRow
+	lda Txt_FrameStyle
+	clc
+	adc #$03
+	tax
+	jsr Text_Window_Frame_Row			; interior row
 	jmp Text_Window_Frame_Mid
 Text_Window_Frame_Bottom
-	jmp Text_Window_Frame_EdgeRow		; bottom edge (tail - returns to caller)
+	lda Txt_FrameStyle
+	clc
+	adc #$06
+	tax									; bottom edge (tail - returns to caller)
 
-Text_Window_Frame_EdgeRow
-	lda #'+'
+; X = offset of a {left, fill, right} triple in Text_Window_Frame_Chars.
+; Builds the row in Txt_Line and draws it at row Reg5, column Reg8.
+Text_Window_Frame_Row
+	lda Text_Window_Frame_Chars,x
 	sta Txt_Line+0
+	lda Text_Window_Frame_Chars+1,x
+	sta Reg4							; Reg4 = fill char (Reg3/4 free until Text_PutStrAt)
+	lda Text_Window_Frame_Chars+2,x
+	sta Reg3							; Reg3 = right char
 	ldx #$01
-Text_Window_Frame_EdgeL
+Text_Window_Frame_Row_L1
 	cpx Reg7
-	bcs Text_Window_Frame_EdgeEnd
-	lda #'-'
+	bcs Text_Window_Frame_Row_End
+	lda Reg4
 	sta Txt_Line,x
 	inx
-	bne Text_Window_Frame_EdgeL
-Text_Window_Frame_EdgeEnd
-	lda #'+'
-	sta Txt_Line,x
-	inx
-	jmp Text_Window_Frame_PutRow
-
-Text_Window_Frame_MidRow
-	lda #'|'
-	sta Txt_Line+0
-	ldx #$01
-Text_Window_Frame_MidL
-	cpx Reg7
-	bcs Text_Window_Frame_MidEnd
-	lda #' '
-	sta Txt_Line,x
-	inx
-	bne Text_Window_Frame_MidL
-Text_Window_Frame_MidEnd
-	lda #'|'
+	bne Text_Window_Frame_Row_L1
+Text_Window_Frame_Row_End
+	lda Reg3
 	sta Txt_Line,x
 	inx
 Text_Window_Frame_PutRow
@@ -463,7 +479,12 @@ Text_Window_Frame_PutRow
 ; Text_PutStrAt - write {ASCII, Txt_Attr} pairs for the $00-terminated string
 ; at Txt_Ptr, starting at cell (Txt_Col, Txt_Row).  Tracks bank + window
 ; offset explicitly (a row near the bottom straddles the $24000 boundary).
+; Inline colour: TXT_PEN, attr switches the pen mid-string (takes no column),
+; e.g. dta TXT_PEN,UI_PEN_LABEL,c'Location'.  The caller's pen (Txt_Fg/Txt_Bg)
+; is restored on exit, so an escape never leaks into the next draw.
 ;-----------------------------------------------------------------------------
+.def	TXT_PEN			= $01			; pen-change escape (CP437 smiley - never in names/descriptions)
+
 Text_PutStrAt
 ; --- Reg2:Reg1 = Txt_Row * TEXT_PITCH + Txt_Col * 2  (cell byte offset) -------
 	lda #$00
@@ -522,6 +543,15 @@ Text_PutStrAt_Char
 	ldy Reg3
 	lda (Txt_Ptr),y
 	beq Text_PutStrAt_Done
+	cmp #TXT_PEN
+	bne Text_PutStrAt_Glyph
+	iny									; TXT_PEN, attr - next byte is the new pen
+	lda (Txt_Ptr),y
+	sta Txt_Attr
+	iny
+	sty Reg3							; skip both bytes, column unchanged
+	jmp Text_PutStrAt_Char
+Text_PutStrAt_Glyph
 	ldy #$00
 	sta (Ptr_Lo),y						; glyph byte
 	iny
@@ -550,6 +580,8 @@ Text_PutStrAt_NoPage
 Text_PutStrAt_Done
 	lda #MEMAC_GLOBAL_DISABLE
 	vbsta VBXE_MA_BSEL
+	jsr Make_Attr						; restore the caller's pen (a TXT_PEN escape
+	sta Txt_Attr						; may have changed it) - clobbers X
 	rts
 
 ;-----------------------------------------------------------------------------

@@ -54,6 +54,7 @@ import numpy as np
 from PIL import Image
 
 import atari_name
+import nfo_encode
 
 # The repo's one release number (palgui/__init__.py has no imports, so this
 # pulls in no Qt).  Written into the report / .nfo and _stats.json so every
@@ -1040,8 +1041,10 @@ def main():
     # ---- the same report as a viewer-native .nfo -------------------------
     # The Atari viewer blits this straight onto its 80-col VBXE text screen,
     # so the file IS that screen's byte image: fixed 160-byte line records,
-    # 80 cells of {glyph, attr=$07}, space-padded, no line terminators; a
-    # trailing all-$00 record marks end-of-text.  Every report line is <= 80
+    # 80 cells of {glyph, attr}, space-padded, no line terminators; a
+    # trailing all-$00 record marks end-of-text.  nfo_encode.encode() builds
+    # it and colours the attrs from this row()/cont() layout (gold labels,
+    # blue values) - keep the two in step.  Every report line is <= 80
     # chars by construction (row()/cont() above) - assert it so a later edit
     # to the layout can't silently produce an unreadable About screen.
     NFO_COLS, NFO_MAX_LINES = 80, 127
@@ -1050,12 +1053,7 @@ def main():
                          % (len(lines), NFO_MAX_LINES))
     # The screen is 80 columns; the .txt keeps full-length lines, the binary
     # .nfo clips each record to fit (a long Input filename is the usual cause).
-    nfo = bytearray()
-    for ln in lines:
-        for ch in ln[:NFO_COLS].ljust(NFO_COLS):
-            nfo.append(ord(ch) & 0xFF)
-            nfo.append(0x07)
-    nfo.extend(b"\x00" * (NFO_COLS * 2))          # end-of-text sentinel record
+    nfo = nfo_encode.encode("\n".join(lines))
     with open(os.path.join(args.out, base + ".nfo"), "wb") as f:
         f.write(nfo)
 

@@ -179,7 +179,7 @@ BLT_MENU_SEP_CLEAR
 	dta a(MENU_SEP_PITCH-1)				; Width-1  (159 -> 160 bytes/row)
 	dta $00								; Height-1 (1 row)
 	dta $00								; And mask (0 -> constant source)
-	dta MENU_SEP_FILL_COLOUR			; Xor mask (fill value: white, Palette 0)
+	dta $00								; Xor mask (fill value - set at runtime by Fill_Pal_Preview_Cmap)
 	dta $00								; Collision and mask
 	dta $00								; Zoom
 	dta $00								; Pattern feature

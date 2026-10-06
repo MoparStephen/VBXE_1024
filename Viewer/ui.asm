@@ -21,9 +21,10 @@
 ;   row 1            blank
 ;   rows 2-16 (15)   scrolling grid (UI_FIRSTROW/UI_VISROWS below)
 ;   rows 17-19       spare/margin (blank)
-;   row 20 (TEXT_MAIN_ROWS+0)   status line (Nfo: ...)
-;   row 21 (TEXT_MAIN_ROWS+1)   slideshow delay
-;   row 22 (TEXT_MAIN_ROWS+2)   key legend
+;   row 20 (TEXT_MAIN_ROWS+0)   "Nfo: <description>"
+;   row 21 (TEXT_MAIN_ROWS+1)   "Cfg: NN sec (< Less > More)  ...  Press HELP ..."
+;   row 22 (TEXT_MAIN_ROWS+2)   "Nav: <arrows> Select Enter Choose ..." (key legend)
+;   - each starts with a 3-letter tag + ':' in UI_PEN_LOC, at col 0
 ; The info viewer uses rows 0..TEXT_MAIN_ROWS-1 for scrollable content and
 ; row TEXT_MAIN_ROWS for a single fixed hint line - see NFO_VISROWS below.
 ;
@@ -52,8 +53,28 @@
 ; after the de-interleave palette[e+128] is the adjacent-luma neighbour of
 ; palette[e] and gives no contrast.  Tune the three indices once on screen.
 .def	UI_PEN_FG		= $07			; normal text   : hue 0 grey,  luma 14
-.def	UI_PEN_HI		= $0F			; highlighted   : hue 1 gold,  luma 14
-.def	UI_PEN_DIR		= $62			; directory/".." : hue $C green, luma 4
+.def	UI_PEN_HI		= $0F			; drive picker highlight : hue 1 gold, luma 14
+; Selector grid - UI_Name_Pen picks one of these four per cell:
+.def	UI_PEN_FILE		= $3A			; *.V1K file rows          : hue 7 blue,  luma 4
+.def	UI_PEN_DIR		= $53			; directory / ".." rows    : hue $A green, luma 6
+.def	UI_PEN_FILEHI	= $44			; highlighted file         : hue 8 light blue, luma 8
+.def	UI_PEN_DIRHI	= $56			; highlighted dir / ".."   : hue $A green, luma 12
+.def	UI_PEN_EMPTY	= $1B			; "* No images *" note     : hue 3 red,   luma 6
+; Chrome colours - mirror PEN_* in Convertor/nfo_encode.py (the .nfo info
+; screen), so the selector and the info screen share one scheme.  Labels and
+; the legend/hint strings carry these inline (TXT_PEN escapes, text80.asm).
+.def	UI_PEN_LABEL	= $7C			; label left of ':'  : hue $F gold,  luma 8
+.def	UI_PEN_SEP		= $44			; the ':'            : hue 8 blue,   luma 8
+.def	UI_PEN_VALUE	= $3A			; values             : hue 7 blue,   luma 4
+.def	UI_PEN_LOC		= $7C			; row 0 "Location: " + path (all one colour)
+.def	UI_PEN_NFO		= $3B			; status row 20 description (after "Nfo: ") : hue 7, luma 6
+.def	UI_PEN_COUNT	= $3B			; row 0 "nnn of NNN" / "NNN images" : hue 7, luma 6
+.def	UI_PEN_FRAMEC	= $3A			; popup window frames: hue 7 blue,  luma 4
+.def	UI_PEN_QUITQ	= $3B			; quit question      : hue 7 blue,   luma 6
+.def	UI_PEN_YES		= $5B			; quit "Y" button    : hue $B green, luma 6
+.def	UI_PEN_NO		= $13			; quit "N" button    : hue 2 red,    luma 6
+.def	UI_PEN_KEY		= $43			; key names          : hue 8 light blue, luma 6 (= info screen notes)
+.def	UI_PEN_DESC		= $3A			; key descriptions   : hue 7 dark blue,  luma 4 (= info screen values)
 
 .def	NFO_TOPROW		= 0				; info viewer: first screen row of the scroll region
 .def	NFO_VISROWS		= TEXT_MAIN_ROWS	; info viewer: visible text rows (main band only)
@@ -84,8 +105,10 @@
 .def	KEY_F			= $38			; toggle text font (CGA <-> Atari)
 .def	KEY_P			= $0A
 .def	KEY_I			= $0D
-.def	KEY_COMMA		= $20			; "," - shorter slideshow delay
-.def	KEY_DOT			= $22			; "." - longer slideshow delay
+.def	KEY_COMMA		= $20			; "," - shorter slideshow delay (selector)
+.def	KEY_DOT			= $22			; "." - longer slideshow delay  (selector)
+										;     (shown as "<" / ">" in the Cfg: row - the
+										;     same keys on a PC keyboard)
 .def	KEY_Y			= $2B			; quit-confirm: yes (verified via Altirra CH readback)
 .def	KEY_N			= $23			; quit-confirm: no  (verified via Altirra CH readback)
 
@@ -117,7 +140,7 @@ Rescan_Images
 ; Show "Scanning directory..." where the path goes - the scan + IMAGES.LST
 ; name cache can take a while in a big folder.  Every caller repaints the
 ; whole selector (Selector_Draw) afterwards.
-	jsr UI_Pen_Normal
+	jsr UI_Pen_LocRow
 	TXT_AT 0, 2, UI_Str_Loc				; label too - not drawn yet at boot
 	TXT_AT 0, 12, UI_Str_StatusBlank+12	; 68 spaces: clear the old path + counter
 	TXT_AT 0, 12, UI_Str_Scanning
@@ -623,7 +646,7 @@ UI_Apply_TP_Pass_Next
 ;-----------------------------------------------------------------------------
 Selector_Draw
 	jsr Text_Clear
-	jsr UI_Pen_Normal
+	jsr UI_Pen_LocRow						; "Location: " and the path, one colour
 	TXT_AT 0, 2, UI_Str_Loc
 	jsr UI_Build_LocLine
 	TXT_AT 0, 12, Txt_Line
@@ -632,11 +655,44 @@ Selector_Draw
 	jsr Selector_DrawList
 
 	jsr UI_Pen_Normal
-	TXT_AT 21, 2, UI_Str_Delay
-	TXT_AT 21, 23, UI_Str_DelayHint
-	TXT_AT 22, 2, UI_Str_Legend
-	jsr Selector_DrawDelay				; the delay value at col 19
+	TXT_AT 21, 0, UI_Str_Delay			; "Cfg:"
+	TXT_AT 21, 7, UI_Str_DelayHint		; " sec (< Less > More) ... HELP ..."
+	jsr Selector_DrawLegend				; row 22 "Nav: ..."
+	jsr Selector_DrawDelay				; the delay value at cols 5-6
 	jmp Selector_DrawStatus				; row 20: the highlighted image's description
+
+;-----------------------------------------------------------------------------
+; Selector_DrawLegend - row 22 "Nav: ...".  The 4 arrow glyphs differ by font
+; (CGA.F08: CP437 $18 $19 $1B $1A; ATARI.F08: ATASCII $1C-$1F), so they are
+; patched into UI_Legend_Arrows from Font_Sel before every draw.  Also called
+; by UI_Toggle_Font so the arrows follow an F press straight away.
+;-----------------------------------------------------------------------------
+Selector_DrawLegend
+	ldx #$03
+Selector_DrawLegend_L1
+	jsr UI_Arrow_Glyph
+	sta UI_Legend_Arrows,x				; up down left right
+	dex
+	bpl Selector_DrawLegend_L1
+	jsr UI_Pen_Normal
+	TXT_AT 22, 0, UI_Str_Legend
+	rts
+
+; UI_Arrow_Glyph - X = 0 up / 1 down / 2 left / 3 right -> A = that arrow's
+; glyph in the current font (Font_Sel).  X preserved; clobbers Y.
+UI_Arrow_Glyph
+	txa
+	ldy Font_Sel
+	beq UI_Arrow_Glyph_Get
+	ora #$04							; Atari font: the second 4 entries
+UI_Arrow_Glyph_Get
+	tay
+	lda UI_Legend_Arrow_Glyphs,y
+	rts
+
+UI_Legend_Arrow_Glyphs
+	dta $18,$19,$1B,$1A					; CGA font:   up down left right (CP437)
+	dta $1C,$1D,$1E,$1F					; Atari font: up down left right (ATASCII)
 
 ;-----------------------------------------------------------------------------
 Selector_DrawList
@@ -663,8 +719,7 @@ Selector_DrawList_L1
 	ldx #IMAGE_BANK
 	jsr UI_ReadRec						; Name_Row_Buf = raw names[Reg6]
 	lda Reg6
-	jsr UI_RowType
-	sta Reg7							; Reg7 = row type (0 file / 1 dir / 2 "..")
+	jsr UI_RowType						; A = row type (0 file / 1 dir / 2 "..")
 	jsr UI_Format_Row					; Name_Row_Buf -> fixed 10-char field
 
 	lda Reg5
@@ -681,15 +736,7 @@ Selector_DrawList_L1
 	sta Txt_Col
 
 	lda Reg6
-	cmp Sel_Index
-	bne Selector_DrawList_NotHi
-	lda #$01							; pen code 1 = highlighted
-	jmp Selector_DrawList_Put
-Selector_DrawList_NotHi
-	lda Reg7
-	beq Selector_DrawList_Put			; file -> pen code 0
-	lda #$02							; dir / ".." -> pen code 2
-Selector_DrawList_Put
+	jsr UI_Name_Pen						; A = the cell's pen
 	jsr UI_DrawNameRow
 	inc Reg5
 	jmp Selector_DrawList_L1
@@ -765,46 +812,55 @@ Selector_HiRow
 	lda #$00
 	sta Reg2							; height-1 = 1 row
 	lda Reg6
-	cmp Sel_Index
-	beq Selector_HiRow_Hi
-	lda Reg6
-	jsr UI_RowType						; normal: dir/".." pen for those rows,
-	beq Selector_HiRow_File				; file pen otherwise (foreground only)
-	lda #UI_PEN_DIR
-	jmp Text_FillColour					; tail
-Selector_HiRow_File
-	lda #UI_PEN_FG
-	jmp Text_FillColour					; tail
-Selector_HiRow_Hi
-	lda #UI_PEN_HI						; highlighted: gold foreground, no bar
-	jmp Text_FillColour					; tail
+	jsr UI_Name_Pen						; file / dir pen, highlighted or not
+	jmp Text_FillColour					; tail (foreground only - no bar)
 Selector_HiRow_Skip
 	rts
 
 ;-----------------------------------------------------------------------------
-; Selector_DrawDelay - repaint just the slideshow-delay value (row 21, col 19).
-; A 3-char field so 10 -> 9 doesn't leave a stale digit.
+; UI_Name_Pen - A = list index -> A = that grid cell's pen: file or dir/".."
+; (UI_RowType), highlighted when the index == Sel_Index.  Clobbers X only -
+; Selector_HiRow's Reg1/Reg2/Txt_Row/Txt_Col survive.
+;-----------------------------------------------------------------------------
+UI_Name_Pen
+	pha
+	jsr UI_RowType						; A = 0 file / 1 dir / 2 ".."
+	beq UI_Name_Pen_Type
+	lda #$01							; dir and ".." share a pen
+UI_Name_Pen_Type
+	tax									; X = 0 file / 1 dir
+	pla
+	cmp Sel_Index
+	bne UI_Name_Pen_Normal
+	inx
+	inx									; X += 2 -> the highlighted pair
+UI_Name_Pen_Normal
+	lda UI_Name_Pen_Tab,x
+	rts
+
+UI_Name_Pen_Tab
+	dta UI_PEN_FILE,UI_PEN_DIR			; normal
+	dta UI_PEN_FILEHI,UI_PEN_DIRHI		; highlighted (Sel_Index)
+
+;-----------------------------------------------------------------------------
+; Selector_DrawDelay - repaint just the slideshow-delay value (row 21, cols
+; 5-6): a 2-char field, right-aligned (" 5" / "30"), so 10 -> 9 doesn't leave
+; a stale digit.  UI_SLIDE_MAX (30) always fits in 2 digits.
 ;-----------------------------------------------------------------------------
 Selector_DrawDelay
-	jsr UI_Pen_Normal
+	jsr UI_Pen_Values
 	lda Slide_Secs
 	jsr Put_U8_Dec_Line					; Txt_Line = "N" / "NN", NUL
-	ldx #$00
-Selector_DrawDelay_End
-	lda Txt_Line,x
-	beq Selector_DrawDelay_Pad
-	inx
-	bne Selector_DrawDelay_End
-Selector_DrawDelay_Pad
+	lda Txt_Line+1
+	bne Selector_DrawDelay_Put			; already 2 digits
+	lda Txt_Line						; 1 digit: shift it right, space in front
+	sta Txt_Line+1
 	lda #' '
-Selector_DrawDelay_Pad2
-	sta Txt_Line,x
-	inx
-	cpx #$03
-	bcc Selector_DrawDelay_Pad2
+	sta Txt_Line
 	lda #$00
-	sta Txt_Line,x
-	TXT_AT 21, 19, Txt_Line
+	sta Txt_Line+2
+Selector_DrawDelay_Put
+	TXT_AT 21, 5, Txt_Line
 	rts
 
 ;=============================================================================
@@ -888,7 +944,9 @@ Selector_DrawCount_Plural
 	ldx #$03							; after the 3-char number
 	jsr Selector_DrawCount_Cat
 Selector_DrawCount_Put
-	jsr UI_Pen_Normal
+	lda #UI_PEN_COUNT
+	ldx #$00
+	jsr Text_SetPen
 	lda #$00
 	sta Txt_Row
 	lda #UI_COUNT_COL
@@ -917,13 +975,19 @@ Selector_DrawCount_Cat_Done
 
 ;-----------------------------------------------------------------------------
 ; Selector_DrawStatus - repaint row 20 for the current Sel_Index, and row 0's
-; image counter (Selector_DrawCount).  Blank for a directory / ".." row or an
-; empty list; "Nfo: <name>" for a *.V1K row whose slot was filled from
-; IMAGES.LST.  Pure VRAM read - no file I/O.
+; image counter (Selector_DrawCount).  "Nfo: " is always shown at col 0; cols
+; 5-79 hold the name for a *.V1K row whose slot was filled from IMAGES.LST,
+; or are cleared (75 spaces) for a directory / ".." row or an empty list.
+; Pure VRAM read - no file I/O.
 ;-----------------------------------------------------------------------------
 Selector_DrawStatus
 	jsr Selector_DrawCount
-	jsr UI_Pen_Normal
+	lda #UI_PEN_NFO						; "Nfo: " colours itself; the description
+	ldx #$00							; (cols 5-79) is UI_PEN_NFO
+	jsr Text_SetPen
+	TXT_AT 20, 0, UI_Str_Nfo			; "Nfo: " - always present
+	lda #$05
+	sta Txt_Col							; Txt_Row is still 20
 	lda ImageCount
 	ora ImageCount+1
 	beq Selector_DrawStatus_Blank
@@ -936,32 +1000,17 @@ Selector_DrawStatus
 	sta Nfo_Name_Ord
 	jsr Nfo_Name_MapSlot				; Ptr_Lo/Hi -> slot, bank $2A..$2D mapped
 	jsr Nfo_Name_Emit					; Nfo_Name_Line = name padded to NFO_NAME_CAP + NUL
-	lda #20
-	sta Txt_Row
-	lda #$00
-	sta Txt_Col
-	lda #<UI_Str_Nfo
-	sta Txt_Ptr
-	lda #>UI_Str_Nfo
-	sta Txt_Ptr + $01
-	jsr Text_PutStrAt					; "Nfo: " at col 0
-	lda #$05
-	sta Txt_Col
 	lda #<Nfo_Name_Line
 	sta Txt_Ptr
 	lda #>Nfo_Name_Line
 	sta Txt_Ptr + $01
 	jmp Text_PutStrAt					; the padded name from col 5 to 79 (tail)
 Selector_DrawStatus_Blank
-	lda #20
-	sta Txt_Row
-	lda #$00
-	sta Txt_Col
-	lda #<UI_Str_StatusBlank
+	lda #<[UI_Str_StatusBlank+5]
 	sta Txt_Ptr
-	lda #>UI_Str_StatusBlank
+	lda #>[UI_Str_StatusBlank+5]
 	sta Txt_Ptr + $01
-	jmp Text_PutStrAt					; 80 spaces (tail)
+	jmp Text_PutStrAt					; clear cols 5-79 (75 spaces) (tail)
 
 ;-----------------------------------------------------------------------------
 ; Nfo_Name_MapSlot - Nfo_Name_Ord -> Ptr_Lo/Hi = the slot's $2000-window
@@ -1157,24 +1206,13 @@ Nfo_Name_Match_None
 	rts
 
 ;-----------------------------------------------------------------------------
-; UI_DrawNameRow - A = pen code (0 file / 1 highlighted / 2 directory or "..").
-; Draws Name_Row_Buf (already formatted by UI_Format_Row) at Txt_Row/Txt_Col -
-; the caller (Selector_DrawList) sets both before calling; this only picks the pen.
+; UI_DrawNameRow - A = pen (from UI_Name_Pen).  Draws Name_Row_Buf (already
+; formatted by UI_Format_Row) at Txt_Row/Txt_Col - the caller
+; (Selector_DrawList) sets both before calling.
 ;-----------------------------------------------------------------------------
 UI_DrawNameRow
-	tax									; X = pen code
-	cpx #$01
-	bne UI_DrawNameRow_1
-	jsr UI_Pen_Invert
-	jmp UI_DrawNameRow_P
-UI_DrawNameRow_1
-	cpx #$02
-	bne UI_DrawNameRow_N
-	jsr UI_Pen_DirRow
-	jmp UI_DrawNameRow_P
-UI_DrawNameRow_N
-	jsr UI_Pen_Normal
-UI_DrawNameRow_P
+	ldx #$00							; transparent background
+	jsr Text_SetPen
 	lda #<Name_Row_Buf
 	sta Txt_Ptr
 	lda #>Name_Row_Buf
@@ -1280,12 +1318,20 @@ UI_Pen_Normal
 	lda #UI_PEN_FG
 	ldx #$00							; transparent background
 	jmp Text_SetPen
-UI_Pen_Invert							; the highlighted list row (foreground only)
+UI_Pen_Invert							; the drive picker's highlighted row (foreground only)
 	lda #UI_PEN_HI
 	ldx #$00							; transparent bg - no bar after the palette repack
 	jmp Text_SetPen
-UI_Pen_DirRow							; directory / ".." rows
-	lda #UI_PEN_DIR
+UI_Pen_Frame							; popup window frames
+	lda #UI_PEN_FRAMEC
+	ldx #$00
+	jmp Text_SetPen
+UI_Pen_LocRow	; row 0 "Location: " + path
+	lda #UI_PEN_LOC
+	ldx #$00
+	jmp Text_SetPen
+UI_Pen_Values							; values after a label (path, delay, count, Nfo name)
+	lda #UI_PEN_VALUE
 	ldx #$00
 	jmp Text_SetPen
 
@@ -1681,20 +1727,8 @@ Sel_Key_DelayDown
 ; frame it, list "D:" + "D1:".."D8:", and hand control to Drive_Keys (UI_Mode 3).
 ;-----------------------------------------------------------------------------
 Sel_Key_Drive
-	jsr UI_Pen_Normal
 	jsr Drive_Win_Geom
 	jsr Text_Window_Save				; keep the list underneath intact
-	jsr Text_Window_Frame
-
-	lda #DRIVE_WIN_ROW+1					; title on the first interior row
-	sta Txt_Row
-	lda #DRIVE_WIN_COL+2
-	sta Txt_Col
-	lda #<UI_Str_DriveTitle
-	sta Txt_Ptr
-	lda #>UI_Str_DriveTitle
-	sta Txt_Ptr + $01
-	jsr Text_PutStrAt
 
 	lda Scan_Drive						; seed the cursor from the current drive
 	beq Sel_Key_Drive_Seed0
@@ -1706,10 +1740,32 @@ Sel_Key_Drive_Seed0
 Sel_Key_Drive_SeedSet
 	sta Drive_Pick_Index
 
-	jsr Drive_DrawRows
+	jsr Drive_Draw
 	lda #$03
 	sta UI_Mode
 	jmp Read_Key_Done
+
+; Drive_Draw - paint the drive window (frame, title, drive rows) over the saved
+; rectangle.  Also called by UI_Toggle_Font while the window is up, to redraw
+; the frame in the new font's line glyphs.
+Drive_Draw
+	jsr UI_Pen_Frame
+	jsr Drive_Win_Geom
+	lda #FRAME_DOUBLE
+	sta Txt_FrameStyle
+	jsr Text_Window_Frame
+
+	jsr UI_Pen_Normal
+	lda #DRIVE_WIN_ROW+1					; title on the first interior row
+	sta Txt_Row
+	lda #DRIVE_WIN_COL+2
+	sta Txt_Col
+	lda #<UI_Str_DriveTitle
+	sta Txt_Ptr
+	lda #>UI_Str_DriveTitle
+	sta Txt_Ptr + $01
+	jsr Text_PutStrAt
+	jmp Drive_DrawRows					; tail
 
 ; Txt_Row / Txt_Col / Reg1 (width-1) / Reg2 (height-1) for the drive window
 Drive_Win_Geom
@@ -1848,12 +1904,37 @@ Sel_Key_I
 ; it - so quitting always passes through this confirmation.
 ;-----------------------------------------------------------------------------
 Sel_Key_Quit
-	jsr UI_Pen_Normal
+; Laid out like the APOD viewer's quit box: a double-line window with the
+; question, and two single-line "buttons" - Y (green) and N (red):
+;   +======================+
+;   | Are You Sure To Quit |
+;   |     +---+  +---+     |
+;   |     | Y |  | N |     |
+;   |     +---+  +---+     |
+;   +======================+
 	jsr Quit_Win_Geom
 	jsr Text_Window_Save				; keep the grid underneath intact
+	jsr Quit_Draw
+	lda #$05
+	sta UI_Mode
+	jmp Read_Key_Done
+
+; Quit_Draw - paint the quit box (frames + text) over the saved rectangle.
+; Also called by UI_Toggle_Font while the box is up, to redraw the frames in
+; the new font's line glyphs (Text_Window_Frame picks them by Font_Sel).
+Quit_Draw
+	jsr UI_Pen_Frame
+	jsr Quit_Win_Geom
+	lda #FRAME_DOUBLE
+	sta Txt_FrameStyle
 	jsr Text_Window_Frame
 
-	lda #QUIT_WIN_ROW+1					; prompt on the first interior row
+	lda #QUIT_BTN_Y_COL					; Y button frame
+	jsr Quit_Btn_Frame
+	lda #QUIT_BTN_N_COL					; N button frame
+	jsr Quit_Btn_Frame
+
+	lda #QUIT_WIN_ROW+1					; the question, on the first interior row
 	sta Txt_Row
 	lda #QUIT_WIN_COL+2
 	sta Txt_Col
@@ -1863,19 +1944,65 @@ Sel_Key_Quit
 	sta Txt_Ptr + $01
 	jsr Text_PutStrAt
 
-	lda #QUIT_WIN_ROW+3					; (Y/N) hint, one blank row below
+	lda #QUIT_WIN_ROW+3					; the Y / N letters, centred in their buttons
 	sta Txt_Row
-	lda #QUIT_WIN_COL+2
+	lda #QUIT_BTN_Y_COL+2
 	sta Txt_Col
-	lda #<UI_Str_QuitHint
+	lda #<UI_Str_QuitYes
 	sta Txt_Ptr
-	lda #>UI_Str_QuitHint
+	lda #>UI_Str_QuitYes
 	sta Txt_Ptr + $01
 	jsr Text_PutStrAt
+	lda #QUIT_BTN_N_COL+2
+	sta Txt_Col
+	lda #<UI_Str_QuitNo
+	sta Txt_Ptr
+	lda #>UI_Str_QuitNo
+	sta Txt_Ptr + $01
+	jmp Text_PutStrAt					; tail
 
-	lda #$05
-	sta UI_Mode
-	jmp Read_Key_Done
+;-----------------------------------------------------------------------------
+; UI_Toggle_Font - the F key (Handle_Keys, any screen): flip the font, and if
+; a popup (drive picker / quit box) is up, repaint it so its box lines use
+; the new font's glyphs.
+;-----------------------------------------------------------------------------
+UI_Toggle_Font
+	jsr Toggle_Font
+	lda UI_Mode							; selector, or a popup over it (row 22
+	beq UI_Toggle_Font_Legend			; is never covered): redraw the legend
+	cmp #$03							; so its arrow glyphs follow the font
+	beq UI_Toggle_Font_Legend
+	cmp #$05
+	beq UI_Toggle_Font_Legend
+	cmp #$04							; info viewer: its own "Nav:" footer line
+	bne UI_Toggle_Font_Done
+	jmp Info_DrawFooter					; tail
+UI_Toggle_Font_Legend
+	jsr Selector_DrawLegend
+	lda UI_Mode
+	cmp #$03
+	bne UI_Toggle_Font_NotDrive
+	jmp Drive_Draw						; tail
+UI_Toggle_Font_NotDrive
+	cmp #$05
+	bne UI_Toggle_Font_Done
+	jmp Quit_Draw						; tail
+UI_Toggle_Font_Done
+	rts
+
+; A = left column of a QUIT_BTN_W x 3 single-line button box (rows 2-4 of the
+; quit window), drawn in the current pen.
+Quit_Btn_Frame
+	sta Txt_Col
+	lda #QUIT_WIN_ROW+2
+	sta Txt_Row
+	lda #QUIT_BTN_W-1
+	sta Reg1
+	lda #$02
+	sta Reg2
+	lda #FRAME_SINGLE
+	sta Txt_FrameStyle
+	jmp Text_Window_Frame				; tail
 
 ; Txt_Row / Txt_Col / Reg1 (width-1) / Reg2 (height-1) for the quit-confirm window
 Quit_Win_Geom
@@ -2013,14 +2140,26 @@ Selector_Handle_I_Ret
 	rts
 
 ;-----------------------------------------------------------------------------
-; Info_DrawFooter - draw the info viewer's single fixed hint line in the
-; footer band, on its 3rd/last row (row TEXT_MAIN_ROWS+2, i.e. row 22).
-; Called once on entry to Info mode; the footer band's other two rows stay
-; blank for this screen.
+; Info_DrawFooter - draw the info viewer's "Nav: ..." line in the footer band,
+; on its 3rd/last row (row TEXT_MAIN_ROWS+2, i.e. row 22).  Called on entry to
+; Info mode, and by UI_Toggle_Font so the arrow glyphs follow the font; the
+; footer band's other two rows stay blank for this screen.
 ;-----------------------------------------------------------------------------
 Info_DrawFooter
+	ldx #$00
+	jsr UI_Arrow_Glyph
+	sta UI_InfoHint_UD					; up
+	inx
+	jsr UI_Arrow_Glyph
+	sta UI_InfoHint_UD+1				; down
+	inx
+	jsr UI_Arrow_Glyph
+	sta UI_InfoHint_LR					; left
+	inx
+	jsr UI_Arrow_Glyph
+	sta UI_InfoHint_LR+1				; right
 	jsr UI_Pen_Normal
-	TXT_AT TEXT_MAIN_ROWS+2, 2, UI_Str_InfoHint
+	TXT_AT TEXT_MAIN_ROWS+2, 0, UI_Str_InfoHint
 	rts
 
 ;=============================================================================
@@ -2285,17 +2424,18 @@ Info_Keys
 	jmp Info_Key_Up
 InfK_1
 	cmp #KEY_DOWN
-	bne InfK_2
+	bne InfK_1a
 	jmp Info_Key_Down
+InfK_1a
+	cmp #KEY_LEFT						; Left/Right page ("LR Page" on the footer)
+	bne InfK_1b
+	jmp Info_Key_PageUp
+InfK_1b
+	cmp #KEY_RIGHT
+	bne InfK_2
+	jmp Info_Key_PageDown
 InfK_2
 	lda CH								; raw CH for the non-arrow keys
-	cmp #KEY_COMMA
-	bne InfK_3
-	jmp Info_Key_PageUp
-InfK_3
-	cmp #KEY_DOT
-	bne InfK_4
-	jmp Info_Key_PageDown
 InfK_4							; Q does not quit here - Selector only
 	cmp #KEY_ESC
 	beq Info_Key_Leave
@@ -2467,16 +2607,40 @@ Path_Pop_Done
 ;=============================================================================
 ; UI strings  (ATASCII; the text renderer maps to internal codes)
 ;=============================================================================
-UI_Str_Loc			dta c'Location: ',0
-UI_Str_Empty		dta c'(no images found here)',0
-UI_Str_Delay		dta c'Slideshow delay: ',0
-UI_Str_DelayHint	dta c's    , shorter    . longer',0
-UI_Str_Legend		dta c'Up/Dn move  ENTER open  S slide  D drive  P pal  I info  F font  Q quit',0
-UI_Str_InfoHint		dta c'Esc to go back, Up/Down to scroll',0
-UI_Str_DriveTitle	dta c'Scan drive',0
-UI_Str_QuitConfirm	dta c'Are you sure to Quit',0
-UI_Str_QuitHint		dta c'(Y/N)',0
-UI_Str_Nfo			dta c'Nfo: ',0
+; TXT_PEN,<pen> switches colour mid-string and takes no column (text80.asm),
+; so these lay out exactly as their plain text.
+UI_Str_Loc			dta c'Location: ',0	; drawn in UI_PEN_LOC, the same pen as the path
+UI_Str_Empty		dta TXT_PEN,UI_PEN_EMPTY,c'* No images *',0
+; Status panel rows 20-22: each starts with a 3-letter tag + ':' in UI_PEN_LOC.
+; Row 21 = "Cfg:" (col 0) + the delay (cols 5-6) + UI_Str_DelayHint (col 7);
+; row 22 = UI_Str_Legend (col 0).  Both rows are exactly 80 cells.
+UI_Str_Delay		dta TXT_PEN,UI_PEN_LOC,c'Cfg:',0
+UI_Str_DelayHint	dta TXT_PEN,UI_PEN_VALUE,c' sec '
+					dta TXT_PEN,UI_PEN_KEY,c'<',TXT_PEN,UI_PEN_DESC,c' Less '
+					dta TXT_PEN,UI_PEN_KEY,c'>',TXT_PEN,UI_PEN_DESC,c' More                  Press '
+					dta TXT_PEN,UI_PEN_KEY,c'HELP',TXT_PEN,UI_PEN_DESC,c' for additional information',0
+UI_Str_Legend		dta TXT_PEN,UI_PEN_LOC,c'Nav: ',TXT_PEN,UI_PEN_KEY
+UI_Legend_Arrows	dta c'UDLR'							; patched per font - Selector_DrawLegend
+					dta TXT_PEN,UI_PEN_DESC,c' Select '
+					dta TXT_PEN,UI_PEN_KEY,c'Enter',TXT_PEN,UI_PEN_DESC,c' Choose '
+					dta TXT_PEN,UI_PEN_KEY,c'S',TXT_PEN,UI_PEN_DESC,c' Slideshow '
+					dta TXT_PEN,UI_PEN_KEY,c'D',TXT_PEN,UI_PEN_DESC,c' Drive '
+					dta TXT_PEN,UI_PEN_KEY,c'P',TXT_PEN,UI_PEN_DESC,c' Palette '
+					dta TXT_PEN,UI_PEN_KEY,c'I',TXT_PEN,UI_PEN_DESC,c' Info '
+					dta TXT_PEN,UI_PEN_KEY,c'F',TXT_PEN,UI_PEN_DESC,c' Font '
+					dta TXT_PEN,UI_PEN_KEY,c'Q',TXT_PEN,UI_PEN_DESC,c' Quit',0
+; Info screen row 22 (col 0, 80 cells) - same scheme as UI_Str_Legend; the two
+; arrow pairs are patched per font by Info_DrawFooter.
+UI_Str_InfoHint		dta TXT_PEN,UI_PEN_LOC,c'Nav: ',TXT_PEN,UI_PEN_KEY,c'ESC'
+					dta TXT_PEN,UI_PEN_DESC,c' Go Back ',TXT_PEN,UI_PEN_KEY
+UI_InfoHint_UD		dta c'UD',TXT_PEN,UI_PEN_DESC,c' scroll ',TXT_PEN,UI_PEN_KEY
+UI_InfoHint_LR		dta c'LR',TXT_PEN,UI_PEN_DESC,c' Page         Press '
+					dta TXT_PEN,UI_PEN_KEY,c'HELP',TXT_PEN,UI_PEN_DESC,c' for additional information',0
+UI_Str_DriveTitle	dta c'Log Drive',0
+UI_Str_QuitConfirm	dta TXT_PEN,UI_PEN_QUITQ,c'Are You Sure To Quit',0
+UI_Str_QuitYes		dta TXT_PEN,UI_PEN_YES,c'Y',0
+UI_Str_QuitNo		dta TXT_PEN,UI_PEN_NO,c'N',0
+UI_Str_Nfo			dta TXT_PEN,UI_PEN_LOC,c'Nfo:',TXT_PEN,UI_PEN_VALUE,c' ',0
 UI_Str_StatusBlank	dta c'                                                                                ',0	; 80 spaces (Nfo: + NFO_NAME_CAP)
 UI_Str_Scanning		dta c'Scanning directory...',0
 UI_Str_Of			dta c' of ',0

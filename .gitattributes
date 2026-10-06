@@ -6,3 +6,17 @@
 *.lab -text
 *.lst -text
 Convertor/palgui/presets/*.json -text
+
+# Atari / VBXE binary assets - never touch line endings or diff them as text.
+*.raw binary
+*.RAW binary
+*.pal binary
+*.PAL binary
+*.map binary
+*.MAP binary
+*.F08 binary
+*.xex binary
+*.v1k binary
+*.V1K binary
+*.nfo binary
+*.NFO binary

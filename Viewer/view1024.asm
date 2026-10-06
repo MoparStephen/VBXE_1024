@@ -28,8 +28,9 @@
 ;                      x 320 bytes, attribute-mapped, static logo/banner for the
 ;                      Main Menu + Info XDL's graphics band)
 ;    Menu separator  = $33000 - $3309F (MENU_SEP_VRAM: 1 row x 160 bytes, lo-res
-;                      no-attribute-map divider line, shared by both separator
-;                      bands of the menu/info XDL)
+;                      no-attribute-map divider line, shared by all three separator
+;                      bands of the menu/info XDL; a pattern table loaded at load
+;                      time from Assets/MENU_SEP.RAW - see Load_Menu_Sep)
 ;    Menu banner pal = $34000 - $34BFF (MENU_BANNER_PAL_VRAM: the banner's
 ;                      palette bytes, resident and assembly-embedded (Load_
 ;                      Menu_Ramps, init_vbxe.asm) - registers 1-3 are
@@ -205,8 +206,8 @@
 .def	MENU_BANNER_PITCH				= 320		; = $140, matches XDL_Image_* OVSTEP
 .def	MENU_BANNER_BYTES				= MENU_BANNER_ROWS * MENU_BANNER_PITCH	; = 11520 = $2D00
 .def	MENU_SEP_VRAM					= $33000	; next free bank after the banner (3 banks)
-.def	MENU_SEP_PITCH					= 160
-.def	MENU_SEP_FILL_COLOUR			= $07		; white in the modified A8 palette (Palette 0)  Palette is modified so text can use all 128 colours
+.def	MENU_SEP_PITCH					= 160		; 160-byte pattern table, Palette 0 (modified) indices -
+														; Assets/MENU_SEP.RAW, loaded once by Load_Menu_Sep (init_vbxe.asm)
 
 ; Banner palette + attribute map: never touched at runtime (unlike the real
 ; image viewer's $21000/$017000 scratch, which Load_Image legitimately
@@ -308,11 +309,15 @@
 .def	DRIVE_WIN_W						= 12		; cells wide  (border + "  Dn:  ")
 .def	DRIVE_WIN_H						= 13		; rows        (border + title + 9 + border)
 
-; Quit-confirm popup (UI_Mode 5) - "Are you sure to Quit" + (Y/N), Selector only.
+; Quit-confirm popup (UI_Mode 5) - "Are You Sure To Quit" + boxed Y / N buttons
+; (Sel_Key_Quit / Quit_Draw, ui.asm), Selector only.
 .def	QUIT_WIN_ROW					= 8
-.def	QUIT_WIN_COL					= 22
-.def	QUIT_WIN_W						= 36		; cells wide  (border + text + border)
-.def	QUIT_WIN_H						= 5		; rows        (border + text + hint + border, +1)
+.def	QUIT_WIN_COL					= 28		; centred: (80 - QUIT_WIN_W) / 2
+.def	QUIT_WIN_W						= 24		; cells wide  (border + " Are You Sure To Quit " + border)
+.def	QUIT_WIN_H						= 6		; rows        (border + question + 3-row buttons + border)
+.def	QUIT_BTN_W						= 5		; Y / N button boxes, 5 x 3 cells
+.def	QUIT_BTN_Y_COL					= QUIT_WIN_COL+6	; buttons centred, 2 cells apart
+.def	QUIT_BTN_N_COL					= QUIT_WIN_COL+13
 
 ; BCB field byte offsets
 .def	Src_Adr0						= $00
@@ -333,8 +338,8 @@
 
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
-.def	V_1								= $11	; 1 (Screen code used for Version in loading screen)
-.def	V_2								= $18	; 8 (Screen code used for Version in loading screen)
+.def	V_1								= $12	; 2 (Screen code used for Version in loading screen)
+.def	V_2								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
@@ -436,7 +441,7 @@ Restore_Palette0_Done
 start
 ; Initialization code can go here
 	jsr Text_Init						; Build the 80-column text screen (text80.asm)
-	jsr Load_Menu_Banner_Raw			; One-time load of the static banner/separator pixel data
+	jsr Load_Menu_Banner_Raw			; One-time load of the static banner pixel data
 	jsr Build_Menu_Ramp_Table			; One-time build of the palette-demo overlay's ramp square
 	jsr Draw_Menu_Demo_Squares			; ...blit it into the banner's 8 demo squares...
 	jsr Set_Menu_Demo_Attrs			; ...and set their attribute-map cells to the right palette
@@ -752,8 +757,8 @@ Image_Close
 ; and never reloaded from disk again after this one call, since the banner
 ; never changes at runtime.  Blank-fills any banner target whose file is
 ; missing/fails so cold-boot VRAM garbage is never shown.  The separator has
-; no asset file at all - it is always a fixed-colour blitter fill
-; (Menu_Sep_Blank).  The banner's palette (registers 1-3) is no longer a disk
+; no disk file - its 160-byte pattern table is assembly-embedded straight into
+; MENU_SEP_VRAM at load time (Load_Menu_Sep, init_vbxe.asm).  The banner's palette (registers 1-3) is no longer a disk
 ; asset - see Load_Menu_Ramps (init_vbxe.asm), assembly-embedded directly into
 ; MENU_BANNER_PAL_VRAM.  Called once from start:, before the first
 ; Enter_Selector.
@@ -806,7 +811,7 @@ Load_Menu_Banner_Dots_L1
 	dex
 	bne Load_Menu_Banner_Dots_L1
 
-	jmp Menu_Sep_Blank					; no asset to load - always a fixed-colour fill
+	rts									; The separator is already in VRAM (Load_Menu_Sep).
 										; Apply_Menu_Banner_Palette isn't called here -
 										; Enter_Selector always calls it before the first frame
 
@@ -1054,8 +1059,9 @@ Set_Menu_Demo_Attr_Band_Col
 ; from Selector_Handle_P (ui.asm).
 ;
 ; Repurposes BLT_MENU_SEP_CLEAR (bcbs.asm) rather than adding a 13th BCB -
-; it's a constant-source fill kicked once at boot (Load_Menu_Banner_Raw) and
-; never touched again, and the 12 BCBs already in bcbs.asm exactly fill the
+; it was the separator's boot-time constant fill, but the separator is now a
+; 160-byte table loaded straight into VRAM (Load_Menu_Sep, init_vbxe.asm), so
+; this is its only user.  The 12 BCBs already in bcbs.asm exactly fill the
 ; $100-$1FF VBXE VRAM budget (see the memory-map comment at the top of this
 ; file); a 13th BCB overflowed BLT_NFO_NAME_CLEAR across the $200 boundary
 ; into the NTSC_Palette load and corrupted it - do not add a new BCB here.
@@ -1215,29 +1221,10 @@ Menu_Banner_Blank_L2
 	bne Menu_Banner_Blank_L2			; Wait for the fill to complete
 	rts
 
-Menu_Sep_Blank
-	lda #BLT_MENU_SEP_CLEAR-BLT_CLEAR
-	vbsta VBXE_BL_ADR0
-	lda #$00
-	vbsta VBXE_BL_ADR2
-	lda #$01
-	vbsta VBXE_BL_ADR1
-Menu_Sep_Blank_L1
-	vblda VBXE_BLITTER_BUSY
-	cmp #$00
-	bne Menu_Sep_Blank_L1
-	lda #$01
-	vbsta VBXE_BLITTER_START
-Menu_Sep_Blank_L2
-	vblda VBXE_BLITTER_BUSY
-	cmp #$00
-	bne Menu_Sep_Blank_L2
-	rts
-
 ; Fixed asset filenames - the menu banner is static UI chrome, not part of the
 ; browsable image library, so these are NOT built via Build_Filename (which
-; reads the current selection out of IMAGE_BANK).  The separator has no asset
-; file - it is always a fixed-colour blitter fill (see Menu_Sep_Blank).  The
+; reads the current selection out of IMAGE_BANK).  The separator has no disk
+; file - its 160-byte table is assembly-embedded (Load_Menu_Sep, init_vbxe.asm).  The
 ; palette has no asset file either - see Load_Menu_Ramps (init_vbxe.asm).
 ; Placeholder names/drive - confirm the convention with Stephen.
 Menu_Banner_Raw_Name	dta c'D:MENU.RAW',0
@@ -1252,7 +1239,7 @@ Handle_Keys
 	lda CH
 	cmp #KEY_F							; F toggles the text font on every screen
 	bne Handle_Keys_Mode
-	jsr Toggle_Font
+	jsr UI_Toggle_Font					; (ui.asm) - also redraws an open quit box's frame
 	jmp Read_Key_Done
 Handle_Keys_Mode
 	lda UI_Mode

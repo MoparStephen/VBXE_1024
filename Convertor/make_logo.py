@@ -24,6 +24,14 @@ Outputs (Viewer/Assets/Logo/):
                                  MENU.MAP - the banner's attribute map is zeroed
                                  at boot, i.e. palette 0 everywhere
                                  for concept N
+
+  sep_<style>.png / sep_sheet.png  menu separator previews (160 lo-res px,
+                                 mirrored blue/gold chrome ramps)
+  --export-sep STYLE             also write Viewer/Assets/MENU_SEP.RAW - the
+                                 160-byte separator row init_vbxe.asm loads
+                                 straight into MENU_SEP_VRAM ($33000) - and
+                                 rewrite nfo_encode.py's RULE_ATTRS so the
+                                 .nfo ==== rule carries the same colours
 """
 import argparse
 import os
@@ -461,6 +469,115 @@ def c15_m7_final_x():
                       x_rows=(0, 1, 2, 3, 2, 1, 0))
 
 
+# --- menu separator (MENU_SEP_VRAM) ------------------------------------------------
+SEP_W = 160  # MENU_SEP_PITCH: 1 row, lo-res (each px = 2 med-res px), palette 0
+SEP_STREAK = DIAG_PERIOD  # lo-res px per light->dark->light streak
+SEP_GOLD_CUT = 10  # gold_blue: golds at luma >= this sit at the centre, then blue takes over
+SEP_GOLD_BLUE_1 = {  # gold_blue variants whose blue fade sticks to one hue
+    "gold_blue7": [7],
+    "gold_blue8": [8],
+    "gold_blue9": [9],
+}
+SEP_STYLES = ("gold_blue7", "gold_blue8", "gold_blue9", "gold_blue", "blue", "mirror", "intertwined")
+
+
+def brightness(rgb):
+    """Rec.601 luma of an RGB triple (0-255)."""
+    r, g, b = (float(v) for v in rgb)
+    return 0.299 * r + 0.587 * g + 0.114 * b
+
+
+def shades(hues, pal0, min_luma=0, below=None):
+    """Palette-0 indices of every (hue, luma) in hues, brightest first (ties
+    by hue order).  below: keep only shades darker than this brightness."""
+    out = [(brightness(pal0[idx(h, l)]), k, idx(h, l))
+           for k, h in enumerate(hues) for l in range(min_luma, 16)]
+    if below is not None:
+        out = [s for s in out if s[0] < below]
+    return [i for _, _, i in sorted(out, key=lambda s: (-s[0], s[1]))]
+
+
+def fade(order, half):
+    """Left half of a centre-bright fade: `order` (brightest first) spread over
+    `half` px, 1-2 px per shade - darkest at x=0, brightest at x=half-1."""
+    return np.repeat(np.array(order[::-1], np.uint8), spread(half, len(order))[::-1])
+
+
+def separator(style="blue"):
+    """The 160-byte menu separator row, mirrored about the centre.
+    'blue'      all 48 blue shades (hues 7/8/9), brightest at the centre,
+                fading by measured brightness to the darkest at each end.
+    'gold_blue' gold (hues 1/15, luma >= SEP_GOLD_CUT) at the centre, then the
+                blues darker than that gold, fading out to each end.
+    'gold_blueN' the same gold centre (same pixel widths), then a blue fade in
+                hue N only (lumas 9..0) - no hue flicker between steps.
+    'mirror'    16-px chrome streaks: blue 7, 8, 9 then gold 1, 15 - the logo's
+                two chrome families (luma follows diag_luma).
+    'intertwined' blue/gold streaks alternating every 8 px (blue_gold)."""
+    half = SEP_W // 2
+    if style in ("blue", "gold_blue") or style in SEP_GOLD_BLUE_1:
+        pal0 = load_pal0()
+        if style == "blue":
+            order = shades(BLUES, pal0)
+            left = fade(order, half)
+        else:
+            golds = shades(GOLDS, pal0, SEP_GOLD_CUT)
+            darker = brightness(pal0[golds[-1]])
+            blues = shades(BLUES if style == "gold_blue" else SEP_GOLD_BLUE_1[style], pal0, below=darker)
+            order = golds + blues
+            # the gold centre keeps the pixel widths of the original mixed
+            # gold_blue; the blue fade fills the rest of the half
+            gold_w = sum(spread(half, len(golds) + len(shades(BLUES, pal0, below=darker)))[:len(golds)])
+            left = np.concatenate([fade(blues, half - gold_w), fade(golds, gold_w)])
+        lum = [brightness(pal0[i]) for i in left]
+        assert all(a <= b for a, b in zip(lum, lum[1:])), style  # dark -> bright
+        assert len(set(left.tolist())) == len(order)
+    elif style == "mirror":
+        fams = BLUES + GOLDS
+        assert len(fams) * SEP_STREAK == half
+        hue_fn = lambda x: fams[x // SEP_STREAK]
+    elif style == "intertwined":
+        hue_fn = blue_gold
+    else:
+        raise ValueError(style)
+    if style in ("mirror", "intertwined"):
+        left = np.array([idx(hue_fn(x), diag_luma(x)) for x in range(half)], np.uint8)
+    sep = np.concatenate([left, left[::-1]])
+    assert sep.shape == (SEP_W,) and (sep == sep[::-1]).all()
+    return sep
+
+
+def rule_attrs(sep, pal0):
+    """The separator as 80 text-mode attrs (one char = 2 lo-res px), for the
+    .nfo ==== rule.  Text mode only reaches palette-0 entries 0-127 (even
+    lumas): an odd-luma entry 128+e drops to its even neighbour e.  Each char
+    takes the brighter of its two px, which keeps the result symmetrical."""
+    out = []
+    for c in range(SEP_W // 2):
+        pair = sep[2 * c:2 * c + 2]
+        i = int(max(pair, key=lambda j: (brightness(pal0[j]), j)))
+        out.append(i & 0x7F)
+    assert out == out[::-1]
+    return out
+
+
+def write_rule_attrs(attrs):
+    """Rewrite RULE_ATTRS between the markers in nfo_encode.py."""
+    path = os.path.join(HERE, "nfo_encode.py")
+    src = open(path).read()
+    head, rest = src.split("# RULE_ATTRS-BEGIN\n")
+    _, tail = rest.split("# RULE_ATTRS-END\n")
+    rows = [", ".join("0x%02X" % a for a in attrs[i:i + 10]) for i in range(0, len(attrs), 10)]
+    body = "RULE_ATTRS = [\n" + "".join("    %s,\n" % r for r in rows) + "]\n"
+    with open(path, "w", newline="\n") as f:
+        f.write(head + "# RULE_ATTRS-BEGIN\n" + body + "# RULE_ATTRS-END\n" + tail)
+
+
+def sep_preview(sep, pal0, rows=4):
+    """RGB preview: each lo-res px doubled to 320 wide, `rows` tall."""
+    return np.repeat(np.tile(pal0[sep][None], (rows, 1, 1)), 2, axis=1)
+
+
 CONCEPTS = [
     ("hue_sweep", c1_hue_sweep),
     ("spectrum_swatch", c2_spectrum_swatch),
@@ -522,6 +639,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", default=OUT_DIR)
     ap.add_argument("--export", type=int, metavar="N", help="write MENU.RAW for concept N (1-based)")
+    ap.add_argument("--export-sep", choices=SEP_STYLES, metavar="STYLE",
+                    help="write Viewer/Assets/MENU_SEP.RAW (%s)" % "|".join(SEP_STYLES))
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
 
@@ -551,10 +670,35 @@ def main():
     sheet.save(os.path.join(args.out, "logo_sheet.png"))
     print(f"wrote {len(CONCEPTS)} concepts + sheet to {args.out}")
 
+    # separator previews: each style alone, plus under the current logo (15)
+    logo_rgb = banner_mock(pal0[CONCEPTS[-1][1]()], pal0)
+    gap = np.zeros((2, BANNER_W, 3), np.uint8)
+    mock_h = BANNER_H + 2 + 1 + 2  # logo, gap, separator row, gap
+    sep_sheet = Image.new("RGB", (sheet_w, pad + len(SEP_STYLES) * (mock_h * sheet_scale + label_h + pad)),
+                          (24, 24, 24))
+    draw = ImageDraw.Draw(sep_sheet)
+    for n, style in enumerate(SEP_STYLES):
+        prev = sep_preview(separator(style), pal0)
+        save_rgb(scale(prev, 4), os.path.join(args.out, f"sep_{style}.png"))
+        mock = np.concatenate([logo_rgb, gap, prev[:1], gap])
+        y = pad + n * (mock_h * sheet_scale + label_h + pad)
+        draw.text((pad, y + 2), style, fill=(220, 220, 220))
+        sep_sheet.paste(Image.fromarray(scale(mock, sheet_scale), "RGB"), (pad, y + label_h))
+    sep_sheet.save(os.path.join(args.out, "sep_sheet.png"))
+    print(f"wrote separator previews ({', '.join(SEP_STYLES)}) to {args.out}")
+
     if args.export:
         name, fn = CONCEPTS[args.export - 1]
         export(fn(), args.out)
         print(f"exported MENU.RAW for {args.export}. {name}")
+
+    if args.export_sep:
+        path = os.path.join(ASSETS, "MENU_SEP.RAW")
+        sep = separator(args.export_sep)
+        sep.tofile(path)
+        print(f"exported {path} ({args.export_sep})")
+        write_rule_attrs(rule_attrs(sep, pal0))
+        print("updated RULE_ATTRS in nfo_encode.py (the .nfo ==== rule)")
 
 
 if __name__ == "__main__":
