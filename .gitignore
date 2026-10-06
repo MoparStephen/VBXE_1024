@@ -13,7 +13,7 @@ __pycache__/
 /VBXE PAL Studio v*-linux.tar.gz
 
 # Local working files: personal queues, test images, disk images, scratch.
-/Convertor/Colour Biam Ramp.json
+/Convertor/Colour Bias Ramp.json
 /Convertor/Test/
 /Images To Convert/
 /Viewer/OldFormat/
