@@ -77,6 +77,7 @@
 .def	UI_PEN_DESC		= $3A			; key descriptions   : hue 7 dark blue,  luma 4 (= info screen values)
 .def	UI_PEN_HELP		= $59			; help page text     : hue $B teal-green, luma 2
 .def	UI_PEN_HELPHEAD	= $5D			; help section name  : hue $B teal-green, luma 10
+.def	UI_PEN_HELPKEY	= $5A			; help key column    : hue $B teal-green, luma 4 (one step over UI_PEN_HELP)
 .def	HELP_PAGES		= 3				; Help_Text_1..3 (Help_Page_Lo/Hi)
 .def	HELP_VISROWS	= TEXT_MAIN_ROWS-1	; help section rows visible at once (rows 1-19)
 
@@ -2900,7 +2901,7 @@ UI_Str_HelpTitle	dta TXT_PEN,$38,c'=====',TXT_PEN,$39,c'=====',TXT_PEN,$3A,c'===
 UI_Str_HelpHint		dta TXT_PEN,UI_PEN_LOC,c'Nav: ',TXT_PEN,UI_PEN_KEY,c'ESC'
 					dta TXT_PEN,UI_PEN_DESC,c' Go Back ',TXT_PEN,UI_PEN_KEY
 					dta $18,$19,TXT_PEN,UI_PEN_DESC,c' Scroll ',TXT_PEN,UI_PEN_KEY
-					dta $1B,$1A,TXT_PEN,UI_PEN_DESC,c' Page',0
+					dta $1B,$1A,TXT_PEN,UI_PEN_DESC,c' Section',0
 
 ; Help sections: one $00-terminated row each, $FF ends the section.  Up to
 ; HELP_VISROWS (19) rows show at once; a longer section scrolls with Up/Down
@@ -2916,36 +2917,49 @@ UI_Str_HelpPage3	dta c'Section  3 of 3',0
 
 Help_Text_1
 	dta TXT_PEN,UI_PEN_HELPHEAD,c'General Information:',0
-	dta c'When the image viewer starts, it will scan the current directory.',0
-	dta c'Subdirectories are displayed alphabetically in Green.',0
-	dta c'The image (V1K) files will be displayed alphabetically in Blue.',0
-	dta c'Each V1K file must have a corresponding NFO file to populate the Info screen.',0
+	dta c'When the image viewer starts, it will scan the current directory',0
+	dta c'Subdirectories are displayed alphabetically in Green',0
+	dta c'The image (V1K) files will be displayed alphabetically in Blue',0
+	dta c'Each V1K file must have a corresponding NFO file to populate the Info screen',0
+	dta c'When displaying an image, pressing 0 1 2 3 display that single palette',0
+	dta c'Pressing 4 turns the Colour Attribute Map back on and displays all palettes',0
 	dta 0
-	dta c'*** MORE INFO TO COME ***',0
+	dta TXT_PEN,UI_PEN_HELPHEAD,c'Display Information:',0
+	dta c'The image viewer first sets up a standard 320 x 240 normal width XDL',0
+	dta c'It then sets up the Colour Attribute Map to change the overlay palette',0
+	dta c'It uses the smallest 8 x 1 cell 40 times per line for all 240 rows',0
+	dta c'This allows us to choose any of the 4 palettes for the overlay every 8 pixels',0
+	dta 0
+	dta TXT_PEN,UI_PEN_HELPHEAD,c'V1K Image Information:',0
+	dta c'Each file is a contiguous block of binary data in the following order',0
+	dta c'Palettes 0-3   - Each is 768 bytes of RGB data',0
+	dta c'Attribute Map  - 9600 bytes which set the Palette to use for every 8*1 cell',0
+	dta c'Raw Image Data - 76800 bytes which set the palette index (colour) for each pixel',0
 	dta $FF
 
 Help_Text_2
 	dta TXT_PEN,UI_PEN_HELPHEAD,c'Main Menu Navigation:',0
-	dta c'The arrow keys move the selector (item will be shown in a brighter colour).',0
-	dta c'Pressing Enter makes a selection (scan Subdirectory or Open image).',0
+	dta TXT_PEN,UI_PEN_HELPKEY,$18,$19,$1B,$1A,c'  ',TXT_PEN,UI_PEN_HELP,c'Move the selector (item will be shown in a brighter colour)',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Enter ',TXT_PEN,UI_PEN_HELP,c'Make a selection (scan Subdirectory or Open image)',0
 	dta 0
-	dta c'Pressing S starts a slideshow starting from the selected image.',0
-	dta c'The display time for each image is variable from 1 to 30 seconds via < > keys.',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'S     ',TXT_PEN,UI_PEN_HELP,c'Start a slideshow starting from the selected image',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'< >   ',TXT_PEN,UI_PEN_HELP,c'Set the display time for each image from 1 to 30 seconds',0
 	dta 0
-	dta c'Pressing D will bring up the Drive Selector.  Use the ',$18,$19,c' arrows and Enter to',0
-	dta c'scan a different drive (note D: is the directory from which this program was',0
-	dta c'launched - it does NOT mean D1:)',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'D     ',TXT_PEN,UI_PEN_HELP,c'Bring up the Drive Selector',0
+	dta c'      D: is the directory from which this program launches, not D1:',0
 	dta 0
-	dta c'Pressing P will display the 4 256 colour palettes of the highlighted image.',0
-	dta c'If no image is highlighted, the 4 palettes used by the menu will be shown.',0
-	dta c'Top row displays P0 and P1 while the bottom row displays P2 and P3.',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'P     ',TXT_PEN,UI_PEN_HELP,c'Display the 4 256 colour palettes of the highlighted image',0
+	dta c'      If no image is highlighted, the 4 palettes used by the menu will be shown',0
+	dta c'      Top row displays P0 and P1 while the bottom row displays P2 and P3',0
 	dta 0
-	dta c'Pressing I will display the conversion report for the highlighted image.',0
-	dta c'Jump to section 3 of this Help screen for more details on this information.',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'I     ',TXT_PEN,UI_PEN_HELP,c'Display the conversion report for the highlighted image',0
+	dta c'      Jump to Section 3 of this Help screen for more details on this report',0
 	dta 0
-	dta c'Pressing F will switch between the CGA font and the Atari font',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'F     ',TXT_PEN,UI_PEN_HELP,c'Switch between the CGA font and the Atari font',0
 	dta 0
-	dta c"Pressing Q will display the exit confirmation dialog (Y quits, ESC or N doesn't)",0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Q     ',TXT_PEN,UI_PEN_HELP,c'Display the exit confirmation dialog',0
+	dta c'      Y quits the program and returns to DOS',0
+	dta c'      N or ESC closes the dialog',0
 	dta $FF
 
 Help_Text_3
