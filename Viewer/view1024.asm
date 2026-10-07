@@ -112,7 +112,7 @@
 .var Path_Buf			:56 .byte = $48D	; Built "D[n]:PATH>NAME.EXT",$00 for LoadData ($48D-$4C4)
 .var Dir_IOCB			.byte = $4C5	; IOCB used by Build_Image_List
 ; --- viewer UI state (ui.asm) ---
-.var UI_Mode			.byte = $4C6	; 0 selector / 1 image / 2 slideshow / 3 drive picker / 4 info / 6 P-preview
+.var UI_Mode			.byte = $4C6	; 0 selector / 1 image / 2 slideshow / 3 drive picker / 4 info / 5 quit / 6 P-preview / 7 help
 .var Sel_Index			.byte = $4C7	; highlighted list entry (0-based)
 .var Sel_Top			.byte = $4C8	; list index of the first visible row (scroll)
 .var Slide_Secs			.byte = $4C9	; slideshow delay, seconds (1..30)
@@ -132,7 +132,11 @@
 .var Seg_Chunks			.byte = $4E4	; full 4K chunks left in this segment
 .var Seg_Tail			.word = $4E5	; bytes in the segment's final partial chunk
 .var Pal_Image			.byte = $4E7	; 1 = an image's palettes are in registers 0-3 (Enter_Selector must restore)
-;	$4E8 to $4FF free
+.var Help_Return_Mode	.byte = $4E8	; UI_Mode to go back to when Help closes (0 selector / 4 info)
+.var Help_Page			.byte = $4E9	; help screen section 0..2
+.var Help_Top			.byte = $4EA	; help screen: first visible row of the section (scroll)
+.var Help_RowCount		.byte = $4EB	; help screen: rows in the current section (set by Help_Draw)
+;	$4EC to $4FF free
 .var Dir_Line_Buf		:$28 .byte = $600	; One GET RECORD dir line ($600-$627)
 .var Scan_Path			:$28 .byte = $628	; subdirectory part, ">DIR>DIR>" or empty ($628-$64F)
 .var Scan_Spec			:$30 .byte = $650	; assembled "D[n]:PATH*.V1K",$9B ($650-$67F)
@@ -349,7 +353,7 @@
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $12	; 2 (Screen code used for Version in loading screen)
-.def	V_2								= $11	; 1 (Screen code used for Version in loading screen)
+.def	V_2								= $12	; 2 (Screen code used for Version in loading screen)
 .def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
@@ -1297,6 +1301,12 @@ Handle_Keys
 ; Dispatch on the current UI mode - the selector, slideshow, drive picker and
 ; info viewer each have their own key set (ui.asm); mode 1 (image view) uses
 ; the set below.
+	lda HELPFLG							; Help isn't in CH - the OS sets HELPFLG ($11/$51/$91)
+	beq Handle_Keys_NoHelp
+	lda #$00
+	sta HELPFLG							; Clear Help key press
+	jmp Help_Key						; (ui.asm)
+Handle_Keys_NoHelp
 	lda CH
 	cmp #KEY_F							; F toggles the text font on every screen
 	bne Handle_Keys_Mode
@@ -1324,8 +1334,12 @@ Handle_Keys_NotInfo
 	jmp Quit_Confirm_Keys				; 5 = quit-confirm popup (Selector only)
 Handle_Keys_NotQuit
 	cmp #$06
-	bne Handle_Keys_ImageView
+	bne Handle_Keys_NotPreview
 	jmp Pal_Preview_Keys				; 6 = P-preview screen (ui.asm)
+Handle_Keys_NotPreview
+	cmp #$07
+	bne Handle_Keys_ImageView
+	jmp Help_Keys						; 7 = help page (ui.asm)
 Handle_Keys_ImageView
 
 ; Q does not quit from here - only from the Selector, via a Y/N confirmation.

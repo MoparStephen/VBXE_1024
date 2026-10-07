@@ -75,6 +75,10 @@
 .def	UI_PEN_NO		= $19			; quit "N" button    : hue 3 dark red,   luma 2
 .def	UI_PEN_KEY		= $43			; key names          : hue 8 light blue, luma 6 (= info screen notes)
 .def	UI_PEN_DESC		= $3A			; key descriptions   : hue 7 dark blue,  luma 4 (= info screen values)
+.def	UI_PEN_HELP		= $59			; help page text     : hue $B teal-green, luma 2
+.def	UI_PEN_HELPHEAD	= $5D			; help section name  : hue $B teal-green, luma 10
+.def	HELP_PAGES		= 3				; Help_Text_1..3 (Help_Page_Lo/Hi)
+.def	HELP_VISROWS	= TEXT_MAIN_ROWS-1	; help section rows visible at once (rows 1-19)
 
 .def	NFO_TOPROW		= 0				; info viewer: first screen row of the scroll region
 .def	NFO_VISROWS		= TEXT_MAIN_ROWS	; info viewer: visible text rows (main band only)
@@ -125,6 +129,20 @@
 	lda #>[:3]
 	sta Txt_Ptr + $01
 	jsr Text_PutStrAt
+.endm
+
+;-----------------------------------------------------------------------------
+; DTA_SCR code  -  emit one Atari internal screen code (e.g. V_0..V_3, which
+; the loader screen uses) as the ASCII byte the text mode's CP437 font wants.
+;-----------------------------------------------------------------------------
+.macro DTA_SCR
+	.if [:1] < $40
+	dta [:1]+$20						; $00-$3F: space, punctuation, digits, A-Z
+	.elseif [:1] < $60
+	dta [:1]-$40						; $40-$5F: control-glyph block
+	.else
+	dta [:1]							; $60-$7F: a-z - already ASCII
+	.endif
 .endm
 
 ;=============================================================================
@@ -1332,6 +1350,10 @@ UI_Pen_Normal
 	lda #UI_PEN_FG
 	ldx #$00							; transparent background
 	jmp Text_SetPen
+UI_Pen_HelpBody
+	lda #UI_PEN_HELP
+	ldx #$00
+	jmp Text_SetPen
 UI_Pen_Invert							; the drive picker's highlighted row (foreground only)
 	lda #UI_PEN_HI
 	ldx #$00							; transparent bg - no bar after the palette repack
@@ -2179,6 +2201,169 @@ Info_DrawFooter
 	rts
 
 ;=============================================================================
+; Help page  (UI_Mode = 7) - static text assembled into the binary, no disk
+; access.  Opened by the Help key from the Selector or the Info viewer (the
+; two screens whose footer advertises it); only Esc returns there.
+;=============================================================================
+; Help_Key - Handle_Keys jumps here when HELPFLG was set (already cleared).
+Help_Key
+	lda UI_Mode
+	beq Help_Key_Open					; 0 = selector
+	cmp #$04
+	beq Help_Key_Open					; 4 = info viewer
+	jmp Read_Key_Done					; any other screen (Help itself included) - ignore
+Help_Key_Open
+	sta Help_Return_Mode
+	jsr Help_Open
+	jmp Read_Key_Done
+
+; Help_Open - build section 1 in the back buffer; Read_Key_Done shows it.
+Help_Open
+	lda #$00
+	sta Help_Page						; always open on section 1, at the top
+	sta Help_Top
+	jsr Help_Draw
+	lda #$07
+	sta UI_Mode
+	rts
+
+;-----------------------------------------------------------------------------
+; Help_Draw - repaint the whole help screen for Help_Page (back buffer only):
+; banner on row 0, the section's rows Help_Top .. Help_Top+HELP_VISROWS-1 on
+; rows 1-19, "Section  n of 3" on row 20 (footer band), the Nav hint on row
+; 22.  A section's text is a run of $00-terminated rows (an empty one = a
+; blank row) ended by $FF.  Walks every row, leaving the total in
+; Help_RowCount for the scroll clamp in Help_Keys.
+;-----------------------------------------------------------------------------
+Help_Draw
+	jsr Text_Clear						; wipe the previous screen / section
+	jsr UI_Pen_Normal
+	TXT_AT 0, 0, UI_Str_HelpTitle
+
+	jsr UI_Pen_HelpBody
+	ldx Help_Page
+	lda Help_Page_Lo,x
+	sta Txt_Ptr
+	lda Help_Page_Hi,x
+	sta Txt_Ptr + $01
+	lda #$00
+	sta Txt_Col
+	sta Help_RowCount					; = index of the row being walked
+Help_Draw_L1
+	ldy #$00
+	lda (Txt_Ptr),y
+	cmp #$FF
+	beq Help_Draw_Footer				; end of section
+	lda Help_RowCount
+	sec
+	sbc Help_Top
+	bcc Help_Draw_Skip					; above the window
+	cmp #HELP_VISROWS
+	bcs Help_Draw_Skip					; below the window
+	clc
+	adc #$01							; window row 0 -> screen row 1
+	sta Txt_Row
+	jsr Text_PutStrAt					; (an empty row draws nothing)
+Help_Draw_Skip
+	ldy #$00
+Help_Draw_L2							; step Txt_Ptr past this row's $00
+	lda (Txt_Ptr),y
+	beq Help_Draw_L3
+	iny
+	bne Help_Draw_L2
+Help_Draw_L3
+	iny
+	tya
+	clc
+	adc Txt_Ptr
+	sta Txt_Ptr
+	bcc Help_Draw_NC
+	inc Txt_Ptr + $01
+Help_Draw_NC
+	inc Help_RowCount
+	jmp Help_Draw_L1
+
+Help_Draw_Footer
+	ldx Help_Page
+	lda Help_PageNum_Lo,x
+	sta Txt_Ptr
+	lda Help_PageNum_Hi,x
+	sta Txt_Ptr + $01
+	lda #TEXT_MAIN_ROWS
+	sta Txt_Row
+	lda #[TEXT_COLS-15]/2				; "Section  n of 3" = 15 cells, centred (32 + 15 + 33)
+	sta Txt_Col
+	jsr Text_PutStrAt					; still in the help pen
+
+	jsr UI_Pen_Normal
+	TXT_AT TEXT_MAIN_ROWS+2, 0, UI_Str_HelpHint
+	rts
+
+Help_Keys							; Q does not quit here - Selector only
+	lda CH
+	and #KEY_CTRL_OFF					; arrows: with or without CTRL
+	cmp #KEY_UP
+	beq Help_Key_Up
+	cmp #KEY_DOWN
+	beq Help_Key_Down
+	cmp #KEY_LEFT
+	beq Help_Key_Prev
+	cmp #KEY_RIGHT
+	beq Help_Key_Next
+	lda CH								; raw CH for the non-arrow keys
+	cmp #KEY_ESC
+	beq Help_Close
+	jmp Read_Key_Done
+
+Help_Key_Up								; scroll one row (no-op on a section that fits)
+	lda Help_Top
+	beq Help_Key_Done					; already at the top
+	dec Help_Top
+	jmp Help_Key_Redraw
+Help_Key_Down
+	lda Help_Top
+	clc
+	adc #HELP_VISROWS
+	cmp Help_RowCount
+	bcs Help_Key_Done					; last row already showing
+	inc Help_Top
+	jmp Help_Key_Redraw
+Help_Key_Prev
+	lda Help_Page
+	beq Help_Key_Done					; already on section 1
+	dec Help_Page
+	jmp Help_Key_NewPage
+Help_Key_Next
+	lda Help_Page
+	cmp #HELP_PAGES-1
+	bcs Help_Key_Done					; already on the last section
+	inc Help_Page
+Help_Key_NewPage
+	lda #$00
+	sta Help_Top						; a new section starts at its top
+Help_Key_Redraw
+	jsr Help_Draw
+Help_Key_Done
+	jmp Read_Key_Done
+
+; Help_Close - back to the screen Help was opened from.  The Info viewer's
+; .NFO is still in NFO_BUF_VRAM and Nfo_Top is untouched, so it is rebuilt
+; at the same scroll position with no disk read.
+Help_Close
+	lda Help_Return_Mode
+	cmp #$04
+	bne Help_Close_Selector
+	jsr Text_Clear
+	jsr Info_Draw
+	jsr Info_DrawFooter
+	lda #$04
+	sta UI_Mode
+	jmp Read_Key_Done
+Help_Close_Selector
+	jsr Enter_Selector
+	jmp Read_Key_Done
+
+;=============================================================================
 ; Slideshow  (UI_Mode = 2)
 ;=============================================================================
 Slideshow_Keys						; Q does not quit here - Selector only
@@ -2258,8 +2443,9 @@ Slideshow_Reload_Done
 ; scrollable.  The .NFO file IS the byte image of that screen: fixed 160-byte
 ; line records of 80 {glyph,attr} cell pairs (attr $07), no terminators, one
 ; all-$00 record marking end-of-text.  Info_Load streams it verbatim into
-; NFO_BUF_VRAM (banks $25-$29); Info_Draw blits an NFO_VISROWS window of it with
-; one BLT_NFO_DRAW copy per scroll - no reformat, no re-walk.
+; NFO_BUF_VRAM (banks $25-$29); Info_Draw blits record 0 (the title rule,
+; pinned to row 0) plus a 19-row scrolling window of the rest - two
+; BLT_NFO_DRAW copies per scroll, no reformat, no re-walk.
 ;=============================================================================
 
 ;-----------------------------------------------------------------------------
@@ -2328,46 +2514,43 @@ Info_Count_Done
 	rts
 
 ;-----------------------------------------------------------------------------
-; Info_Draw - blit an NFO_VISROWS window of the NFO buffer (from line record
-; Nfo_Top) onto the text screen with one BLT_NFO_DRAW copy - no re-walk.  When
-; the whole .NFO is shorter than the window, clear first and blit only the
-; records that exist.
+; Info_Draw - the info screen, from the NFO buffer by blitter - no re-walk:
+;   row 0     = record 0 (the report's ==== title rule), pinned - never scrolls
+;   rows 1-19 = records 1+Nfo_Top onward (Nfo_Top scrolls the body only)
+; Two BLT_NFO_DRAW copies (head, then body).  When the body is shorter than
+; its 19 rows, clear first and blit only the records that exist.
 ;-----------------------------------------------------------------------------
 Info_Draw
 	lda #$01
-	sta Txt_Dirty						; the blit below writes the back buffer
-; Reg6:Reg5 = Nfo_LineCount - Nfo_Top   (records available; >= 0 by scroll invariant)
-	sec
+	sta Txt_Dirty						; the blits below write the back buffer
 	lda Nfo_LineCount
-	sbc Nfo_Top
-	sta Reg5
-	lda Nfo_LineCount + $01
-	sbc Nfo_Top + $01
-	sta Reg6
-; rows = min(available, NFO_VISROWS)
-	lda Reg6
-	bne Info_Draw_Full					; >= 256 available -> full window
-	lda Reg5
-	cmp #NFO_VISROWS
-	bcs Info_Draw_Full
-; short document: clear, then blit only the records that exist
-	lda Reg5
-	sta Reg4
-	jsr Text_Clear
-	lda Reg4
-	beq Info_Draw_Ret					; nothing to draw
-	dec Reg4							; Reg4 = height-1
-	jmp Info_Draw_Blit
-Info_Draw_Full
-	lda #NFO_VISROWS-1
-	sta Reg4
-Info_Draw_Blit
-; Reg2:Reg1 = Nfo_Top * TEXT_PITCH  (Nfo_Top <= NFO_MAX_LINES-NFO_VISROWS, < $5000)
-	lda #$00
+	ora Nfo_LineCount + $01
+	bne Info_Draw_Some
+	jmp Text_Clear						; empty .NFO - nothing to show (tail)
+Info_Draw_Some
+	jsr Info_Body_Rows
+	cmp #NFO_VISROWS-1
+	bcs Info_Draw_Head					; full body window - every row is overwritten
+	jsr Text_Clear						; short body: clear the rows the blit won't reach
+Info_Draw_Head
+	lda #$00							; record 0 -> row 0, one row
 	sta Reg1
 	sta Reg2
+	sta Reg4
+	lda #<TEXT_BACK_VRAM
+	sta Reg3
+	jsr Info_Blit
+	jsr Info_Body_Rows
+	beq Info_Draw_Ret					; no body records
+	sta Reg4
+	dec Reg4							; Reg4 = height-1
+; Reg2:Reg1 = (Nfo_Top + 1) * TEXT_PITCH  (Nfo_Top <= NFO_MAX_LINES-NFO_VISROWS -> <= $4380)
+	lda #TEXT_PITCH
+	sta Reg1
+	lda #$00
+	sta Reg2
 	ldx Nfo_Top
-	beq Info_Draw_Patch
+	beq Info_Draw_Body
 Info_Draw_MulL
 	lda Reg1
 	clc
@@ -2378,7 +2561,48 @@ Info_Draw_MulL
 Info_Draw_MulNC
 	dex
 	bne Info_Draw_MulL
-Info_Draw_Patch
+Info_Draw_Body
+	lda #<[TEXT_BACK_VRAM+TEXT_PITCH]	; row 1 (same bank/page - only the lo byte moves)
+	sta Reg3
+	jmp Info_Blit						; (tail)
+Info_Draw_Ret
+	rts
+
+;-----------------------------------------------------------------------------
+; Info_Body_Rows - A = body rows to show = min(Nfo_LineCount-1-Nfo_Top,
+; NFO_VISROWS-1), Z set if 0.  Needs Nfo_LineCount >= 1 (the scroll clamp
+; keeps Nfo_Top <= Nfo_LineCount-1).  Clobbers Reg5, Reg6.
+;-----------------------------------------------------------------------------
+Info_Body_Rows
+	sec
+	lda Nfo_LineCount
+	sbc Nfo_Top
+	sta Reg5
+	lda Nfo_LineCount + $01
+	sbc Nfo_Top + $01
+	sta Reg6
+	lda Reg5							; Reg6:Reg5 -= 1 (record 0 is the pinned head)
+	sec
+	sbc #$01
+	sta Reg5
+	lda Reg6
+	sbc #$00
+	bne Info_Body_Rows_Full				; >= 256 available
+	lda Reg5
+	cmp #NFO_VISROWS-1
+	bcc Info_Body_Rows_Ret
+Info_Body_Rows_Full
+	lda #NFO_VISROWS-1
+Info_Body_Rows_Ret
+	cmp #$00							; Z = no rows
+	rts
+
+;-----------------------------------------------------------------------------
+; Info_Blit - one BLT_NFO_DRAW copy: Reg2:Reg1 = source offset into the NFO
+; buffer, Reg3 = destination lo byte (in the back buffer's first page),
+; Reg4 = height-1.  Waits for the copy to finish.
+;-----------------------------------------------------------------------------
+Info_Blit
 	lda #MEMAC_GLOBAL_ENABLE				; map VBXE bank $00 -> $2000 window (patch the BCB)
 	vbsta VBXE_MA_BSEL
 	lda Reg1
@@ -2386,7 +2610,9 @@ Info_Draw_Patch
 	lda Reg2
 	clc
 	adc #$50							; + $50  (low 16 bits of NFO_BUF_VRAM = $5000)
-	sta BLT_NFO_DRAW + Src_Adr1			; source mid ; source hi stays $02 (Reg2 max $3D, no carry)
+	sta BLT_NFO_DRAW + Src_Adr1			; source mid ; source hi stays $02 (Reg2 max $43, no carry)
+	lda Reg3
+	sta BLT_NFO_DRAW + Dest_Adr0
 	lda Reg4
 	sta BLT_NFO_DRAW + Blt_H
 	lda #MEMAC_GLOBAL_DISABLE
@@ -2397,17 +2623,16 @@ Info_Draw_Patch
 	vbsta VBXE_BL_ADR2
 	lda #$01
 	vbsta VBXE_BL_ADR1
-Info_Draw_L1
+Info_Blit_L1
 	vblda VBXE_BLITTER_BUSY
 	cmp #$00
-	bne Info_Draw_L1					; wait for any prior blit
+	bne Info_Blit_L1					; wait for any prior blit
 	lda #$01
 	vbsta VBXE_BLITTER_START
-Info_Draw_L2
+Info_Blit_L2
 	vblda VBXE_BLITTER_BUSY
 	cmp #$00
-	bne Info_Draw_L2					; wait for the copy to finish
-Info_Draw_Ret
+	bne Info_Blit_L2					; wait for the copy to finish
 	rts
 
 ;-----------------------------------------------------------------------------
@@ -2488,7 +2713,7 @@ Info_Key_Down_NC
 	jmp Read_Key_Done
 
 Info_Key_PageUp
-	ldx #NFO_VISROWS
+	ldx #NFO_VISROWS-1				; one body page (row 0 is pinned)
 Info_Key_PageUp_L1
 	lda Nfo_Top
 	ora Nfo_Top + $01
@@ -2505,7 +2730,7 @@ Info_Key_PageUp_Draw
 	jmp Read_Key_Done
 
 Info_Key_PageDown
-	ldx #NFO_VISROWS
+	ldx #NFO_VISROWS-1				; one body page (row 0 is pinned)
 Info_Key_PageDown_L1
 	jsr Info_Can_Scroll_Down
 	bcc Info_Key_PageDown_Draw
@@ -2651,9 +2876,84 @@ UI_Str_Legend		dta TXT_PEN,UI_PEN_LOC,c'Nav: ',TXT_PEN,UI_PEN_KEY
 ; arrows are CP437 codes both fonts carry.
 UI_Str_InfoHint		dta TXT_PEN,UI_PEN_LOC,c'Nav: ',TXT_PEN,UI_PEN_KEY,c'ESC'
 					dta TXT_PEN,UI_PEN_DESC,c' Go Back ',TXT_PEN,UI_PEN_KEY
-					dta $18,$19,TXT_PEN,UI_PEN_DESC,c' scroll ',TXT_PEN,UI_PEN_KEY
+					dta $18,$19,TXT_PEN,UI_PEN_DESC,c' Scroll ',TXT_PEN,UI_PEN_KEY
 					dta $1B,$1A,TXT_PEN,UI_PEN_DESC,c' Page         Press '
 					dta TXT_PEN,UI_PEN_KEY,c'HELP',TXT_PEN,UI_PEN_DESC,c' for additional information',0
+; Help page (UI_Mode 7): title on row 0, nav hint on row 22.
+; Row 0 banner: 29 '=' + 22-char title + 29 '=' (80 cells).  The '=' sweep is
+; the .nfo report rule - Convertor/nfo_encode.py RULE_ATTRS, run-length coded
+; ($38 x5, $39 x5, $3A x6, $3B x5, $3C x5, $3D x3 each side, mirrored) - and
+; the title is its PEN_TITLE ($0F bright gold).  The version digits come from
+; V_0..V_3 (view1024.asm), so the title stays 22 cells whatever V_3 holds
+; (a letter, or $00 = a space).
+UI_Str_HelpTitle	dta TXT_PEN,$38,c'=====',TXT_PEN,$39,c'=====',TXT_PEN,$3A,c'======'
+					dta TXT_PEN,$3B,c'=====',TXT_PEN,$3C,c'=====',TXT_PEN,$3D,c'==='
+					dta TXT_PEN,$0F,c'Slideshow V '
+					DTA_SCR V_0
+					dta c'.'
+					DTA_SCR V_1
+					DTA_SCR V_2
+					DTA_SCR V_3
+					dta c' Help'
+					dta TXT_PEN,$3D,c'===',TXT_PEN,$3C,c'=====',TXT_PEN,$3B,c'====='
+					dta TXT_PEN,$3A,c'======',TXT_PEN,$39,c'=====',TXT_PEN,$38,c'=====',0
+UI_Str_HelpHint		dta TXT_PEN,UI_PEN_LOC,c'Nav: ',TXT_PEN,UI_PEN_KEY,c'ESC'
+					dta TXT_PEN,UI_PEN_DESC,c' Go Back ',TXT_PEN,UI_PEN_KEY
+					dta $18,$19,TXT_PEN,UI_PEN_DESC,c' Scroll ',TXT_PEN,UI_PEN_KEY
+					dta $1B,$1A,TXT_PEN,UI_PEN_DESC,c' Page',0
+
+; Help sections: one $00-terminated row each, $FF ends the section.  Up to
+; HELP_VISROWS (19) rows show at once; a longer section scrolls with Up/Down
+; (Help_Keys).  Drawn in UI_PEN_HELP; each section's name row switches to
+; UI_PEN_HELPHEAD with a TXT_PEN escape.
+Help_Page_Lo		dta <Help_Text_1,<Help_Text_2,<Help_Text_3
+Help_Page_Hi		dta >Help_Text_1,>Help_Text_2,>Help_Text_3
+Help_PageNum_Lo		dta <UI_Str_HelpPage1,<UI_Str_HelpPage2,<UI_Str_HelpPage3
+Help_PageNum_Hi		dta >UI_Str_HelpPage1,>UI_Str_HelpPage2,>UI_Str_HelpPage3
+UI_Str_HelpPage1	dta c'Section  1 of 3',0	; row 20, centred (col 32)
+UI_Str_HelpPage2	dta c'Section  2 of 3',0
+UI_Str_HelpPage3	dta c'Section  3 of 3',0
+
+Help_Text_1
+	dta TXT_PEN,UI_PEN_HELPHEAD,c'General Information:',0
+	dta c'When the image viewer starts, it will scan the current directory.',0
+	dta c'Subdirectories are displayed alphabetically in Green.',0
+	dta c'The image (V1K) files will be displayed alphabetically in Blue.',0
+	dta c'Each V1K file must have a corresponding NFO file to populate the Info screen.',0
+	dta 0
+	dta c'*** MORE INFO TO COME ***',0
+	dta $FF
+
+Help_Text_2
+	dta TXT_PEN,UI_PEN_HELPHEAD,c'Main Menu Navigation:',0
+	dta c'The arrow keys move the selector (item will be shown in a brighter colour).',0
+	dta c'Pressing Enter makes a selection (scan Subdirectory or Open image).',0
+	dta 0
+	dta c'Pressing S starts a slideshow starting from the selected image.',0
+	dta c'The display time for each image is variable from 1 to 30 seconds via < > keys.',0
+	dta 0
+	dta c'Pressing D will bring up the Drive Selector.  Use the ',$18,$19,c' arrows and Enter to',0
+	dta c'scan a different drive (note D: is the directory from which this program was',0
+	dta c'launched - it does NOT mean D1:)',0
+	dta 0
+	dta c'Pressing P will display the 4 256 colour palettes of the highlighted image.',0
+	dta c'If no image is highlighted, the 4 palettes used by the menu will be shown.',0
+	dta c'Top row displays P0 and P1 while the bottom row displays P2 and P3.',0
+	dta 0
+	dta c'Pressing I will display the conversion report for the highlighted image.',0
+	dta c'Jump to section 3 of this Help screen for more details on this information.',0
+	dta 0
+	dta c'Pressing F will switch between the CGA font and the Atari font',0
+	dta 0
+	dta c"Pressing Q will display the exit confirmation dialog (Y quits, ESC or N doesn't)",0
+	dta $FF
+
+Help_Text_3
+	dta TXT_PEN,UI_PEN_HELPHEAD,c'Conversion Report:',0
+	dta 0
+	dta c'*** MORE INFO TO COME ***',0
+	dta $FF
+
 UI_Str_DriveTitle	dta c'Log Drive',0
 UI_Str_QuitConfirm	dta TXT_PEN,UI_PEN_QUITQ,c'Are You Sure To Quit',0
 UI_Str_QuitYes		dta TXT_PEN,UI_PEN_YES,c'Y',0

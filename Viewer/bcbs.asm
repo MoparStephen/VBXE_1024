@@ -107,11 +107,11 @@ BLT_NFO_DRAW
 	dta $00,$50,$02						; Source address ($025000 = NFO_BUF_VRAM; PATCHED)
 	dta a(TEXT_PITCH)					; Source step y (160 - next line record)
 	dta $01								; Source step x (1)
-	dta <TEXT_BACK_VRAM,>TEXT_BACK_VRAM,TEXT_BACK_VRAM>>16	; Destination address (back buffer)
+	dta <TEXT_BACK_VRAM,>TEXT_BACK_VRAM,TEXT_BACK_VRAM>>16	; Destination address (back buffer; lo byte PATCHED - row 0 / row 1)
 	dta a(TEXT_PITCH)					; Destination step y (160 - next text row)
 	dta $01								; Destination step x (1)
 	dta a(TEXT_PITCH-1)					; Width-1  (159 -> 160 bytes = 80 cells)
-	dta TEXT_MAIN_ROWS-1					; Height-1 (19 -> 20 rows; PATCHED by Info_Draw)
+	dta TEXT_MAIN_ROWS-1					; Height-1 (PATCHED by Info_Blit: 0 for the title row, up to 18 for the body)
 	dta $FF								; And mask ($FF -> straight copy)
 	dta $00								; Xor mask
 	dta $00								; Collision and mask
