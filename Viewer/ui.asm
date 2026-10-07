@@ -2964,8 +2964,42 @@ Help_Text_2
 
 Help_Text_3
 	dta TXT_PEN,UI_PEN_HELPHEAD,c'Conversion Report:',0
+	dta c'Press I on a highlighted image to show the report the convertor wrote for it',0
+	dta c'The same report is saved on the PC as {name}_report.txt',0
 	dta 0
-	dta c'*** MORE INFO TO COME ***',0
+	dta TXT_PEN,UI_PEN_HELPHEAD,c'Source Information:',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Input / Description  ',TXT_PEN,UI_PEN_HELP,c'The source file name and its description',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Dimensions           ',TXT_PEN,UI_PEN_HELP,c'Size of the source image before resampling',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Resampled            ',TXT_PEN,UI_PEN_HELP,c'Resized to 320 x 240, with the filter and aspect fit used',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Cell width           ',TXT_PEN,UI_PEN_HELP,c'8 pixels per cell: 40 cells per line, 9600 cells in all',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Palettes x slots     ',TXT_PEN,UI_PEN_HELP,c'4 palettes of 256 (slot 0 is transparent, 255 usable)',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Transparent px       ',TXT_PEN,UI_PEN_HELP,c'Letterbox / pillarbox pixels, always shown as index 0',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Pre-quantized        ',TXT_PEN,UI_PEN_HELP,c'Source colours, and what they were reduced to (max 1020)',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Master colours       ',TXT_PEN,UI_PEN_HELP,c'Colours left to be packed into the 4 palettes',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Output colours       ',TXT_PEN,UI_PEN_HELP,c'Distinct colours actually shown on screen',0
+	dta 0
+	dta TXT_PEN,UI_PEN_HELPHEAD,c'Conversion Settings and Result:',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Convertor Version    ',TXT_PEN,UI_PEN_HELP,c'The convertor release that made this image',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Strategy             ',TXT_PEN,UI_PEN_HELP,c'Fidelity (bias 0) gives the fewest block artifacts',0
+	dta c'                     Balanced (bias above 0) trades block artifacts for colours',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Coherence            ',TXT_PEN,UI_PEN_HELP,c'Attribute map smoothing - neighbouring cells share a',0
+	dta c'                     palette more often (Balanced strategy only)',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Dithering            ',TXT_PEN,UI_PEN_HELP,c'Pattern used to hide banding when colours were reduced',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Result               ',TXT_PEN,UI_PEN_HELP,c"Lossless - every colour fits its cell's palette, no loss",0
+	dta c'                     Lossy - some pixels had to be recoloured to fit',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Recoloured pixels    ',TXT_PEN,UI_PEN_HELP,c'Lossy only: how many pixels changed, and their error',0
+	dta 0
+	dta TXT_PEN,UI_PEN_HELPHEAD,c'Image Quality (compared to the same image without the 8 x 1 cell rule):',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Identical pixels     ',TXT_PEN,UI_PEN_HELP,c'Pixels unchanged by the cell rule (higher is better)',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'RMSE / PSNR          ',TXT_PEN,UI_PEN_HELP,c'Average colour error (lower RMSE, higher PSNR is better)',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Mean OKLab error     ',TXT_PEN,UI_PEN_HELP,c'Average perceptual colour error (lower is better)',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Worst OKLab error    ',TXT_PEN,UI_PEN_HELP,c"The single worst pixel's perceptual error",0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Cells damaged        ',TXT_PEN,UI_PEN_HELP,c'8 x 1 cells holding at least one changed pixel',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Cell seams           ',TXT_PEN,UI_PEN_HELP,c'About 1.00x = no visible cell grid, higher = blockier',0
+	dta 0
+	dta TXT_PEN,UI_PEN_HELPHEAD,c'Palette Use:',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Per-palette colours  ',TXT_PEN,UI_PEN_HELP,c'Colours found only in that palette (P0 to P3)',0
+	dta TXT_PEN,UI_PEN_HELPKEY,c'Duplicated Colours   ',TXT_PEN,UI_PEN_HELP,c'Palette entries repeated in more than one palette',0
 	dta $FF
 
 UI_Str_DriveTitle	dta c'Log Drive',0

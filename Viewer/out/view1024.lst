@@ -701,7 +701,7 @@ Source: equates.asm
    354 = 0010			.def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
    355 = 0012			.def	V_1								= $12	; 2 (Screen code used for Version in loading screen)
    356 = 0012			.def	V_2								= $12	; 2 (Screen code used for Version in loading screen)
-   357 = 0061			.def	V_3								= $61	; 61=a (Screen code used for Version in loading screen)
+   357 = 0062			.def	V_3								= $62	; 61=a (Screen code used for Version in loading screen)
    358
    359 				;-----------------------------------------------------------------------------
    360 				; VBXE Helpers
@@ -2706,7 +2706,7 @@ Source: view1024.asm
    506 				; Wait For VSync (locks to the refresh rate, PAL=50Hz, NTSC=60Hz)  Thanks tebe
    507 				;-----------------------------------------------------------------------------
    508 334C			Wait_For_Sync							; Hold until VCOUNT == 0
-   509 334C-6AFF> 2C 0B D4		bit VCOUNT
+   509 334C-739D> 2C 0B D4		bit VCOUNT
    510 334F 30 FB			bmi *-3
    511 3351 2C 0B D4			bit VCOUNT
    512 3354 10 FB			bpl *-3
@@ -5267,8 +5267,8 @@ Source: ui.asm
    159 				; Show "Scanning directory..." where the path goes - the scan + IMAGES.LST
    160 				; name cache can take a while in a big folder.  Every caller repaints the
    161 				; whole selector (Selector_Draw) afterwards.
-   162 4EA1 A9 AB			lda #<UI_Str_Scanning
-   163 4EA3 A0 6A			ldy #>UI_Str_Scanning
+   162 4EA1 A9 49			lda #<UI_Str_Scanning
+   163 4EA3 A0 73			ldy #>UI_Str_Scanning
    164 4EA5 20 41 52			jsr UI_Show_Busy
    165
    166 4EA8 20 4B 4F			jsr Build_Image_List				; fills IMAGE_BANK; sets ImageCount/Dir_Count/FileStart
@@ -5870,9 +5870,9 @@ Macro: TXT_AT [Source: ui.asm]
      2 520F 8D B0 06			sta Txt_Row
      3 5212 A9 0C			lda #[12]
      4 5214 8D B1 06			sta Txt_Col
-     5 5217 A9 66			lda #<[UI_STR_STATUSBLANK+12]
+     5 5217 A9 04			lda #<[UI_STR_STATUSBLANK+12]
      6 5219 85 96			sta Txt_Ptr
-     7 521B A9 6A			lda #>[UI_STR_STATUSBLANK+12]
+     7 521B A9 73			lda #>[UI_STR_STATUSBLANK+12]
      8 521D 85 97			sta Txt_Ptr + $01
      9 521F 20 EC 3D			jsr Text_PutStrAt
 Source: ui.asm
@@ -5926,9 +5926,9 @@ Macro: TXT_AT [Source: ui.asm]
      2 525E 8D B0 06			sta Txt_Row
      3 5261 A9 0C			lda #[12]
      4 5263 8D B1 06			sta Txt_Col
-     5 5266 A9 66			lda #<[UI_STR_STATUSBLANK+12]
+     5 5266 A9 04			lda #<[UI_STR_STATUSBLANK+12]
      6 5268 85 96			sta Txt_Ptr
-     7 526A A9 6A			lda #>[UI_STR_STATUSBLANK+12]
+     7 526A A9 73			lda #>[UI_STR_STATUSBLANK+12]
      8 526C 85 97			sta Txt_Ptr + $01
      9 526E 20 EC 3D			jsr Text_PutStrAt
 Source: ui.asm
@@ -5988,7 +5988,7 @@ Source: ui.asm
    765 52CD A5 84			lda Reg5
    766 52CF 29 07			and #[UI_COLS-1]					; A = grid column = cell index MOD UI_COLS
    767 52D1 AA				tax
-   768 52D2 BD F8 6A			lda Sel_ColX,x
+   768 52D2 BD 96 73			lda Sel_ColX,x
    769 52D5 8D B1 06			sta Txt_Col
    770
    771 52D8 A5 85			lda Reg6
@@ -6020,7 +6020,7 @@ Source: ui.asm
    797 5307 69 02			adc #UI_FIRSTROW
    798 5309 8D B0 06			sta Txt_Row
    799 530C 20 78 56			jsr UI_Pen_Normal
-   800 530F AD F8 6A			lda Sel_ColX						; column 0 of the grid
+   800 530F AD 96 73			lda Sel_ColX						; column 0 of the grid
    801 5312 8D B1 06			sta Txt_Col
    802 5315 A9 1A			lda #<UI_Str_Empty
    803 5317 85 96			sta Txt_Ptr
@@ -6061,7 +6061,7 @@ Source: ui.asm
    838 5346 A5 85			lda Reg6
    839 5348 29 07			and #[UI_COLS-1]					; A = grid column = index MOD UI_COLS
    840 534A AA				tax
-   841 534B BD F8 6A			lda Sel_ColX,x
+   841 534B BD 96 73			lda Sel_ColX,x
    842 534E 8D B1 06			sta Txt_Col
    843 5351 A9 09			lda #9
    844 5353 85 80			sta Reg1							; width-1 = 10 cells ("<NAME....>")
@@ -6212,8 +6212,8 @@ Source: ui.asm
    954 53F3 69 01			adc #$01							; ... counted from 1
    955 53F5 A2 00			ldx #$00
    956 53F7 20 F4 56			jsr Put_U8_Pad3
-   957 53FA A9 E3			lda #<UI_Str_Of
-   958 53FC A0 6A			ldy #>UI_Str_Of
+   957 53FA A9 81			lda #<UI_Str_Of
+   958 53FC A0 73			ldy #>UI_Str_Of
    959 53FE 20 43 54			jsr Selector_DrawCount_Cat
    960 5401 A5 86			lda Reg7
    961 5403 20 F4 56			jsr Put_U8_Pad3
@@ -6224,13 +6224,13 @@ Source: ui.asm
    966 540E A2 00			ldx #$00
    967 5410 A5 86			lda Reg7
    968 5412 20 F4 56			jsr Put_U8_Pad3
-   969 5415 A9 E8			lda #<UI_Str_Images
-   970 5417 A0 6A			ldy #>UI_Str_Images
+   969 5415 A9 86			lda #<UI_Str_Images
+   970 5417 A0 73			ldy #>UI_Str_Images
    971 5419 A6 86			ldx Reg7
    972 541B CA				dex
    973 541C D0 04			bne Selector_DrawCount_Plural
-   974 541E A9 F0			lda #<UI_Str_Image1
-   975 5420 A0 6A			ldy #>UI_Str_Image1
+   974 541E A9 8E			lda #<UI_Str_Image1
+   975 5420 A0 73			ldy #>UI_Str_Image1
    976 5422			Selector_DrawCount_Plural
    977 5422 A2 03			ldx #$03							; after the 3-char number
    978 5424 20 43 54			jsr Selector_DrawCount_Cat
@@ -6282,9 +6282,9 @@ Macro: TXT_AT [Source: ui.asm]
      2 5461 8D B0 06			sta Txt_Row
      3 5464 A9 00			lda #[0]
      4 5466 8D B1 06			sta Txt_Col
-     5 5469 A9 50			lda #<[UI_STR_NFO]
+     5 5469 A9 EE			lda #<[UI_STR_NFO]
      6 546B 85 96			sta Txt_Ptr
-     7 546D A9 6A			lda #>[UI_STR_NFO]
+     7 546D A9 72			lda #>[UI_STR_NFO]
      8 546F 85 97			sta Txt_Ptr + $01
      9 5471 20 EC 3D			jsr Text_PutStrAt
 Source: ui.asm
@@ -6308,9 +6308,9 @@ Source: ui.asm
   1039 549F 85 97			sta Txt_Ptr + $01
   1040 54A1 4C EC 3D			jmp Text_PutStrAt					; the padded name from col 5 to 79 (tail)
   1041 54A4			Selector_DrawStatus_Blank
-  1042 54A4 A9 5F			lda #<[UI_Str_StatusBlank+5]
+  1042 54A4 A9 FD			lda #<[UI_Str_StatusBlank+5]
   1043 54A6 85 96			sta Txt_Ptr
-  1044 54A8 A9 6A			lda #>[UI_Str_StatusBlank+5]
+  1044 54A8 A9 72			lda #>[UI_Str_StatusBlank+5]
   1045 54AA 85 97			sta Txt_Ptr + $01
   1046 54AC 4C EC 3D			jmp Text_PutStrAt					; clear cols 5-79 (75 spaces) (tail)
   1047
@@ -7097,9 +7097,9 @@ Source: ui.asm
   1796 593B 8D B0 06			sta Txt_Row
   1797 593E A9 20			lda #DRIVE_WIN_COL+2
   1798 5940 8D B1 06			sta Txt_Col
-  1799 5943 A9 27			lda #<UI_Str_DriveTitle
+  1799 5943 A9 C5			lda #<UI_Str_DriveTitle
   1800 5945 85 96			sta Txt_Ptr
-  1801 5947 A9 6A			lda #>UI_Str_DriveTitle
+  1801 5947 A9 72			lda #>UI_Str_DriveTitle
   1802 5949 85 97			sta Txt_Ptr + $01
   1803 594B 20 EC 3D			jsr Text_PutStrAt
   1804 594E 4C 64 59			jmp Drive_DrawRows					; tail
@@ -7274,9 +7274,9 @@ Source: ui.asm
   1973 5A70 8D B0 06			sta Txt_Row
   1974 5A73 A9 1E			lda #QUIT_WIN_COL+2
   1975 5A75 8D B1 06			sta Txt_Col
-  1976 5A78 A9 31			lda #<UI_Str_QuitConfirm
+  1976 5A78 A9 CF			lda #<UI_Str_QuitConfirm
   1977 5A7A 85 96			sta Txt_Ptr
-  1978 5A7C A9 6A			lda #>UI_Str_QuitConfirm
+  1978 5A7C A9 72			lda #>UI_Str_QuitConfirm
   1979 5A7E 85 97			sta Txt_Ptr + $01
   1980 5A80 20 EC 3D			jsr Text_PutStrAt
   1981
@@ -7284,16 +7284,16 @@ Source: ui.asm
   1983 5A85 8D B0 06			sta Txt_Row
   1984 5A88 A9 24			lda #QUIT_BTN_Y_COL+2
   1985 5A8A 8D B1 06			sta Txt_Col
-  1986 5A8D A9 48			lda #<UI_Str_QuitYes
+  1986 5A8D A9 E6			lda #<UI_Str_QuitYes
   1987 5A8F 85 96			sta Txt_Ptr
-  1988 5A91 A9 6A			lda #>UI_Str_QuitYes
+  1988 5A91 A9 72			lda #>UI_Str_QuitYes
   1989 5A93 85 97			sta Txt_Ptr + $01
   1990 5A95 20 EC 3D			jsr Text_PutStrAt
   1991 5A98 A9 2B			lda #QUIT_BTN_N_COL+2
   1992 5A9A 8D B1 06			sta Txt_Col
-  1993 5A9D A9 4C			lda #<UI_Str_QuitNo
+  1993 5A9D A9 EA			lda #<UI_Str_QuitNo
   1994 5A9F 85 96			sta Txt_Ptr
-  1995 5AA1 A9 6A			lda #>UI_Str_QuitNo
+  1995 5AA1 A9 72			lda #>UI_Str_QuitNo
   1996 5AA3 85 97			sta Txt_Ptr + $01
   1997 5AA5 4C EC 3D			jmp Text_PutStrAt					; tail
   1998
@@ -7405,8 +7405,8 @@ Source: ui.asm
   2104
   2105 5B41 AD C7 04			lda Sel_Index
   2106 5B44 8D 8A 04			sta File_Index
-  2107 5B47 A9 D0			lda #<UI_Str_ReadPal
-  2108 5B49 A0 6A			ldy #>UI_Str_ReadPal
+  2107 5B47 A9 6E			lda #<UI_Str_ReadPal
+  2108 5B49 A0 73			ldy #>UI_Str_ReadPal
   2109 5B4B 20 41 52			jsr UI_Show_Busy					; "Reading palette..." - on screen now
   2110 5B4E 20 C2 33			jsr Read_Image_Palette				; .PAL block -> $21000, registers untouched
   2111 5B51 90 03			bcc Selector_Handle_P_Loaded
@@ -7474,8 +7474,8 @@ Source: ui.asm
   2169 5BAA D0 33			bne Selector_Handle_I_Ret			; dir / ".." -> nothing to describe
   2170 5BAC AD C7 04			lda Sel_Index
   2171 5BAF 8D 8A 04			sta File_Index
-  2172 5BB2 A9 C1			lda #<UI_Str_ReadNfo
-  2173 5BB4 A0 6A			ldy #>UI_Str_ReadNfo
+  2172 5BB2 A9 5F			lda #<UI_Str_ReadNfo
+  2173 5BB4 A0 73			ldy #>UI_Str_ReadNfo
   2174 5BB6 20 41 52			jsr UI_Show_Busy					; "Reading nfo..." - on screen now
   2175 5BB9 A9 01			lda #$01							; ext selector 1 = .NFO
   2176 5BBB 20 60 39			jsr Build_Filename					; FileNamePtr -> "D[n]:PATH<base>.NFO",0
@@ -8287,7 +8287,7 @@ Macro: DTA_SCR [Source: ui.asm]
 Source: ui.asm
   2897 619A								DTA_SCR V_3
 Macro: DTA_SCR [Source: ui.asm]
-     6 619A 61				dta [V_3]							; $60-$7F: a-z - already ASCII
+     6 619A 62				dta [V_3]							; $60-$7F: a-z - already ASCII
 Source: ui.asm
   2898 619B 20 48 65 6C 70						dta c' Help'
   2899 61A0 01 3D 3D 3D 3D 01 + 					dta TXT_PEN,$3D,c'===',TXT_PEN,$3C,c'=====',TXT_PEN,$3B,c'====='
@@ -8358,30 +8358,64 @@ Source: ui.asm
   2964
   2965 69F6			Help_Text_3
   2966 69F6 01 5D 43 6F 6E 76 + 	dta TXT_PEN,UI_PEN_HELPHEAD,c'Conversion Report:',0
-  2967 6A0B 00				dta 0
-  2968 6A0C 2A 2A 2A 20 4D 4F + 	dta c'*** MORE INFO TO COME ***',0
-  2969 6A26 FF				dta $FF
-  2970
-  2971 6A27 4C 6F 67 20 44 72 + UI_Str_DriveTitle	dta c'Log Drive',0
-  2972 6A31 01 3B 41 72 65 20 + UI_Str_QuitConfirm	dta TXT_PEN,UI_PEN_QUITQ,c'Are You Sure To Quit',0
-  2973 6A48 01 52 59 00		UI_Str_QuitYes		dta TXT_PEN,UI_PEN_YES,c'Y',0
-  2974 6A4C 01 19 4E 00		UI_Str_QuitNo		dta TXT_PEN,UI_PEN_NO,c'N',0
-  2975 6A50 01 7C 4E 66 6F 3A + UI_Str_Nfo			dta TXT_PEN,UI_PEN_LOC,c'Nfo:',TXT_PEN,UI_PEN_VALUE,c' ',0
-  2976 6A5A 20 20 20 20 20 20 + UI_Str_StatusBlank	dta c'                                                                                ',0	; 80 spaces (Nfo: + NFO_NAME_CAP)
-  2977 6AAB 53 63 61 6E 6E 69 + UI_Str_Scanning		dta c'Scanning directory...',0
-  2978 6AC1 52 65 61 64 69 6E + UI_Str_ReadNfo		dta c'Reading nfo...',0
-  2979 6AD0 52 65 61 64 69 6E + UI_Str_ReadPal		dta c'Reading palette...',0
-  2980 6AE3 20 6F 66 20 00	UI_Str_Of			dta c' of ',0
-  2981 6AE8 20 69 6D 61 67 65 + UI_Str_Images		dta c' images',0
-  2982 6AF0 20 69 6D 61 67 65 + UI_Str_Image1		dta c' image ',0
-  2983
-  2984 				;-----------------------------------------------------------------------------
-  2985 				; Sel_ColX - screen column for grid column c (0..UI_COLS-1), 10-char cells.
-  2986 				; Indexed by (list index AND [UI_COLS-1]).  Relocate the whole grid by
-  2987 				; changing UI_GRIDCOL0 alone.
-  2988 				;-----------------------------------------------------------------------------
-  2989 6AF8 00 0A 14 1E		Sel_ColX	dta UI_GRIDCOL0+0, UI_GRIDCOL0+10, UI_GRIDCOL0+20, UI_GRIDCOL0+30
-  2990 6AFC 28 32 3C 46					dta UI_GRIDCOL0+40, UI_GRIDCOL0+50, UI_GRIDCOL0+60, UI_GRIDCOL0+70
+  2967 6A0B 50 72 65 73 73 20 + 	dta c'Press I on a highlighted image to show the report the convertor wrote for it',0
+  2968 6A58 54 68 65 20 73 61 + 	dta c'The same report is saved on the PC as {name}_report.txt',0
+  2969 6A90 00				dta 0
+  2970 6A91 01 5D 53 6F 75 72 + 	dta TXT_PEN,UI_PEN_HELPHEAD,c'Source Information:',0
+  2971 6AA7 01 5A 49 6E 70 75 + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Input / Description  ',TXT_PEN,UI_PEN_HELP,c'The source file name and its description',0
+  2972 6AE9 01 5A 44 69 6D 65 + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Dimensions           ',TXT_PEN,UI_PEN_HELP,c'Size of the source image before resampling',0
+  2973 6B2D 01 5A 52 65 73 61 + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Resampled            ',TXT_PEN,UI_PEN_HELP,c'Resized to 320 x 240, with the filter and aspect fit used',0
+  2974 6B80 01 5A 43 65 6C 6C + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Cell width           ',TXT_PEN,UI_PEN_HELP,c'8 pixels per cell: 40 cells per line, 9600 cells in all',0
+  2975 6BD1 01 5A 50 61 6C 65 + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Palettes x slots     ',TXT_PEN,UI_PEN_HELP,c'4 palettes of 256 (slot 0 is transparent, 255 usable)',0
+  2976 6C20 01 5A 54 72 61 6E + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Transparent px       ',TXT_PEN,UI_PEN_HELP,c'Letterbox / pillarbox pixels, always shown as index 0',0
+  2977 6C6F 01 5A 50 72 65 2D + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Pre-quantized        ',TXT_PEN,UI_PEN_HELP,c'Source colours, and what they were reduced to (max 1020)',0
+  2978 6CC1 01 5A 4D 61 73 74 + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Master colours       ',TXT_PEN,UI_PEN_HELP,c'Colours left to be packed into the 4 palettes',0
+  2979 6D08 01 5A 4F 75 74 70 + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Output colours       ',TXT_PEN,UI_PEN_HELP,c'Distinct colours actually shown on screen',0
+  2980 6D4B 00				dta 0
+  2981 6D4C 01 5D 43 6F 6E 76 + 	dta TXT_PEN,UI_PEN_HELPHEAD,c'Conversion Settings and Result:',0
+  2982 6D6E 01 5A 43 6F 6E 76 + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Convertor Version    ',TXT_PEN,UI_PEN_HELP,c'The convertor release that made this image',0
+  2983 6DB2 01 5A 53 74 72 61 + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Strategy             ',TXT_PEN,UI_PEN_HELP,c'Fidelity (bias 0) gives the fewest block artifacts',0
+  2984 6DFE 20 20 20 20 20 20 + 	dta c'                     Balanced (bias above 0) trades block artifacts for colours',0
+  2985 6E4E 01 5A 43 6F 68 65 + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Coherence            ',TXT_PEN,UI_PEN_HELP,c'Attribute map smoothing - neighbouring cells share a',0
+  2986 6E9C 20 20 20 20 20 20 + 	dta c'                     palette more often (Balanced strategy only)',0
+  2987 6EDD 01 5A 44 69 74 68 + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Dithering            ',TXT_PEN,UI_PEN_HELP,c'Pattern used to hide banding when colours were reduced',0
+  2988 6F2D 01 5A 52 65 73 75 + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Result               ',TXT_PEN,UI_PEN_HELP,c"Lossless - every colour fits its cell's palette, no loss",0
+  2989 6F7F 20 20 20 20 20 20 + 	dta c'                     Lossy - some pixels had to be recoloured to fit',0
+  2990 6FC4 01 5A 52 65 63 6F + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Recoloured pixels    ',TXT_PEN,UI_PEN_HELP,c'Lossy only: how many pixels changed, and their error',0
+  2991 7012 00				dta 0
+  2992 7013 01 5D 49 6D 61 67 + 	dta TXT_PEN,UI_PEN_HELPHEAD,c'Image Quality (compared to the same image without the 8 x 1 cell rule):',0
+  2993 705D 01 5A 49 64 65 6E + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Identical pixels     ',TXT_PEN,UI_PEN_HELP,c'Pixels unchanged by the cell rule (higher is better)',0
+  2994 70AB 01 5A 52 4D 53 45 + 	dta TXT_PEN,UI_PEN_HELPKEY,c'RMSE / PSNR          ',TXT_PEN,UI_PEN_HELP,c'Average colour error (lower RMSE, higher PSNR is better)',0
+  2995 70FD 01 5A 4D 65 61 6E + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Mean OKLab error     ',TXT_PEN,UI_PEN_HELP,c'Average perceptual colour error (lower is better)',0
+  2996 7148 01 5A 57 6F 72 73 + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Worst OKLab error    ',TXT_PEN,UI_PEN_HELP,c"The single worst pixel's perceptual error",0
+  2997 718B 01 5A 43 65 6C 6C + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Cells damaged        ',TXT_PEN,UI_PEN_HELP,c'8 x 1 cells holding at least one changed pixel',0
+  2998 71D3 01 5A 43 65 6C 6C + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Cell seams           ',TXT_PEN,UI_PEN_HELP,c'About 1.00x = no visible cell grid, higher = blockier',0
+  2999 7222 00				dta 0
+  3000 7223 01 5D 50 61 6C 65 + 	dta TXT_PEN,UI_PEN_HELPHEAD,c'Palette Use:',0
+  3001 7232 01 5A 50 65 72 2D + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Per-palette colours  ',TXT_PEN,UI_PEN_HELP,c'Colours found only in that palette (P0 to P3)',0
+  3002 7279 01 5A 44 75 70 6C + 	dta TXT_PEN,UI_PEN_HELPKEY,c'Duplicated Colours   ',TXT_PEN,UI_PEN_HELP,c'Palette entries repeated in more than one palette',0
+  3003 72C4 FF				dta $FF
+  3004
+  3005 72C5 4C 6F 67 20 44 72 + UI_Str_DriveTitle	dta c'Log Drive',0
+  3006 72CF 01 3B 41 72 65 20 + UI_Str_QuitConfirm	dta TXT_PEN,UI_PEN_QUITQ,c'Are You Sure To Quit',0
+  3007 72E6 01 52 59 00		UI_Str_QuitYes		dta TXT_PEN,UI_PEN_YES,c'Y',0
+  3008 72EA 01 19 4E 00		UI_Str_QuitNo		dta TXT_PEN,UI_PEN_NO,c'N',0
+  3009 72EE 01 7C 4E 66 6F 3A + UI_Str_Nfo			dta TXT_PEN,UI_PEN_LOC,c'Nfo:',TXT_PEN,UI_PEN_VALUE,c' ',0
+  3010 72F8 20 20 20 20 20 20 + UI_Str_StatusBlank	dta c'                                                                                ',0	; 80 spaces (Nfo: + NFO_NAME_CAP)
+  3011 7349 53 63 61 6E 6E 69 + UI_Str_Scanning		dta c'Scanning directory...',0
+  3012 735F 52 65 61 64 69 6E + UI_Str_ReadNfo		dta c'Reading nfo...',0
+  3013 736E 52 65 61 64 69 6E + UI_Str_ReadPal		dta c'Reading palette...',0
+  3014 7381 20 6F 66 20 00	UI_Str_Of			dta c' of ',0
+  3015 7386 20 69 6D 61 67 65 + UI_Str_Images		dta c' images',0
+  3016 738E 20 69 6D 61 67 65 + UI_Str_Image1		dta c' image ',0
+  3017
+  3018 				;-----------------------------------------------------------------------------
+  3019 				; Sel_ColX - screen column for grid column c (0..UI_COLS-1), 10-char cells.
+  3020 				; Indexed by (list index AND [UI_COLS-1]).  Relocate the whole grid by
+  3021 				; changing UI_GRIDCOL0 alone.
+  3022 				;-----------------------------------------------------------------------------
+  3023 7396 00 0A 14 1E		Sel_ColX	dta UI_GRIDCOL0+0, UI_GRIDCOL0+10, UI_GRIDCOL0+20, UI_GRIDCOL0+30
+  3024 739A 28 32 3C 46					dta UI_GRIDCOL0+40, UI_GRIDCOL0+50, UI_GRIDCOL0+60, UI_GRIDCOL0+70
   1759
   1760 				;-----------------------------------------------------------------------------
   1761 				;

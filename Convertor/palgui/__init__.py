@@ -32,4 +32,4 @@ directory right for you.
 
 # The repo's single release number - must match the viewer's V_0..V_3 in
 # Viewer/view1024.asm and the v* git tag; packaging/check_version.py enforces it.
-__version__ = '0.21'
+__version__ = '0.22b'
