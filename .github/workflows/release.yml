@@ -121,9 +121,9 @@ jobs:
           # Build a tiny source image with the build venv (it has Pillow; the
           # runner's bare Python does not).
           .venv-build/bin/python -c "from PIL import Image; Image.new('RGB',(96,72),(120,30,200)).save('/tmp/t.png')"
-          "$APP/palettize4" /tmp/t.png --resize 64x48 --out /tmp/out --name t --quiet --json | tee /tmp/stats.json
+          "$APP/palettize4" /tmp/t.png --resize 64x48 --out /tmp/out --name T --quiet --json | tee /tmp/stats.json
           grep -q output_colours /tmp/stats.json
-          test -f /tmp/out/t_stats.json
+          test -f /tmp/out/T_stats.json      # names are always 8-char upper-case Atari names
           # GUI: it must load Qt and start its event loop without crashing.
           # timeout kills the running window with rc 124; a clean self-exit is 0;
           # anything else is a real failure (missing lib, import error).
