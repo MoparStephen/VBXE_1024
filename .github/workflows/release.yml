@@ -6,9 +6,8 @@ name: Release app
 # check-version job fails the run otherwise (packaging/check_version.py).
 # This builds dist/VBXE PAL Studio/ on a Windows runner and a Linux runner and
 # attaches the zip and the tar.gz - plus the committed Atari viewer
-# Viewer/out/view1024.xex and its menu logo Viewer/out/MENU.RAW (made by
-# Convertor/make_logo.py --export 15; the viewer loads it from D:) - to a
-# GitHub Release. Nothing runs on ordinary pushes.
+# Viewer/out/view1024.xex (single file - the menu logo and palettes are built
+# into it) - to a GitHub Release. Nothing runs on ordinary pushes.
 
 on:
   push:
@@ -47,7 +46,6 @@ jobs:
           name: view1024-xex
           path: |
             Viewer/out/view1024.xex
-            Viewer/out/MENU.RAW
 
       - name: Publish Release
         if: startsWith(github.ref, 'refs/tags/')
@@ -55,7 +53,6 @@ jobs:
         with:
           files: |
             Viewer/out/view1024.xex
-            Viewer/out/MENU.RAW
 
   build-windows:
     needs: check-version

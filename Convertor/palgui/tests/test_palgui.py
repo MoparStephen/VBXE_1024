@@ -342,6 +342,20 @@ class TestPresets(unittest.TestCase):
         got = presets.load('p', onto=Settings(description='A dog'))
         self.assertEqual(got.description, 'A dog')
 
+    def test_initial_resets_the_recipe_not_the_image(self):
+        """Reset settings: every recipe field to its default, paths kept."""
+        onto = Settings(input='b.png', out='mine', name='img9',
+                        description='A dog', filter='nearest', fit='cover',
+                        dither='blue', dither_strength=0.5, color_bias=0.6,
+                        coherence=2.0, seed=7, optimize=False)
+        got = presets.initial(onto=onto)
+        for field, default in Settings.DEFAULTS:
+            if field in presets.NOT_A_RECIPE:
+                self.assertEqual(getattr(got, field), getattr(onto, field))
+            else:
+                self.assertEqual(getattr(got, field), default, field)
+        self.assertEqual(onto.dither, 'blue')       # caller's object untouched
+
     def test_description_round_trips_through_argv(self):
         s = Settings(input='a.png', description='Sunset, "Malibu" 2024')
         argv = s.to_argv()

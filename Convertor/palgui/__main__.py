@@ -296,6 +296,33 @@ def _selftest(argv):
                      % dock.objectName())
     print('  %-16s ok  %d, hide/toggle/reset' % ('panels', len(w._docks())))
 
+    # RESET SETTINGS: the recipe goes back to Settings defaults, the image
+    # stays.  Driven through the window, so the button's slot is what's tested.
+    before = w.options.to_settings()
+    w.options.dither.setCurrentText('blue')
+    w.options.seed.setValue(7)
+    w._settings_reset()
+    after = w.options.to_settings()
+    if (after.dither, after.seed) != ('none', 0) or after.input != before.input:
+        sys.exit('selftest FAILED: Reset settings gave dither=%r seed=%r input=%r'
+                 % (after.dither, after.seed, after.input))
+    print('  %-16s ok  recipe to defaults, image kept' % 'reset settings')
+
+    # LAST FOLDERS PERSIST through QSettings.  A throwaway key, removed after,
+    # so the check never moves where the user's own dialogs open.
+    from PySide6.QtCore import QSettings
+    from .ui import lastdir
+    probe = tempfile.mkdtemp(prefix='palgui-lastdir-')
+    lastdir.remember('selftest', os.path.join(probe, 'x.png'))
+    got = lastdir.get('selftest')
+    gone = lastdir.get('selftest_missing', 'fallback')
+    QSettings(lastdir.ORG, lastdir.APP).remove('last_dir/selftest')
+    if os.path.normcase(got) != os.path.normcase(os.path.abspath(probe)) \
+            or gone != 'fallback':
+        sys.exit('selftest FAILED: last folder came back as %r / %r'
+                 % (got, gone))
+    print('  %-16s ok  remembered and read back' % 'last folders')
+
     # THE BUSY CURSOR, CHECKED FOR BALANCE.  setOverrideCursor is a stack, so
     # the failure mode is not "no cursor" but a pointer stuck as an hourglass
     # for the rest of the session - which nothing else here would notice, and
@@ -473,7 +500,15 @@ def _selftest(argv):
     if not w.review.b_delete.isEnabled() or len(w.review.marked()) != 1:
         sys.exit('selftest FAILED: ticking a preview did not mark it')
     w.review.table.item(0, 0).setCheckState(Qt.Unchecked)
-    print('  %-16s ok  tick arms Delete marked...' % 'delete previews')
+    # After a delete the pane reloads with the LAST row selected.
+    w.review.load(w.review.directory(), at_end=True)
+    if w.review.current_row() != w.review.count() - 1:
+        sys.exit('selftest FAILED: reload after delete selected row %d, not '
+                 'the last (%d)' % (w.review.current_row(),
+                                    w.review.count() - 1))
+    w.review.load(w.review.directory())
+    print('  %-16s ok  tick arms Delete marked..., reload ends on the last'
+          % 'delete previews')
 
     # File > Edit descriptions: names are skipped by the keyboard, and the
     # editor refuses what Save would (over 75 chars, non-ASCII).

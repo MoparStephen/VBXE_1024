@@ -139,36 +139,15 @@ BLT_TEXT_RECT
 	dta $00								; Pattern feature
 	dta $00								; Control (Mode 0 with NEXT bit Cleared)
 
-; Constant-source fast fills for the menu banner/separator VRAM.  The banner
-; fill is a blank-fill fallback when its .RAW asset fails to load at boot, so
-; cold-boot garbage never shows.  Fixed geometry, no patching needed - kicked
-; once each from Load_Menu_Banner_Raw.
-BLT_MENU_BANNER_CLEAR
-	dta $00,$00,$00						; Source address (unused - constant source)
-	dta $00,$00							; Source step y (unused)
-	dta $00								; Source step x (unused)
-	dta <MENU_BANNER_VRAM,>MENU_BANNER_VRAM,MENU_BANNER_VRAM>>16	; Destination address
-	dta a(MENU_BANNER_PITCH)			; Destination step y (320 - next row)
-	dta $01								; Destination step x (1)
-	dta a(MENU_BANNER_PITCH-1)			; Width-1  (319 -> 320 bytes/row)
-	dta MENU_BANNER_ROWS-1				; Height-1 (35 -> 36 rows)
-	dta $00								; And mask (0 -> constant source)
-	dta $00								; Xor mask (fill value: $00)
-	dta $00								; Collision and mask
-	dta $00								; Zoom
-	dta $00								; Pattern feature
-	dta $00								; Control (Mode 0 with NEXT bit Cleared)
-
-; The separator is never loaded from disk - it is always this fixed-colour
-; constant-source fill, kicked once from Load_Menu_Banner_Raw.  Dead after
-; boot, so Fill_Pal_Preview_Cmap (view1024.asm) also repurposes it for the
-; P-preview's CRAM_Buffer attribute fills (patching Dest_Adr, Dest_Step_Y0/1,
-; Blt_W0/1, Blt_H, Blt_Xor) rather than spending a 13th BCB - the 12 BCBs in
-; this file already fill the $100-$1FF VBXE VRAM budget (see the memory-map
-; comment at the top of view1024.asm); a 13th BCB overflows BLT_NFO_NAME_
-; CLEAR (the last one) across the $200 boundary into the NTSC_Palette load,
-; corrupting it - this happened once, do not add a new BCB here again
-; without also moving that budget.
+; Constant-source fill for the menu separator row - unused at boot now (the
+; separator is assembly-embedded, see Load_Menu_Sep in init_vbxe.asm), so
+; Fill_Pal_Preview_Cmap (view1024.asm) repurposes it for the P-preview's
+; CRAM_Buffer attribute fills (patching Dest_Adr, Dest_Step_Y0/1, Blt_W0/1,
+; Blt_H, Blt_Xor).  BCB budget: everything in this file must fit $100-$1FF
+; of VBXE VRAM (see the memory-map comment at the top of view1024.asm) - an
+; overflow past $200 runs into the NTSC_Palette load and corrupts it (this
+; happened once).  Removing the old banner blank-fill BCB freed one 21-byte
+; slot; check the .lab before adding another.
 BLT_MENU_SEP_CLEAR
 	dta $00,$00,$00						; Source address (unused - constant source)
 	dta $00,$00							; Source step y (unused)

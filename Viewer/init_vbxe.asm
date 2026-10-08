@@ -1,4 +1,4 @@
-.def	NUM_DOTS						= $04		; 8 stages x 4 = 32 dots, centred in the 38-col box (cols 4-35)
+.def	NUM_DOTS						= $04		; 6 stages x 4 + logo 3+3+2 = 32 dots, centred in the 38-col box (cols 4-35)
 .def	LOAD_DOTS_START					= $CC		; row 5, col 4 - first progress dot
 .def	LOAD_MSG_ROW3					= $79		; row 3, col 1 - stage message (33 chars)
 
@@ -561,33 +561,35 @@ Load_Palette2_Message
 Palette2
 	ins 'vbxe_pal.pal'
 
-; Step $09 - Menu banner palette-demo overlay: assembly-embed the RGB ramps
-; for hardware palettes 1-3 directly into MENU_BANNER_PAL_VRAM (bank $34),
-; at the same $0300/$0600/$0900 slot offsets Apply_Menu_Palettes
-; (view1024.asm) already reads for registers 1/2/3.  Replaces the old
-; D:MENU.PAL disk load - same "select bank, then org+ins" idiom as
-; Load_Palette1/Load_Palette2 above, so the bytes land straight into VBXE
-; RAM as the OS loader streams this .xex in, no runtime copy needed.
+; Step $09 - Menu banner logo: assembly-embed Assets/MENU.RAW (320x36 = 11520
+; bytes, Convertor/make_logo.py --export 15) straight into MENU_BANNER_VRAM -
+; same "select bank, then org+ins" idiom as Load_Palette1/Load_Palette2 above.
+; The 4K MEMAC window can't take it in one go, so it is 3 stages, one per bank
+; ($30/$31/$32 = 4096 + 4096 + 3328 bytes), each naming its chunk on the
+; loading screen.  Their 3+3+2 progress dots replace the old ramp-load and
+; MENU.RAW disk-load stages.  Runs after clear_vbxe, so the
+; boot-time VRAM clear can't wipe it.  The banner's palettes (sets 1-3) have no
+; data at all - Apply_Menu_Palettes (view1024.asm) generates the ramps.
 	org LOAD_ADDRESS + $300
-.proc Load_Menu_Ramps
-	lda #(MENU_BANNER_PAL_VRAM / $1000) | MEMAC_GLOBAL_ENABLE	; Bank $34 VBXE Window Enabled
+.proc Load_Menu_Logo1
+	lda #(MENU_BANNER_BANK + 0) | MEMAC_GLOBAL_ENABLE	; Bank $30 VBXE Window Enabled
 	vbsta VBXE_MA_BSEL
 
-; Print Load_Menu_Ramps_Message - line 3 (y = $79)
+; Print Load_Menu_Logo1_Message - line 3 (y = $79)
 	ldy #$79
 	ldx #$00
-Print_Load_Menu_Ramps_Message_L1
-	lda Load_Menu_Ramps_Message,x
+Print_Load_Menu_Logo1_Message_L1
+	lda Load_Menu_Logo1_Message,x
 	sta (Ptr_Lo),y
 	inx
 	iny
 	cpx #$21							; Copy $21 characters
-	bne Print_Load_Menu_Ramps_Message_L1
+	bne Print_Load_Menu_Logo1_Message_L1
 
-; Update Progress bar - line 5 (y = $CB + (4 * increment #))
+; Update Progress bar - line 5 (3 dots: the 3 logo chunks share 8)
 	ldy Reg1
 	lda #$54							; Screen RAM code for Ctrl+T
-	ldx #NUM_DOTS						; Number of dots to write
+	ldx #3							; Number of dots to write
 Progress_Bar_Loop
 	sta (Ptr_Lo),y
 	iny
@@ -597,28 +599,98 @@ Progress_Bar_Loop
 
 	rts									; Return controll to loader
 
-Load_Menu_Ramps_Message
-	.sb 'Loading menu banner ramps        '
+Load_Menu_Logo1_Message
+	.sb 'Loading menu logo (1 of 3)       '
 
 .endp
-	ini Load_Menu_Ramps
+	ini Load_Menu_Logo1
 
-	org VBXE_WINDOW + $300				; -> MENU_BANNER_PAL_VRAM+$0300 (hw palette register 1 slot)
-Menu_Ramp_Red
-	ins 'Assets/RAMP_RED.PAL'
+	org VBXE_WINDOW					; -> MENU_BANNER_VRAM + $00000
+Menu_Logo_Data1
+	ins 'Assets/MENU.RAW',$0,$1000
 
-	org VBXE_WINDOW + $600				; -> MENU_BANNER_PAL_VRAM+$0600 (hw palette register 2 slot)
-Menu_Ramp_Green
-	ins 'Assets/RAMP_GRN.PAL'
+	org LOAD_ADDRESS + $300
+.proc Load_Menu_Logo2
+	lda #(MENU_BANNER_BANK + 1) | MEMAC_GLOBAL_ENABLE	; Bank $31 VBXE Window Enabled
+	vbsta VBXE_MA_BSEL
 
-	org VBXE_WINDOW + $900				; -> MENU_BANNER_PAL_VRAM+$0900 (hw palette register 3 slot)
-Menu_Ramp_Blue
-	ins 'Assets/RAMP_BLU.PAL'
+; Print Load_Menu_Logo2_Message - line 3 (y = $79)
+	ldy #$79
+	ldx #$00
+Print_Load_Menu_Logo2_Message_L1
+	lda Load_Menu_Logo2_Message,x
+	sta (Ptr_Lo),y
+	inx
+	iny
+	cpx #$21							; Copy $21 characters
+	bne Print_Load_Menu_Logo2_Message_L1
+
+; Update Progress bar - line 5 (3 dots: the 3 logo chunks share 8)
+	ldy Reg1
+	lda #$54							; Screen RAM code for Ctrl+T
+	ldx #3							; Number of dots to write
+Progress_Bar_Loop
+	sta (Ptr_Lo),y
+	iny
+	dex
+	bne Progress_Bar_Loop
+	sty Reg1							; Save pointer for progress bar updates
+
+	rts									; Return controll to loader
+
+Load_Menu_Logo2_Message
+	.sb 'Loading menu logo (2 of 3)       '
+
+.endp
+	ini Load_Menu_Logo2
+
+	org VBXE_WINDOW					; -> MENU_BANNER_VRAM + $01000
+Menu_Logo_Data2
+	ins 'Assets/MENU.RAW',$1000,$1000
+
+	org LOAD_ADDRESS + $300
+.proc Load_Menu_Logo3
+	lda #(MENU_BANNER_BANK + 2) | MEMAC_GLOBAL_ENABLE	; Bank $32 VBXE Window Enabled
+	vbsta VBXE_MA_BSEL
+
+; Print Load_Menu_Logo3_Message - line 3 (y = $79)
+	ldy #$79
+	ldx #$00
+Print_Load_Menu_Logo3_Message_L1
+	lda Load_Menu_Logo3_Message,x
+	sta (Ptr_Lo),y
+	inx
+	iny
+	cpx #$21							; Copy $21 characters
+	bne Print_Load_Menu_Logo3_Message_L1
+
+; Update Progress bar - line 5 (2 dots: the 3 logo chunks share 8)
+	ldy Reg1
+	lda #$54							; Screen RAM code for Ctrl+T
+	ldx #2							; Number of dots to write
+Progress_Bar_Loop
+	sta (Ptr_Lo),y
+	iny
+	dex
+	bne Progress_Bar_Loop
+	sty Reg1							; Save pointer for progress bar updates
+
+	rts									; Return controll to loader
+
+Load_Menu_Logo3_Message
+	.sb 'Loading menu logo (3 of 3)       '
+
+.endp
+	ini Load_Menu_Logo3
+
+	org VBXE_WINDOW					; -> MENU_BANNER_VRAM + $02000
+Menu_Logo_Data3
+	ins 'Assets/MENU.RAW',$2000,$D00
 
 ; Step $0A - Menu separator row: assembly-embed the 160-byte pattern table
 ; (Assets/MENU_SEP.RAW, built by Convertor/make_logo.py --export-sep) directly
 ; into MENU_SEP_VRAM (bank $33) - same "select bank, then org+ins" idiom as
-; Load_Menu_Ramps.  Loaded once here and never written again; all three
+; Load_Menu_Logo1-3.  Loaded once here and never written again; all three
 ; separator rows of XDL_MainMenu point at it.  No message / progress dots -
 ; this is a tiny load, part of the menu ramps stage.
 	org LOAD_ADDRESS + $300

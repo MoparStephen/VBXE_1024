@@ -78,6 +78,7 @@
 .def	UI_PEN_HELP		= $59			; help page text     : hue $B teal-green, luma 2
 .def	UI_PEN_HELPHEAD	= $5D			; help section name  : hue $B teal-green, luma 10
 .def	UI_PEN_HELPKEY	= $5A			; help key column    : hue $B teal-green, luma 4 (one step over UI_PEN_HELP)
+.def	UI_PEN_HELPNAV	= $5B			; help Section 2 keys: hue $B teal-green, luma 6 (one step over UI_PEN_HELPKEY)
 .def	HELP_PAGES		= 3				; Help_Text_1..3 (Help_Page_Lo/Hi)
 .def	HELP_VISROWS	= TEXT_MAIN_ROWS-1	; help section rows visible at once (rows 1-19)
 
@@ -2939,25 +2940,25 @@ Help_Text_1
 
 Help_Text_2
 	dta TXT_PEN,UI_PEN_HELPHEAD,c'Main Menu Navigation:',0
-	dta TXT_PEN,UI_PEN_HELPKEY,$18,$19,$1B,$1A,c'  ',TXT_PEN,UI_PEN_HELP,c'Move the selector (item will be shown in a brighter colour)',0
-	dta TXT_PEN,UI_PEN_HELPKEY,c'Enter ',TXT_PEN,UI_PEN_HELP,c'Make a selection (scan Subdirectory or Open image)',0
+	dta TXT_PEN,UI_PEN_HELPNAV,$18,$19,$1B,$1A,c'  ',TXT_PEN,UI_PEN_HELP,c'Move the selector (item will be shown in a brighter colour)',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'Enter ',TXT_PEN,UI_PEN_HELP,c'Make a selection (scan Subdirectory or Open image)',0
 	dta 0
-	dta TXT_PEN,UI_PEN_HELPKEY,c'S     ',TXT_PEN,UI_PEN_HELP,c'Start a slideshow starting from the selected image',0
-	dta TXT_PEN,UI_PEN_HELPKEY,c'< >   ',TXT_PEN,UI_PEN_HELP,c'Set the display time for each image from 1 to 30 seconds',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'S     ',TXT_PEN,UI_PEN_HELP,c'Start a slideshow starting from the selected image',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'< >   ',TXT_PEN,UI_PEN_HELP,c'Set the display time for each image from 1 to 30 seconds',0
 	dta 0
-	dta TXT_PEN,UI_PEN_HELPKEY,c'D     ',TXT_PEN,UI_PEN_HELP,c'Bring up the Drive Selector',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'D     ',TXT_PEN,UI_PEN_HELP,c'Bring up the Drive Selector',0
 	dta c'      D: is the directory from which this program launches, not D1:',0
 	dta 0
-	dta TXT_PEN,UI_PEN_HELPKEY,c'P     ',TXT_PEN,UI_PEN_HELP,c'Display the 4 256 colour palettes of the highlighted image',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'P     ',TXT_PEN,UI_PEN_HELP,c'Display the 4 256 colour palettes of the highlighted image',0
 	dta c'      If no image is highlighted, the 4 palettes used by the menu will be shown',0
 	dta c'      Top row displays P0 and P1 while the bottom row displays P2 and P3',0
 	dta 0
-	dta TXT_PEN,UI_PEN_HELPKEY,c'I     ',TXT_PEN,UI_PEN_HELP,c'Display the conversion report for the highlighted image',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'I     ',TXT_PEN,UI_PEN_HELP,c'Display the conversion report for the highlighted image',0
 	dta c'      Jump to Section 3 of this Help screen for more details on this report',0
 	dta 0
-	dta TXT_PEN,UI_PEN_HELPKEY,c'F     ',TXT_PEN,UI_PEN_HELP,c'Switch between the CGA font and the Atari font',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'F     ',TXT_PEN,UI_PEN_HELP,c'Switch between the CGA font and the Atari font',0
 	dta 0
-	dta TXT_PEN,UI_PEN_HELPKEY,c'Q     ',TXT_PEN,UI_PEN_HELP,c'Display the exit confirmation dialog',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'Q     ',TXT_PEN,UI_PEN_HELP,c'Display the exit confirmation dialog',0
 	dta c'      Y quits the program and returns to DOS',0
 	dta c'      N or ESC closes the dialog',0
 	dta $FF

@@ -20,7 +20,9 @@ Outputs (Viewer/Assets/Logo/):
   logo_<n>_<name>_x4.png         4x nearest-neighbour preview
   logo_sheet.png                 every concept at 3x inside a 320-wide banner mock-up
 
-  --export N                     also write MENU.RAW (320x36) for concept N; no
+  --export N                     also write Viewer/Assets/MENU.RAW (320x36) for
+                                 concept N - init_vbxe.asm assembly-embeds it
+                                 into the .xex (Load_Menu_Logo1-3); no
                                  MENU.MAP - the banner's attribute map is zeroed
                                  at boot, i.e. palette 0 everywhere
                                  for concept N
@@ -72,8 +74,12 @@ def idx(hue, luma):
     return (128 if luma & 1 else 0) + hue * 8 + (luma >> 1)
 
 
-def load_ramp(name):
-    return np.frombuffer(open(os.path.join(ASSETS, name), "rb").read(), np.uint8).reshape(256, 3)
+def ramp_pal(channel):
+    """Palette set 1/2/3 (channel 0/1/2): colour i = i in that one component -
+    the same ramp Apply_Menu_Palettes (view1024.asm) generates at runtime."""
+    pal = np.zeros((256, 3), np.uint8)
+    pal[:, channel] = np.arange(256)
+    return pal
 
 
 # --- fonts / masks ---------------------------------------------------------------
@@ -457,13 +463,13 @@ def c13_m7_final():
 
 
 def c14_m7_final_kern():
-    """The menu header logo (exported to D:MENU.RAW): concept 13 with 'BXE'
+    """The menu header logo (exported to Assets/MENU.RAW): concept 13 with 'BXE'
     moved one block left - mosaic column 7 (blank, between V and B) removed."""
     return m7_variant(stretch=False, outline=False, final=True, drop_cols=(7,))
 
 
 def c15_m7_final_x():
-    """The menu header logo (exported to D:MENU.RAW): concept 14 with the X
+    """The menu header logo (exported to Assets/MENU.RAW): concept 14 with the X
     made top/bottom symmetrical - its glyph rows re-stacked as 1,2,3,4,3,2,1."""
     return m7_variant(stretch=False, outline=False, final=True, drop_cols=(7,),
                       x_rows=(0, 1, 2, 3, 2, 1, 0))
@@ -600,7 +606,7 @@ CONCEPTS = [
 # --- rendering -------------------------------------------------------------------
 def banner_mock(logo_rgb, pal0):
     """320x34 RGB banner: the logo at x 32 plus the edge ramp squares."""
-    pals = [pal0, load_ramp("RAMP_RED.PAL"), load_ramp("RAMP_GRN.PAL"), load_ramp("RAMP_BLU.PAL")]
+    pals = [pal0, ramp_pal(0), ramp_pal(1), ramp_pal(2)]
     ramp = np.arange(256, dtype=np.uint8).reshape(16, 16)
     img = np.zeros((BANNER_H, BANNER_W, 3), np.uint8)
     img[:, LOGO_X:LOGO_X + LOGO_W] = logo_rgb
@@ -629,16 +635,18 @@ def palette_swatch(pal0):
     return img
 
 
-def export(logo, out_dir):
+def export(logo):
     raw = np.zeros((BANNER_ROWS, BANNER_W), np.uint8)
     raw[:LOGO_H, LOGO_X:LOGO_X + LOGO_W] = logo
-    raw.tofile(os.path.join(out_dir, "MENU.RAW"))
+    path = os.path.join(ASSETS, "MENU.RAW")
+    raw.tofile(path)
+    return path
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", default=OUT_DIR)
-    ap.add_argument("--export", type=int, metavar="N", help="write MENU.RAW for concept N (1-based)")
+    ap.add_argument("--export", type=int, metavar="N", help="write Viewer/Assets/MENU.RAW for concept N (1-based)")
     ap.add_argument("--export-sep", choices=SEP_STYLES, metavar="STYLE",
                     help="write Viewer/Assets/MENU_SEP.RAW (%s)" % "|".join(SEP_STYLES))
     args = ap.parse_args()
@@ -689,8 +697,8 @@ def main():
 
     if args.export:
         name, fn = CONCEPTS[args.export - 1]
-        export(fn(), args.out)
-        print(f"exported MENU.RAW for {args.export}. {name}")
+        path = export(fn())
+        print(f"exported {path} for {args.export}. {name}")
 
     if args.export_sep:
         path = os.path.join(ASSETS, "MENU_SEP.RAW")

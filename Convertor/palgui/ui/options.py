@@ -37,7 +37,7 @@ from ..settings import (CELL_FIXED, DITHER_DIFFUSION, DITHER_ORDERED,
                         FILTERS, FITS, PALETTES_FIXED, RESIZE_FIXED,
                         SLOTS_FIXED, Settings)
 from ..imageslst import NAME_CAP as DESC_CAP
-from . import theme
+from . import lastdir, theme
 
 #: The four fixed flags, said once where their controls used to be.
 FIXED_SIZE_TEXT = '%s   (fixed by the viewer)' % RESIZE_FIXED
@@ -492,19 +492,23 @@ class OptionsPanel(QWidget):
 
     # --- browsing --------------------------------------------------------------------
     def _browse_input(self):
-        start = os.path.dirname(self.input.text()) or _convertor_dir()
+        start = lastdir.get('image',
+                            os.path.dirname(self.input.text())
+                            or _convertor_dir())
         path, _ = QFileDialog.getOpenFileName(
             self, 'Open image', start,
             'Images (*.png *.bmp *.jpg *.jpeg *.gif *.tif *.tiff *.webp '
             '*.tga *.pcx *.ppm);;All files (*)')
         if path:
+            lastdir.remember('image', path)
             self.input.setText(path)
             self._input_edited()
 
     def _browse_out(self):
-        start = self.out.text() or _convertor_dir()
+        start = lastdir.get('output', self.out.text() or _convertor_dir())
         path = QFileDialog.getExistingDirectory(self, 'Output directory', start)
         if path:
+            lastdir.remember('output', path)
             self.out.setText(path)
             self._touch()
 

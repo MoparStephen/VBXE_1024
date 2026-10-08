@@ -116,12 +116,14 @@ class ReviewPane(QWidget):
         return b
 
     # --- contents ------------------------------------------------------------
-    def load(self, directory, select=None):
+    def load(self, directory, select=None, at_end=False):
         """Read a folder.  Returns how many pairs were found.
 
         SELECTS THE FIRST ROW, which emits `selected` and therefore puts a
         picture on screen.  Loading a folder and being shown an empty pane
         until you happen to click something is a feature that looks broken.
+        `at_end` selects the LAST row instead - what Delete marked... wants,
+        since the newest previews are the ones still being worked on.
 
         UNLESS `select` NAMES A PNG: then that row is selected QUIETLY.  That
         is the snapshot a Preview just wrote, whose picture and settings are
@@ -141,7 +143,9 @@ class ReviewPane(QWidget):
                     self.table.scrollToItem(self.table.item(r, 0))
                     break
         elif self.shots:
-            self.table.selectRow(0)
+            r = len(self.shots) - 1 if at_end else 0
+            self.table.selectRow(r)
+            self.table.scrollToItem(self.table.item(r, 0))
         return len(self.shots)
 
     def clear(self):
@@ -263,7 +267,7 @@ class ReviewPane(QWidget):
             return
         removed, errors = review.delete(doomed)
         if self._dir:
-            self.load(self._dir)
+            self.load(self._dir, at_end=True)
         else:
             self.refresh()
         if errors:

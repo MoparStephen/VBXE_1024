@@ -45,11 +45,12 @@ from .statspane import StatsPane
 from .worker import Worker
 
 
-#: QSettings scope for the remembered window layout.  Nothing else is stored -
-#: presets and queues are files in the repo, deliberately, so they can be read
-#: and committed; this is only where the furniture was left.
-ORG = 'VBXE'
-APP = 'VBXE PAL Studio'
+#: QSettings scope (ORG/APP live in ui/lastdir.py) for the remembered window
+#: layout, a couple of preferences and each file dialog's last folder.  Nothing
+#: else is stored - presets and queues are files in the repo, deliberately, so
+#: they can be read and committed; this is only where the furniture was left.
+from . import lastdir
+from .lastdir import APP, ORG
 
 #: Bumped whenever the set of docks changes.  restoreState matches docks by
 #: objectName, and a blob written before a panel existed does not mention it -
@@ -370,6 +371,9 @@ class MainWindow(QMainWindow):
         tb.addWidget(self.presets)
         self._act(tb, 'Save preset...', '', self._preset_save)
         self._act(tb, 'Delete preset', '', self._preset_delete)
+        self._act(tb, 'Reset settings', '', self._settings_reset,
+                  'Put every option back to its initial default - the image, '
+                  'output folder, name and description stay as they are')
 
     # --- the source image ------------------------------------------------------
     def _load_source(self, path, keep_result=False):
@@ -681,6 +685,11 @@ class MainWindow(QMainWindow):
         presets.delete(name)
         self._reload_presets()
 
+    def _settings_reset(self):
+        self.options.from_settings(presets.initial(onto=self.options.to_settings()))
+        self.presets.setCurrentIndex(0)
+        self._say('settings reset to their initial defaults - press Preview')
+
     # --- the queue ----------------------------------------------------------------
     def _job_add(self):
         s = self.options.to_settings()
@@ -692,11 +701,14 @@ class MainWindow(QMainWindow):
 
     def _job_add_files(self):
         base = self.options.to_settings()
-        start = os.path.dirname(base.input) or runner.CONVERTOR
+        start = lastdir.get('image',
+                            os.path.dirname(base.input) or runner.CONVERTOR)
         paths, _ = QFileDialog.getOpenFileNames(
             self, 'Queue images', start,
             'Images (*.png *.bmp *.jpg *.jpeg *.gif *.tif *.tiff *.webp '
             '*.tga *.pcx *.ppm);;All files (*)')
+        if paths:
+            lastdir.remember('image', paths[0])
         for p in paths:
             s = base.clone()
             s.input = p
@@ -729,13 +741,15 @@ class MainWindow(QMainWindow):
             self._say('the queue is empty - nothing to retarget', theme.WARN)
             return
         base = self.options.to_settings()
-        start = os.path.dirname(base.input) or runner.CONVERTOR
+        start = lastdir.get('image',
+                            os.path.dirname(base.input) or runner.CONVERTOR)
         path, _ = QFileDialog.getOpenFileName(
             self, 'Point every job at this image', start,
             'Images (*.png *.bmp *.jpg *.jpeg *.gif *.tif *.tiff *.webp '
             '*.tga *.pcx *.ppm);;All files (*)')
         if not path:
             return
+        lastdir.remember('image', path)
         moved = self.queue.retarget(path)
         self.joblist.refresh(keep=self.joblist.current_row())
         self._say('%d job%s now point at %s - results cleared, they described '
@@ -851,9 +865,10 @@ class MainWindow(QMainWindow):
         if not os.path.isdir(start):
             start = runner.resolve(self.options.to_settings().out)
         where = QFileDialog.getExistingDirectory(
-            self, 'Open a previews folder', start)
+            self, 'Open a previews folder', lastdir.get('previews', start))
         if not where:
             return
+        lastdir.remember('previews', where)
         found = self.review.load(where)
         self.d_review.show()
         self.d_review.raise_()
@@ -900,11 +915,13 @@ class MainWindow(QMainWindow):
         if not os.path.isdir(start):
             start = runner.resolve(self.options.to_settings().out)
         path, _ = QFileDialog.getOpenFileName(
-            self, 'Load settings from a conversion or preview', start,
+            self, 'Load settings from a conversion or preview',
+            lastdir.get('settings', start),
             'Summaries and stats (*_summary.txt Preview_*.txt *_stats.json);;'
             'All files (*)')
         if not path:
             return
+        lastdir.remember('settings', path)
         try:
             s, how = recover.settings_from_file(path)
         except (OSError, ValueError) as exc:    # noqa: BLE001 - shown
@@ -928,12 +945,16 @@ class MainWindow(QMainWindow):
         if not os.path.isdir(start):
             start = str(runner.CONVERTOR)
         root = QFileDialog.getExistingDirectory(
-            self, 'Folder of conversions (one subfolder per image)', start)
+            self, 'Folder of conversions (one subfolder per image)',
+            lastdir.get('conversions', start))
         if not root:
             return
+        lastdir.remember('conversions', root)
         search = QFileDialog.getExistingDirectory(
             self, 'Where are the source images now?  (Cancel to use only '
-            'the recorded paths)', os.path.dirname(root))
+            'the recorded paths)',
+            lastdir.get('sources', os.path.dirname(root)))
+        lastdir.remember('sources', search)
         if len(self.queue) and QMessageBox.question(
                 self, 'Replace the queue?',
                 'The queue holds %d job%s.  Replace them with the '
@@ -1111,7 +1132,9 @@ class MainWindow(QMainWindow):
 
     def _queue_save(self):
         path, _ = QFileDialog.getSaveFileName(
-            self, 'Save queue', runner.CONVERTOR, 'Queue (*.json)')
+            self, 'Save queue', lastdir.get('queue', str(runner.CONVERTOR)),
+            'Queue (*.json)')
+        lastdir.remember('queue', path)
         if path:
             # Typing `mytests` otherwise writes a file that the Load dialog,
             # filtering on *.json, then refuses to show you.
@@ -1124,9 +1147,11 @@ class MainWindow(QMainWindow):
 
     def _queue_load(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, 'Load queue', runner.CONVERTOR, 'Queue (*.json)')
+            self, 'Load queue', lastdir.get('queue', str(runner.CONVERTOR)),
+            'Queue (*.json)')
         if not path:
             return
+        lastdir.remember('queue', path)
         try:
             q = jobs.Queue.load(path)
         except (OSError, ValueError) as exc:    # noqa: BLE001 - shown below
@@ -1250,9 +1275,11 @@ class MainWindow(QMainWindow):
         if not os.path.isdir(start):
             start = str(runner.CONVERTOR)
         root = QFileDialog.getExistingDirectory(
-            self, 'Folder of conversions (one subfolder per image)', start)
+            self, 'Folder of conversions (one subfolder per image)',
+            lastdir.get('conversions', start))
         if not root:
             return
+        lastdir.remember('conversions', root)
         folders = describe.folders(root)
         if not folders:
             self._say('no conversions under %s' % root, theme.WARN)
@@ -1330,13 +1357,17 @@ class MainWindow(QMainWindow):
         if not os.path.isdir(start):
             start = str(runner.CONVERTOR)
         root = QFileDialog.getExistingDirectory(
-            self, 'Folder to scan for .v1k images', start)
+            self, 'Folder to scan for .v1k images',
+            lastdir.get('conversions', start))
         if not root:
             return
+        lastdir.remember('conversions', root)
         out = QFileDialog.getExistingDirectory(
-            self, 'Atari staging folder to copy them into', root)
+            self, 'Atari staging folder to copy them into',
+            lastdir.get('staging', root))
         if not out:
             return
+        lastdir.remember('staging', out)
         try:
             items, manifest = gather.run(root, out)
         except Exception as exc:                      # noqa: BLE001 - shown

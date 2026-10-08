@@ -93,7 +93,21 @@ def load(name, onto=None):
     options panel wants to diff what changed to decide what to re-enable.
     """
     with open(path_for(name)) as f:
-        d = json.load(f)
+        return _apply(json.load(f), onto)
+
+
+def initial(onto=None):
+    """Every recipe field back to its Settings default - Reset settings.
+
+    The paths, name and description survive exactly as they do for load():
+    resetting the recipe must not change which image you are on.  Built from
+    Settings.DEFAULTS rather than kept as a shipped "Initial" preset, so it can
+    not be deleted, edited, or left behind when a default changes.
+    """
+    return _apply(dict(Settings.DEFAULTS), onto)
+
+
+def _apply(d, onto):
     base = (onto.clone() if onto is not None else Settings())
     for field, _default in Settings.DEFAULTS:
         if field in NOT_A_RECIPE:
