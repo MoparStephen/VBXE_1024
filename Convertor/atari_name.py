@@ -40,6 +40,22 @@ def is_short_name(s):
     return bool(_GOOD.match(s or ""))
 
 
+def problem(s):
+    """'' if `s` is a legal base name, else one sentence saying which rule it
+    breaks - for an editor that has to say why it will not take a name."""
+    if not s:
+        return "the name is empty"
+    bad = sorted(set(_BAD.findall(s)))
+    if bad:
+        return ("only A-Z, 0-9 and _ are allowed (not %s)"
+                % " ".join(repr(c) for c in bad))
+    if len(s) > MAX_LEN:
+        return "at most %d characters (this is %d)" % (MAX_LEN, len(s))
+    if s[0].isdigit():
+        return "it cannot start with a digit"
+    return ""
+
+
 def unique_name(name, taken):
     """`name`, or a variant of it not in `taken`: the tail is overwritten with
     a counter, CHARGER0 -> CHARGE01, CHARGE02 ... (three digits after 99).

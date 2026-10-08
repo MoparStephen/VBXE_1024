@@ -241,6 +241,25 @@ def _selftest(argv):
           % ('fixed model', RESIZE_FIXED, CELL_FIXED, PALETTES_FIXED,
              SLOTS_FIXED))
 
+    # THE ATARI NAME: shown filled in, sent as '' while untouched, and a
+    # broken one refuses to convert or queue.
+    auto = w.options.name.text()
+    if auto != w.options.auto_name() or not auto \
+            or w.options.to_settings().name != '':
+        sys.exit('selftest FAILED: Atari name field shows %r, settings %r'
+                 % (auto, w.options.to_settings().name))
+    w.options.name.setText('9BAD')
+    w.options._sync_name_note()
+    queued = len(w.queue)
+    w._job_add()
+    if not w.options.name_problem() or len(w.queue) != queued \
+            or w._check_input(w.options.to_settings()):
+        sys.exit('selftest FAILED: an illegal Atari name was accepted')
+    w.options.from_settings(Settings(input=sample))
+    if w.options.name_problem():
+        sys.exit('selftest FAILED: reloading did not restore the auto name')
+    print('  %-16s ok  %s, illegal names refused' % ('atari name', auto))
+
     # THE ZOOM BOX MUST AGREE WITH THE VIEW.  It used to be write-only - the
     # user set it and nothing ever set it back - so a wheel-zoom, or a drag at
     # fit silently promoting to 1:1, left it stating a zoom that was no longer

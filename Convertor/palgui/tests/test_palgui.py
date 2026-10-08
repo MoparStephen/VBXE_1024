@@ -1558,6 +1558,12 @@ class TestAtariName(unittest.TestCase):
         for bad in ('img0', '0IMG', 'TOOLONGNM', 'A-B', ''):
             self.assertFalse(atari_name.is_short_name(bad), bad)
 
+    def test_problem_agrees_with_is_short_name(self):
+        for s in ('IMG0', '_X', 'CHARGER0', 'img0', '0IMG', 'TOOLONGNM',
+                  'A-B', 'A B', ''):
+            self.assertEqual(atari_name.problem(s) == '',
+                             atari_name.is_short_name(s), s)
+
     def test_unique_name(self):
         taken = {'CHARGER0'}
         self.assertEqual(atari_name.unique_name('CHARGER0', taken), 'CHARGE01')

@@ -58,6 +58,14 @@ class Shot(object):
     def dither(self):
         return self.settings.dither if self.settings else '?'
 
+    def strength(self):
+        """The dither strength, or '-' when there was no dither to scale."""
+        if not self.settings:
+            return '?'
+        if self.settings.dither == 'none':
+            return '-'
+        return '%.2f' % float(self.settings.dither_strength)
+
     def bias(self):
         return ('%.2f' % self.settings.effective_bias()
                 if self.settings else '?')

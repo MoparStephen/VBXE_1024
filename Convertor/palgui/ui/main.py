@@ -463,6 +463,14 @@ class MainWindow(QMainWindow):
         if not os.path.isfile(s.input):
             self._say('%s does not exist' % s.input, theme.ERR)
             return False
+        return self._check_name()
+
+    def _check_name(self):
+        """Refuse to write anything under a name the Atari cannot load."""
+        why = self.options.name_problem()
+        if why:
+            self._say('fix the Atari name first - %s' % why, theme.ERR)
+            return False
         return True
 
     def _run_started(self, settings, out, name):
@@ -696,6 +704,8 @@ class MainWindow(QMainWindow):
         if not s.input:
             self._say('choose an image before queueing it', theme.WARN)
             return
+        if not self._check_name():
+            return
         self.queue.add(s)
         self.joblist.refresh(keep=len(self.queue) - 1)
 
@@ -723,7 +733,7 @@ class MainWindow(QMainWindow):
                       % (len(paths), '' if len(paths) == 1 else 's'))
 
     def _job_update(self, row):
-        if not (0 <= row < len(self.queue)):
+        if not (0 <= row < len(self.queue)) or not self._check_name():
             return
         job = self.queue[row]
         job.settings = self.options.to_settings()

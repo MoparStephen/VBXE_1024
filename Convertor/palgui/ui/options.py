@@ -37,6 +37,7 @@ from ..settings import (CELL_FIXED, DITHER_DIFFUSION, DITHER_ORDERED,
                         FILTERS, FITS, PALETTES_FIXED, RESIZE_FIXED,
                         SLOTS_FIXED, Settings)
 from ..imageslst import NAME_CAP as DESC_CAP
+from ..imageslst import atari_name
 from . import lastdir, theme
 
 #: The four fixed flags, said once where their controls used to be.
@@ -149,6 +150,33 @@ class OptionsPanel(QWidget):
         w.setLayout(row)
         f.addRow('image', w)
         self.input.editingFinished.connect(self._input_edited)
+
+        # THE NAME IS SHOWN, NOT IMPLIED.  palettize4 reduces whatever it is
+        # given to an 8-char Atari name, so the field starts on exactly that
+        # reduction - the name the files will really have - and a new image
+        # resets it, like the description.  Typing is upper-cased as you go
+        # (SDX is case-blind); anything else illegal is refused, not silently
+        # "fixed", so the name on the disk is the one you typed.
+        self.name = QLineEdit()
+        self.name.setToolTip(
+            'The 8-character Atari name every output file gets: NAME.V1K (the '
+            'single file the viewer loads), NAME.NFO, NAME.raw, NAME0-3.pal, '
+            'NAME.map and the preview/report sidecars.\n\n'
+            'Filled in from the image\'s file name; change it if you want '
+            'something else.  Rules: A-Z, 0-9 and _ only, at most %d '
+            'characters, not starting with a digit.  A name that breaks them '
+            'is not converted or queued until it is fixed.'
+            % atari_name.MAX_LEN)
+        self.name.textEdited.connect(self._name_edited)
+        self.name.editingFinished.connect(self._touch)
+        f.addRow('Atari name', self.name)
+
+        self.name_note = QLabel()
+        self.name_note.setWordWrap(True)
+        self.name_note.setFont(theme.label_font(8))
+        self.name_note.setStyleSheet(theme.caption_style(theme.ERR))
+        self.name_note.hide()
+        f.addRow('', self.name_note)
 
         self.resize = QLabel(FIXED_SIZE_TEXT)
         self.resize.setStyleSheet(theme.caption_style())
@@ -429,18 +457,6 @@ class OptionsPanel(QWidget):
         w.setLayout(row)
         f.addRow('directory', w)
 
-        self.name = QLineEdit()
-        self.name.setPlaceholderText('(input file name)')
-        self.name.setToolTip(
-            'Base name for every output file: NAME.v1k (the single file the '
-            'viewer loads), NAME.raw, NAME0.pal through NAME3.pal, NAME.pal, '
-            'NAME.map, and the preview/report sidecars.\n\n'
-            'Blank means the input\'s file name without its extension.  Set it '
-            'to img7 and so on when writing straight into the viewer\'s '
-            'directory.')
-        self.name.editingFinished.connect(self._touch)
-        f.addRow('base name', self.name)
-
         self.seed = QSpinBox()
         self.seed.setRange(0, 999999)
         self.seed.setToolTip(
@@ -517,6 +533,8 @@ class OptionsPanel(QWidget):
         # quietly ride along onto the next.  The placeholder shows the default.
         if not self._loading:
             self.description.clear()
+            # Same for the name: a new image starts on its own.
+            self.name.setText(self.auto_name())
         self._sync_description_hint()
         self._touch()
         if not self._loading:
@@ -527,12 +545,47 @@ class OptionsPanel(QWidget):
         stem = os.path.splitext(os.path.basename(self.input.text().strip()))[0]
         self.description.setPlaceholderText(stem.rstrip('.')[:DESC_CAP])
 
+    # --- the Atari name ------------------------------------------------------------
+    def auto_name(self, path=None):
+        """The name palettize4 would pick for `path` (default: the input)."""
+        path = (self.input.text() if path is None else path).strip()
+        if not path:
+            return ''
+        return atari_name.short_name(os.path.splitext(os.path.basename(path))[0])
+
+    def name_problem(self):
+        """'' or why the Atari name field will not do.  No image, no problem:
+        an empty panel has nothing to name."""
+        if not self.input.text().strip():
+            return ''
+        return atari_name.problem(self.name.text().strip())
+
+    def _name_edited(self, text):
+        up = text.upper()
+        if up != text:
+            pos = self.name.cursorPosition()
+            self.name.setText(up)
+            self.name.setCursorPosition(pos)
+        self._sync_name_note()
+
+    def _sync_name_note(self):
+        why = self.name_problem()
+        self.name_note.setText('Not a legal Atari name: %s.' % why if why
+                               else '')
+        self.name_note.setVisible(bool(why))
+        self.name.setStyleSheet('border:1px solid %s;' % theme.ERR.name()
+                                if why else '')
+
     # --- reading and writing the Settings ------------------------------------------
     def to_settings(self):
         s = Settings()
         s.input = self.input.text().strip()
         s.out = self.out.text().strip() or 'out'
-        s.name = self.name.text().strip()
+        # The auto name goes back as '' - "let palettize4 choose" - so a
+        # Settings for an untouched panel is the same as it always was, and
+        # Add files.../retarget keep giving each image its own name.
+        name = self.name.text().strip()
+        s.name = '' if name == self.auto_name(s.input) else name
         # The four the viewer fixes are asserted, not read: there is no
         # control to read them from, and a Settings that quietly kept whatever
         # a preset carried would run at a size the viewer cannot show.
@@ -566,7 +619,7 @@ class OptionsPanel(QWidget):
         try:
             self.input.setText(s.input)
             self.out.setText(s.out)
-            self.name.setText(s.name)
+            self.name.setText(s.name.upper() or self.auto_name(s.input))
             # s.cell, s.palettes, s.slots and s.resize are deliberately
             # ignored - see to_settings.  An old preset carrying cell=16 or
             # resize='' loads with everything else it does have and converts.
@@ -622,6 +675,7 @@ class OptionsPanel(QWidget):
         self.coherence.setEnabled(self.max_colors.isChecked()
                                   or self.color_bias.value() > 0.0)
         self.dither_strength.setEnabled(self.dither.currentText() != 'none')
+        self._sync_name_note()
 
         s = self.to_settings()
         self.budget.setText('%d palettes x %d usable = %d colours'
@@ -629,10 +683,11 @@ class OptionsPanel(QWidget):
                                s.colour_budget()))
         if self.colors_auto.isChecked():
             self.colors.setValue(min(self.colors.maximum(), s.colour_budget()))
-        base = s.effective_name() or 'NAME'
+        folder = s.effective_name() or 'NAME'
+        base = self.name.text().strip() or 'NAME'
         self.files.setText('writes %s/%s.v1k, %s.raw, %s0-%d.pal, %s.pal, '
                            '%s.map + preview / report / stats'
-                           % (base, base, base, base, s.palettes - 1, base,
+                           % (folder, base, base, base, s.palettes - 1, base,
                               base))
 
     # --- the inert-dither warning ------------------------------------------------------

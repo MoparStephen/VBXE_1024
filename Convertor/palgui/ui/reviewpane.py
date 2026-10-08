@@ -35,7 +35,7 @@ from . import theme
 #: `del` is a tick box: ticking MARKS a row, Delete marked... acts on the
 #: marks.  Not the selection, because selecting a row loads it - a delete that
 #: followed the selection would target whatever you last looked at.
-COLUMNS = ('del', 'preview', 'dither', 'bias', 'result')
+COLUMNS = ('del', 'preview', 'dither', 'strength', 'bias', 'result')
 
 
 class ReviewPane(QWidget):
@@ -203,7 +203,8 @@ class ReviewPane(QWidget):
         mark.setCheckState(Qt.Unchecked)
         mark.setToolTip('Tick to mark for Delete marked...')
         self.table.setItem(r, 0, mark)
-        values = (shot.label(), shot.dither(), shot.bias(), shot.result())
+        values = (shot.label(), shot.dither(), shot.strength(), shot.bias(),
+                  shot.result())
         for c, v in enumerate(values, 1):
             item = QTableWidgetItem(str(v))
             if c == len(values) and not shot.stats:

@@ -694,8 +694,8 @@ Source: equates.asm
    347 				; Temp debug stuff
    348 = 0010			.def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
    349 = 0012			.def	V_1								= $12	; 2 (Screen code used for Version in loading screen)
-   350 = 0012			.def	V_2								= $12	; 2 (Screen code used for Version in loading screen)
-   351 = 0063			.def	V_3								= $63	; 61=a (Screen code used for Version in loading screen)
+   350 = 0013			.def	V_2								= $13	; 3 (Screen code used for Version in loading screen)
+   351 = 0000			.def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
    352
    353 				;-----------------------------------------------------------------------------
    354 				; VBXE Helpers
@@ -8235,11 +8235,11 @@ Macro: DTA_SCR [Source: ui.asm]
 Source: ui.asm
   2897 6102								DTA_SCR V_2
 Macro: DTA_SCR [Source: ui.asm]
-     2 6102 32				dta [V_2]+$20						; $00-$3F: space, punctuation, digits, A-Z
+     2 6102 33				dta [V_2]+$20						; $00-$3F: space, punctuation, digits, A-Z
 Source: ui.asm
   2898 6103								DTA_SCR V_3
 Macro: DTA_SCR [Source: ui.asm]
-     6 6103 63				dta [V_3]							; $60-$7F: a-z - already ASCII
+     2 6103 20				dta [V_3]+$20						; $00-$3F: space, punctuation, digits, A-Z
 Source: ui.asm
   2899 6104 20 48 65 6C 70						dta c' Help'
   2900 6109 01 3D 3D 3D 3D 01 + 					dta TXT_PEN,$3D,c'===',TXT_PEN,$3C,c'=====',TXT_PEN,$3B,c'====='
