@@ -302,7 +302,7 @@ class InputFinder(object):
     The recorded path first (relative ones against Convertor/, as runner
     resolves --out), then the output folder itself, then a filename match
     anywhere under the search folders - sources get moved, and
-    "C:/.../Convertor/TeaBag.png" now living in "Images To Convert" is the
+    "C:/.../Convertor/MoreYouKnow.png" now living in "Images To Convert" is the
     normal case, not the odd one.
     """
 
