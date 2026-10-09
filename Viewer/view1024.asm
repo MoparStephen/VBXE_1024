@@ -28,7 +28,7 @@
 ;                      x 320 bytes, attribute-mapped, static logo/banner for the
 ;                      Main Menu + Info XDL's graphics band; assembly-embedded
 ;                      from Assets/MENU.RAW - see Load_Menu_Logo1-3, init_vbxe.asm)
-;    Menu separator  = $33000 - $3309F (MENU_SEP_VRAM: 1 row x 160 bytes, lo-res
+;    Menu separator  = $34000 - $3309F (MENU_SEP_VRAM: 1 row x 160 bytes, lo-res
 ;                      no-attribute-map divider line, shared by all three separator
 ;                      bands of the menu/info XDL; a pattern table loaded at load
 ;                      time from Assets/MENU_SEP.RAW - see Load_Menu_Sep)
@@ -217,7 +217,7 @@
 .def	MENU_BANNER_ROWS				= 36
 .def	MENU_BANNER_PITCH				= 320		; = $140, matches XDL_Image_* OVSTEP
 .def	MENU_BANNER_BYTES				= MENU_BANNER_ROWS * MENU_BANNER_PITCH	; = 11520 = $2D00
-.def	MENU_SEP_VRAM					= $33000	; next free bank after the banner (3 banks)
+.def	MENU_SEP_VRAM					= $34000	; next free bank after the banner (3 banks)
 .def	MENU_SEP_PITCH					= 160		; 160-byte pattern table, Palette 0 (modified) indices -
 														; Assets/MENU_SEP.RAW, loaded once by Load_Menu_Sep (init_vbxe.asm)
 
@@ -347,14 +347,14 @@
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $12	; 2 (Screen code used for Version in loading screen)
-.def	V_2								= $13	; 3 (Screen code used for Version in loading screen)
+.def	V_2								= $14	; 4 (Screen code used for Version in loading screen)
 .def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
 ; VBXE Helpers
 ;-----------------------------------------------------------------------------
 	org LOAD_ADDRESS
-.pages 3								; DO NOT go past $3300
+.pages 4								; DO NOT go past $3400
 	icl 'fileio.lib'
 	icl 'vbxe_min.asm'					; Use my VBXE_SetPalette2 to load linear palete
 
@@ -371,8 +371,25 @@ Cleanup_Exit
 	vbsta VBXE_MA_BSEL
 	vbsta VBXE_VIDEO_CONTROL			; Disable XDL
 
+	lda SDMCTL_OLD
+	sta SDMCTL							; Restore SDMCTL
+
+	jsr SDX_Console_Restore				; Re-enable the SDX soft console if it was up at startup
+
 	lda LMARGIN_OLD
 	sta LMARGIN							; Restore LMARGIN
+
+	lda CRSINH_OLD
+	sta CRSINH							; Restore Cursor
+
+	lda COLOR1_OLD						; Restore the editor colours Step_1 changed
+	sta COLOR1
+
+	lda COLOR2_OLD
+	sta COLOR2
+
+	lda COLOR4_OLD
+	sta COLOR4
 
 	lda DOSINIL_OLD
 	sta DOSINI
@@ -381,11 +398,6 @@ Cleanup_Exit
 
 	lda #$FF
 	sta CH								; Clear last key pressed
-
-	lda SDMCTL_OLD
-	sta SDMCTL							; Restore SDMCTL
-
-	jsr SDX_Console_Restore				; Re-enable the SDX soft console if it was up at startup
 
 	jmp (DOSVEC)						; Return to DOS
 
@@ -441,7 +453,7 @@ Restore_Palette0_Done
 ; Multi-stage loader & program initialization code begins here
 	icl 'init_vbxe.asm'
 
-	org LOAD_ADDRESS + $300				; Libraries live above
+	org LOAD_ADDRESS + $400				; Libraries live above
 
 ;-----------------------------------------------------------------------------
 ; Main loop
@@ -1325,16 +1337,8 @@ Read_Key_Done_Ret
 Exit
 ; Restore the OS state Step_1 / Check_RAMTOP changed, BEFORE Cleanup_Exit runs
 ; SDX_Console_Restore (its XIO 32 wants the real RAMTOP back).  Lives here, not
-; in the resident Cleanup_Exit, which is page-fenced below $3300 and full - the
+; in the resident Cleanup_Exit, which is page-fenced below $3400 and full - the
 ; init-time abort paths that jmp straight to Cleanup_Exit simply skip this.
-	lda CRSINH_OLD
-	sta CRSINH							; Restore Cursor
-	lda COLOR1_OLD						; Restore the editor colours Step_1 changed
-	sta COLOR1
-	lda COLOR2_OLD
-	sta COLOR2
-	lda COLOR4_OLD
-	sta COLOR4
 	lda RAMTOP_OLD						; Give the SDX soft console its top-of-RAM back
 	sta RAMTOP
 	sta RAMSIZ

@@ -12,7 +12,7 @@
 ; Initialization
 ;-----------------------------------------------------------------------------
 ; Step $01 - Clear screen and print initial loading screen
-	org LOAD_ADDRESS + $300
+	org LOAD_ADDRESS + $400
 .proc Step_1
 ; Save any values that will be changed so they can be restored on exit
 	lda DOSINI
@@ -71,8 +71,12 @@ PAL_Detected
 	sta Step1_Message + $74
 	lda #$2C							; L
 	sta Step1_Message + $75				; Set text in Row 2 of Step1_Message
-	lda #$00
-	jmp Check_SDX
+	lda #$22							; Dark Red (PAL)
+	sta Reg2
+	lda #$2C							; Bright Red (PAL)
+	sta Reg3
+	lda #$00							; Prepare Video_Flag
+	jmp Init_Video
 
 NTSC_Detected
 	lda #$2E							; N
@@ -83,12 +87,16 @@ NTSC_Detected
 	sta Step1_Message + $74
 	lda #$23							; C
 	sta Step1_Message + $75				; Set text in Row 2 of Step1_Message
-	lda #$01
+	lda #$42							; Dark Red (NTSC)
+	sta Reg2
+	lda #$4c							; Bright (NTSC)
+	sta Reg3
+	lda #$01							; Prepare Video_Flag
 
 ; If SpartaDOS X has its 64/80-column soft console up (CON.SYS / CON64.SYS on a
 ; base such as S_VBXE.SYS), drop it to the standard 40-column OS editor. The
 ; original mode is put back by SDX_Console_Restore in Cleanup_Exit.
-Check_SDX
+Init_Video
 	sta Video_Flag						; Save for later
 
 	jsr SDX_Console_Save_And_40
@@ -150,8 +158,48 @@ Step1_Message							; Internal screen codes
 .endp
 	ini Step_1
 
+; Step $01B - Check for SDX and if not bail
+; We do this down here because the code above will handle the screen clear
+; and print the initial loading message regardless of DOS.  We need the screen
+; initialized before we can print any error messages.
+	org LOAD_ADDRESS + $400
+.proc Check_SDX
+	lda $0700
+	cmp #$53							; ASCII S
+	bne SDX_No
+	lda $0701
+	cmp #$44							; ASCII D
+	bne SDX_No
+
+	rts									; Return control to loader
+
+SDX_No
+	ldy Reg2							; Dark Red
+	sty COLOR2							; Set playfield
+	ldy Reg3							; Red
+	sty COLOR1							; Set text
+
+; Print SDX_Not_Found_Message - line 3 (y = $79)
+	ldy #$79
+	ldx #$00
+Print_SDX_Not_Found_L1
+	lda SDX_Not_Found,x
+	sta (Ptr_Lo),y
+	inx
+	iny
+	cpx #$26							; Copy $26 characters
+	bne Print_SDX_Not_Found_L1
+
+	jsr Wait_For_Key_Exit
+	jmp Cleanup_Exit					; Cleanup then return controll to DOS
+
+SDX_Not_Found
+	.byte $01,$00,$33,$24,$38,$00,$2E,$2F,$34,$00,$26,$2F,$35,$2E,$24,$1A,$00,$30,$32,$2F,$30,$25,$32,$00,$24,$2F,$33,$00,$32,$25,$31,$35,$29,$32,$25,$24,$00,$01 ; ! SDX not found: proper DOS required !
+.endp
+	ini Check_SDX
+
 ; Step $02 - Ensure RAMTOP is = $C0 and no BASIC cart/ROM is present
-	org LOAD_ADDRESS + $300
+	org LOAD_ADDRESS + $400
 .proc Check_RAMTOP
 ; Disable BASIC
 	lda #$C0							; Check if RAMTOP is already OK
@@ -192,8 +240,10 @@ Ram_Ok
 	rts
 
 Ram_Not_Ok								; Add your error handling here, there still is a ROM....
-	ldy #$42							; Dark Red
+	ldy Reg2							; Dark Red
 	sty COLOR2							; Set playfield
+	ldy Reg3							; Red
+	sty COLOR1							; Set text
 
 ; Print RAM_Failure_Message - line 3 (y = $79)
 	ldy #$79
@@ -218,8 +268,7 @@ RAM_Failure_Message_L2
 	bne RAM_Failure_Message_L2
 
 	jsr Wait_For_Key_Exit
-
-	jmp WARMSV							; Warm Start
+	jmp Cleanup_Exit					; Cleanup then return controll to DOS
 
 Device_Name
 	dta c'E:', $00
@@ -231,14 +280,16 @@ RAM_Failure_Message_Line2
 	ini Check_RAMTOP
 
 ; Step $03 - Detect the VBXE and print address or Quit if not found
-	org LOAD_ADDRESS + $300
+	org LOAD_ADDRESS + $400
 .proc Detecting_VBXE
 	jsr VBXE_Detect						; VBXE core 1.07 and above detection TODO: This is apparently broken, fix it so D700 works (6/23/2026)
 	bcc VBXE_Found						; If found skip the code below.  X register contains High Nybble of VBXE address
 
 VBXE_Not_Found
-	ldy #$42							; Dark Red
+	ldy Reg2							; Dark Red
 	sty COLOR2							; Set playfield
+	ldy Reg3							; Red
+	sty COLOR1							; Set text
 
 ; Print VBXE_NPresent - line 3 (y = $79)
 	ldy #$79
@@ -308,7 +359,7 @@ VBXE_NPresent
 	ini Detecting_VBXE
 
 ; Step $04 - Clear VBXE RAM
-	org LOAD_ADDRESS + $300
+	org LOAD_ADDRESS + $400
 .proc clear_vbxe
 ; Print Clearing_Message - line 3 (y = $79)
 	ldy #$79
@@ -389,7 +440,7 @@ Clearing_Message
 	ini clear_vbxe
 
 ; Step $05 - Load the XDL
-	org LOAD_ADDRESS + $300
+	org LOAD_ADDRESS + $400
 .proc Load_XDL
 	lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
 	vbsta VBXE_MA_BSEL
@@ -432,7 +483,7 @@ XDL_START
 XDL_Length	equ *-XDL_START
 
 ; Step $06 - Load the BCBs
-	org LOAD_ADDRESS + $300
+	org LOAD_ADDRESS + $400
 .proc Load_BCB
 	lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
 	vbsta VBXE_MA_BSEL
@@ -475,7 +526,7 @@ BCB_START
 BLT_Length	equ *-BCB_START
 
 ; Step $07 - Load VBXE NTSC Palette so we can restore it on exit
-	org LOAD_ADDRESS + $300
+	org LOAD_ADDRESS + $400
 .proc Load_Palette1
 	lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
 	vbsta VBXE_MA_BSEL
@@ -517,7 +568,7 @@ Palette1
 	ins 'vbxe_ntsc.pal'
 
 ; Step $08 - Load VBXE PAL Palette so we can restore it on exit
-	org LOAD_ADDRESS + $300
+	org LOAD_ADDRESS + $400
 .proc Load_Palette2
 	lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
 	vbsta VBXE_MA_BSEL
@@ -570,7 +621,7 @@ Palette2
 ; MENU.RAW disk-load stages.  Runs after clear_vbxe, so the
 ; boot-time VRAM clear can't wipe it.  The banner's palettes (sets 1-3) have no
 ; data at all - Apply_Menu_Palettes (view1024.asm) generates the ramps.
-	org LOAD_ADDRESS + $300
+	org LOAD_ADDRESS + $400
 .proc Load_Menu_Logo1
 	lda #(MENU_BANNER_BANK + 0) | MEMAC_GLOBAL_ENABLE	; Bank $30 VBXE Window Enabled
 	vbsta VBXE_MA_BSEL
@@ -609,7 +660,7 @@ Load_Menu_Logo1_Message
 Menu_Logo_Data1
 	ins 'Assets/MENU.RAW',$0,$1000
 
-	org LOAD_ADDRESS + $300
+	org LOAD_ADDRESS + $400
 .proc Load_Menu_Logo2
 	lda #(MENU_BANNER_BANK + 1) | MEMAC_GLOBAL_ENABLE	; Bank $31 VBXE Window Enabled
 	vbsta VBXE_MA_BSEL
@@ -648,7 +699,7 @@ Load_Menu_Logo2_Message
 Menu_Logo_Data2
 	ins 'Assets/MENU.RAW',$1000,$1000
 
-	org LOAD_ADDRESS + $300
+	org LOAD_ADDRESS + $400
 .proc Load_Menu_Logo3
 	lda #(MENU_BANNER_BANK + 2) | MEMAC_GLOBAL_ENABLE	; Bank $32 VBXE Window Enabled
 	vbsta VBXE_MA_BSEL
@@ -693,7 +744,7 @@ Menu_Logo_Data3
 ; Load_Menu_Logo1-3.  Loaded once here and never written again; all three
 ; separator rows of XDL_MainMenu point at it.  No message / progress dots -
 ; this is a tiny load, part of the menu ramps stage.
-	org LOAD_ADDRESS + $300
+	org LOAD_ADDRESS + $400
 .proc Load_Menu_Sep
 	lda #(MENU_SEP_VRAM / $1000) | MEMAC_GLOBAL_ENABLE	; Bank $33 VBXE Window Enabled
 	vbsta VBXE_MA_BSEL
