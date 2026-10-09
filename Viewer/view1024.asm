@@ -134,7 +134,9 @@
 .var Help_Page			.byte = $4E9	; help screen section 0..2
 .var Help_Top			.byte = $4EA	; help screen: first visible row of the section (scroll)
 .var Help_RowCount		.byte = $4EB	; help screen: rows in the current section (set by Help_Draw)
-;	$4EC to $4FF free
+.var Up_Name			:8 .byte = $4EC	; folder being left by "..", space-padded ($4EC-$4F3)
+.var Up_Idx				.byte = $4F4	; Sel_Find_Up_Name: list index being compared
+;	$4F5 to $4FF free
 .var Dir_Line_Buf		:$28 .byte = $600	; One GET RECORD dir line ($600-$627)
 .var Scan_Path			:$28 .byte = $628	; subdirectory part, ">DIR>DIR>" or empty ($628-$64F)
 .var Scan_Spec			:$30 .byte = $650	; assembled "D[n]:PATH*.V1K",$9B ($650-$67F)
@@ -347,7 +349,7 @@
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $12	; 2 (Screen code used for Version in loading screen)
-.def	V_2								= $14	; 4 (Screen code used for Version in loading screen)
+.def	V_2								= $15	; 5 (Screen code used for Version in loading screen)
 .def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------

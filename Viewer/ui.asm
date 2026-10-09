@@ -1719,9 +1719,11 @@ Sel_Key_Enter
 	jsr Rescan_Images
 	jsr Selector_Draw
 	jmp Read_Key_Done
-Sel_Key_Enter_Up
+Sel_Key_Enter_Up						; ".." + Enter
+	jsr Path_Save_Last_Segment			; Up_Name = the folder we're leaving
 	jsr Path_Pop_Segment
 	jsr Rescan_Images
+	jsr Sel_Find_Up_Name				; highlight that folder again
 	jsr Selector_Draw
 	jmp Read_Key_Done
 Sel_Key_Enter_View
@@ -2849,6 +2851,84 @@ Path_Pop_Cut
 Path_Pop_Done
 	rts
 
+;-----------------------------------------------------------------------------
+; Path_Save_Last_Segment - Up_Name = Scan_Path's last "SEG>", space-padded to
+; 8 like an IMAGE_BANK record (all spaces if Scan_Path is empty).  Called just
+; before Path_Pop_Segment so Sel_Find_Up_Name can re-highlight that folder.
+;-----------------------------------------------------------------------------
+Path_Save_Last_Segment
+	ldy #$07
+	lda #' '
+Path_Save_Clr
+	sta Up_Name,y
+	dey
+	bpl Path_Save_Clr
+	ldx #$00
+Path_Save_End
+	lda Scan_Path,x
+	beq Path_Save_Found
+	inx
+	cpx #$28
+	bcc Path_Save_End
+Path_Save_Found							; X = index of the NUL
+	cpx #$00
+	beq Path_Save_Done					; empty path
+	dex									; step onto the trailing '>'
+Path_Save_Back
+	cpx #$00
+	beq Path_Save_Copy					; segment starts the path
+	dex
+	lda Scan_Path,x
+	cmp #'>'
+	bne Path_Save_Back
+	inx									; first char after the separator
+Path_Save_Copy
+	ldy #$00
+Path_Save_L1
+	lda Scan_Path,x
+	cmp #'>'
+	beq Path_Save_Done
+	sta Up_Name,y
+	inx
+	iny
+	cpy #$08
+	bcc Path_Save_L1
+Path_Save_Done
+	rts
+
+;-----------------------------------------------------------------------------
+; Sel_Find_Up_Name - after a Rescan_Images, move the highlight (Sel_Index /
+; Sel_Top) onto the directory row named Up_Name.  Leaves 0 / 0 if not found.
+;-----------------------------------------------------------------------------
+Sel_Find_Up_Name
+	lda FileStart
+	sec
+	sbc Dir_Count
+	sta Up_Idx							; first directory row
+Sel_Find_Up_L1
+	lda Up_Idx
+	cmp FileStart
+	bcs Sel_Find_Up_Done				; past the last directory - not found
+	ldx #IMAGE_BANK
+	jsr UI_ReadRec						; Name_Row_Buf = 8-byte record
+	ldy #$07
+Sel_Find_Up_Cmp
+	lda Name_Row_Buf,y
+	cmp Up_Name,y
+	bne Sel_Find_Up_Next
+	dey
+	bpl Sel_Find_Up_Cmp
+	lda Up_Idx							; match
+	sta Sel_Index
+	jsr Sel_Top_For_Index				; from Sel_Top = 0 (set by the rescan)
+	sta Sel_Top
+	rts
+Sel_Find_Up_Next
+	inc Up_Idx
+	jmp Sel_Find_Up_L1
+Sel_Find_Up_Done
+	rts
+
 ;=============================================================================
 ; UI strings  (ATASCII; the text renderer maps to internal codes)
 ;=============================================================================
@@ -2961,6 +3041,16 @@ Help_Text_2
 	dta TXT_PEN,UI_PEN_HELPNAV,c'Q     ',TXT_PEN,UI_PEN_HELP,c'Display the exit confirmation dialog',0
 	dta c'      Y quits the program and returns to DOS',0
 	dta c'      N or ESC closes the dialog',0
+	dta 0
+	dta TXT_PEN,UI_PEN_HELPHEAD,c'Viewer Navigation:',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'0123  ',TXT_PEN,UI_PEN_HELP,c'Select a single palette and display the image using it',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'4     ',TXT_PEN,UI_PEN_HELP,c'Turn the Colour Attribute Map back on and use all 4 palettes',0
+	dta 0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'SPACE ',TXT_PEN,UI_PEN_HELP,c'Move forward through the list of images',0
+	dta 0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'BKSP  ',TXT_PEN,UI_PEN_HELP,c'Move backward through the list of images',0
+	dta 0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'ESC   ',TXT_PEN,UI_PEN_HELP,c'Return to menu',0
 	dta $FF
 
 Help_Text_3

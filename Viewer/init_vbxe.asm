@@ -164,12 +164,12 @@ Step1_Message							; Internal screen codes
 ; initialized before we can print any error messages.
 	org LOAD_ADDRESS + $400
 .proc Check_SDX
-	lda $0700
-	cmp #$53							; ASCII S
+	lda $0700							; sparta_flag
+	cmp #$53							; ASCII S = SpartaDOS (or BW-DOS)
 	bne SDX_No
-	lda $0701
-	cmp #$44							; ASCII D
-	bne SDX_No
+	lda $0701							; sparta_version, BCD: $45 = 4.5x (NOT 'D')
+	cmp #$40							; SDX is 4.x; SD 3.x / BW-DOS report $3x
+	bcc SDX_No
 
 	rts									; Return control to loader
 
