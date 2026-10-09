@@ -696,8 +696,8 @@ Text_Font_Data_End
 ; The Atari OS character set, embedded in the .xex.  Re-ordered from the ROM's
 ; ATASCII/internal glyph order into ASCII order (glyph index = raw ASCII byte,
 ; matching CGA.F08 and Text_PutStrAt), with glyphs $80-$FF the bitwise inverse
-; of $00-$7F.  256 glyphs x 8x8 1bpp = 2048 bytes.  ATARI-raw.F08 keeps the
-; original 1024-byte ROM dump.  Loaded to VRAM $022800 by Text_Load_Fonts.
+; of $00-$7F.  256 glyphs x 8x8 1bpp = 2048 bytes.  Loaded to VRAM $022800 by
+; Text_Load_Fonts.
 ;-----------------------------------------------------------------------------
 Atari_Font_Data
 	ins 'Assets/ATARI.F08'
