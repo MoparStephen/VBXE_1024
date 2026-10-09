@@ -692,3 +692,9 @@ These are deliberately left as defaults until verified:
 
 Tell me the exact expectations for any of these and the relevant writer can be
 adjusted to emit them directly.
+
+---
+
+## License
+
+MIT - see [LICENSE](LICENSE).
