@@ -553,6 +553,10 @@ Emit_Path_Prefix_Done
 ; always returns.
 ;-----------------------------------------------------------------------------
 Enter_Selector
+	lda #$00							; forget the image view's key-5 / 0-3 / P state.
+	sta Map_View						; XDL_Image_Attribute's source is NOT reset here -
+	sta View_Normal						; it may still be on screen (a stale image would
+	sta Preview_From_Image				; flash); View_Selected resets it, unseen
 	lda #$00
 	sta UI_Mode
 	jsr Selector_Draw					; back buffer only - nothing visible yet
@@ -2053,6 +2057,7 @@ View_Selected
 	lda Sel_Index
 	sta File_Index
 	jsr Clear_Screen					; framebuffer + CRAM to 0 while the menu is still up
+	jsr Set_Attr_Source_Image			; undo key 5 / P's re-point - menu still up, unseen
 	jsr Wait_VBlank
 	jsr Text_Deactivate					; = XDL_Image_Attribute: all-transparent black, so the
 	jmp Load_Image						; palette apply is unseen; the pixels stream in (tail)
@@ -2091,9 +2096,9 @@ Selector_Sync_Zero
 ; Esc-only - see Pal_Preview_Keys).
 ;   * on a *.V1K row: "Reading palette..." in row 0, read the .PAL block to
 ;     $21000 with the selector still up; a missing / short file leaves the
-;     selector up (row 0 restored).  Only once it has loaded is the preview
-;     built (unseen) and swapped in, with the registers rewritten under a
-;     blanked overlay.
+;     selector up (row 0 restored).  Only once it has loaded is the screen
+;     (prebuilt at boot by Pal_Preview_Init) swapped in, with the registers
+;     rewritten under a blanked overlay.
 ;   * on "..", a directory or an empty list: no disk access at all - the
 ;     registers already hold the menu's own palettes 0-3, so just show them.
 ;-----------------------------------------------------------------------------
@@ -2115,7 +2120,7 @@ Selector_Handle_P
 	jmp Selector_Restore_LocRow			; failed - selector stays up (tail)
 
 Selector_Handle_P_Loaded
-	jsr Pal_Preview_Build				; framebuffer + CRAM, all unseen
+	jsr Set_Attr_Source_Preview			; prebuilt at boot (Pal_Preview_Init)
 	jsr Display_Off						; blank while the registers change
 	jsr Apply_Image_Palette				; sets Pal_Image -> Enter_Selector restores
 	lda #MEMAC_GLOBAL_DISABLE
@@ -2125,7 +2130,7 @@ Selector_Handle_P_Loaded
 	jmp Selector_Handle_P_Mode
 
 Selector_Handle_P_Menu
-	jsr Pal_Preview_Build
+	jsr Set_Attr_Source_Preview
 	jsr Wait_VBlank
 	jsr Text_Deactivate					; a pure XDL swap - no palette change
 Selector_Handle_P_Mode
@@ -2133,13 +2138,6 @@ Selector_Handle_P_Mode
 	lda #$06
 	sta UI_Mode
 	rts
-
-; Pal_Preview_Build - the 2x2 squares + their attribute cells into the
-; (hidden) framebuffer / CRAM, by blitter.
-Pal_Preview_Build
-	jsr Clear_Screen
-	jsr Fill_Pal_Preview_Cmap
-	jmp Draw_Pal_Preview_Squares		; (tail)
 
 ;=============================================================================
 ; P-preview screen keys (UI_Mode = 6) - Esc only; every other key ignored
@@ -2150,7 +2148,11 @@ Pal_Preview_Keys
 	lda CH
 	cmp #KEY_ESC
 	bne Pal_Preview_Keys_None
-	jsr Selector_Sync_Cursor
+	lda Preview_From_Image
+	beq Pal_Preview_Keys_Selector
+	jsr Return_To_Image					; opened from the image - back to it (view1024.asm)
+	jmp Read_Key_Done
+Pal_Preview_Keys_Selector				; P never moves the highlight - no Selector_Sync_Cursor
 	jsr Enter_Selector
 	jmp Read_Key_Done
 Pal_Preview_Keys_None
@@ -3045,6 +3047,11 @@ Help_Text_2
 	dta TXT_PEN,UI_PEN_HELPHEAD,c'Viewer Navigation:',0
 	dta TXT_PEN,UI_PEN_HELPNAV,c'0123  ',TXT_PEN,UI_PEN_HELP,c'Select a single palette and display the image using it',0
 	dta TXT_PEN,UI_PEN_HELPNAV,c'4     ',TXT_PEN,UI_PEN_HELP,c'Turn the Colour Attribute Map back on and use all 4 palettes',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'5     ',TXT_PEN,UI_PEN_HELP,c'Display the Colour Attribute Map (Palette Swap Layout) for this image',0
+	dta c'      P0 = Red, P1 = Green, P2 = Blue, P3 = Yellow',0
+	dta 0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'P     ',TXT_PEN,UI_PEN_HELP,c'Display the 4 256 colour palettes of this image',0
+	dta c'      ESC returns to the image',0
 	dta 0
 	dta TXT_PEN,UI_PEN_HELPNAV,c'SPACE ',TXT_PEN,UI_PEN_HELP,c'Move forward through the list of images',0
 	dta 0
