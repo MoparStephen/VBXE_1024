@@ -145,7 +145,8 @@
 .var Map_View			.byte = $4F5	; 1 = key-5 view: OVADR -> MAP_FILL_VRAM, entry 1 of palettes 0-3 recoloured
 .var View_Normal		.byte = $4F6	; 1 = image shown through one palette (keys 0-3, XDL_Image_Normal)
 .var Preview_From_Image	.byte = $4F7	; 1 = palette screen (UI_Mode 6) opened from the image - ESC goes back to it
-;	$4F8 to $4FF free
+;	$4F8 to $4FA: RAMTOP_OLD / COLOR1_OLD / COLOR4_OLD (init_vbxe.asm)
+;	$4FB to $4FF free
 .var Dir_Line_Buf		:$28 .byte = $600	; One GET RECORD dir line ($600-$627)
 .var Scan_Path			:$28 .byte = $628	; subdirectory part, ">DIR>DIR>" or empty ($628-$64F)
 .var Scan_Spec			:$30 .byte = $650	; assembled "D[n]:PATH*.V1K",$9B ($650-$67F)
@@ -366,7 +367,7 @@
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $12	; 2 (Screen code used for Version in loading screen)
-.def	V_2								= $16	; 6 (Screen code used for Version in loading screen)
+.def	V_2								= $17	; 7 (Screen code used for Version in loading screen)
 .def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
@@ -464,8 +465,39 @@ Restore_Palette0_Done
 
 	rts
 
+;-----------------------------------------------------------------------------
+; Reset_Handler - DOSINI points here once start has run.  The OS warm start
+; (RESET key) calls it: let SDX do its own reinit through the saved DOSINI,
+; then jump back into the viewer instead of returning to the OS (which would
+; jmp (DOSVEC) to the SDX prompt with VBXE still showing the image).
+; Resident because DOSINI is live for the program's whole run.
+;-----------------------------------------------------------------------------
+Reset_Handler
+	jsr Reset_Blank						; black before SDX's reinit gets going
+	jsr Reset_Old_DOSINI				; SDX warm reinit (closes files, drivers)
+	jsr Reset_Blank						; ...and again - the reinit may have re-enabled them
+	lda #<Reset_Handler
+	sta DOSINI
+	lda #>Reset_Handler
+	sta DOSINI + 1						; re-arm, in case the reinit rewrote it
+	ldx SP_REG_OLD
+	txs									; abandon whatever was running
+	jmp Reset_Reenter					; main segment - loaded long before DOSINI is hooked
+Reset_Old_DOSINI
+	jmp (DOSINIL_OLD)					; DOSINIL_OLD/H = $487/$488, a word vector
+
+; Reset_Blank - ANTIC DMA off now (DMACTL, not just the shadow) and the VBXE
+; XDL off, so nothing shows until Enter_Selector's Display_On.
+Reset_Blank
+	lda #$00
+	sta SDMCTL							; shadow - stops the VBI turning it back on
+	sta DMACTL							; hardware - off this frame, not next VBI
+	lda #%00000010						; XDL off, XCOLOR on (= Display_Off)
+	vbsta VBXE_VIDEO_CONTROL
+	rts
+
 ; SpartaDOS X 40/80-column soft-console control (lives in the always-resident
-; page-3 block so Step_1's ini-time call resolves to loaded code)
+; block so Step_1's ini-time call resolves to loaded code)
 	icl 'sdx_con.asm'
 .endpg
 
@@ -479,6 +511,11 @@ Restore_Palette0_Done
 ;-----------------------------------------------------------------------------
 start
 ; Initialization code can go here
+	lda #<Reset_Handler
+	sta DOSINI
+	lda #>Reset_Handler
+	sta DOSINI + 1						; RESET now returns to the selector (Cleanup_Exit restores DOSINI)
+
 	jsr Text_Init						; Build the 80-column text screen (text80.asm)
 	jsr Build_Menu_Ramp_Table			; One-time build of the palette-demo overlay's ramp square
 	jsr Draw_Menu_Demo_Squares			; ...blit it into the banner's 8 demo squares...
@@ -515,6 +552,30 @@ main
 
 	jsr Wait_For_Sync					; Wait for VSYNC - this calls keyboard handler
 	jsr Slideshow_Tick					; Advance the slideshow, if one is running
+	jmp main
+
+;-----------------------------------------------------------------------------
+; Reset_Reenter - Reset_Handler lands here after SDX's warm reinit.  VBXE RAM
+; (XDLs, BCBs, fonts, banner, palettes, list) survives a RESET; only the
+; registers the OS / SDX (S_VBXE) may have touched need setting up again.
+;-----------------------------------------------------------------------------
+Reset_Reenter
+	lda #$00							; (Reset_Blank already has ANTIC DMA off)
+	vbsta VBXE_BLITTER_START			; abort any blit RESET interrupted
+	lda #>VBXE_WINDOW + 8				; MEMAC A window back at $2000, 4k, CPU only -
+	vbsta VBXE_MA_CTL					;   SDX's VBXE reinit zeroes it (else the window
+										;   reads plain RAM and palette 0 loads as zeros)
+	lda #MEMAC_GLOBAL_DISABLE
+	vbsta VBXE_MA_BSEL
+	lda #%00000010						; XDL off - Enter_Selector's Display_On turns it
+	vbsta VBXE_VIDEO_CONTROL			;   on once the menu palettes are in
+	lda #$FF
+	vbsta VBXE_P0						; priority for the attribute map
+	sta CH								; Clear last key pressed
+	lda #$01
+	sta Pal_Image						; force Enter_Selector to reload the menu palettes
+	jsr Text_Activate					; XDL_ADR -> XDL_MainMenu
+	jsr Enter_Selector					; list + highlight survive the RESET - no rescan
 	jmp main
 
 ; Set RUN Vector

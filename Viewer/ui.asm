@@ -3006,6 +3006,8 @@ Help_Text_1
 	dta c'Each V1K file must have a corresponding NFO file to populate the Info screen',0
 	dta c'When displaying an image, pressing 0 1 2 3 display that single palette',0
 	dta c'Pressing 4 turns the Colour Attribute Map back on and displays all palettes',0
+	dta c'Pressing 5 shows the palette usage that the Colour Attribute Map implements',0
+	dta c'Reset key is trapped because VBXE Palette 0 is modified - must quit via Q',0
 	dta 0
 	dta TXT_PEN,UI_PEN_HELPHEAD,c'Display Information:',0
 	dta c'The image viewer first sets up a standard 320 x 240 normal width XDL',0

@@ -4,9 +4,9 @@
 
 ; OS state Step_1 / Check_RAMTOP change and the Exit path restores (COLOR2_OLD
 ; is declared in view1024.asm alongside the other _OLD saves).
-.var	RAMTOP_OLD		.byte = $4E2	; Check_RAMTOP forces RAMTOP to $C0; SDX soft console needs its own
-.var	COLOR1_OLD		.byte = $4E3	; Step_1 recolours COLOR1 for the loader
-.var	COLOR4_OLD		.byte = $4E4	; parity with the racer's exit path
+.var	RAMTOP_OLD		.byte = $4F8	; Check_RAMTOP forces RAMTOP to $C0; SDX soft console needs its own
+.var	COLOR1_OLD		.byte = $4F9	; Step_1 recolours COLOR1 for the loader
+.var	COLOR4_OLD		.byte = $4FA	; parity with the racer's exit path
 
 ;-----------------------------------------------------------------------------
 ; Initialization
