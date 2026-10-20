@@ -59,9 +59,8 @@
 ;    Image name list = $40000 - $40FFF (bank $40: up to MAX_IMAGES=255 rows -
 ;                      "..", sub-dirs and *.V1K files, 8 bytes each; + a 10-char
 ;                      display field is formatted in place at draw time)
-;    (bank $41 is free - the old folder browser used it)
-;    Map-view fill   = $42000 - $54BFF (MAP_FILL_VRAM: 76800 bytes of $01, filled
-;                      at boot by clear_vbxe; key 5's overlay source)
+;    (banks $41 - $54 are free - $42000-$54BFF was the key-5 map view's $01
+;                      fill, gone since key 5 uses solid palettes instead)
 ;    Palette screen  = $55000 - $67BFF (PAL_PREVIEW_VRAM: the P key's 2x2 ramp
 ;                      squares, built once at boot by Pal_Preview_Init)
 ;    Palette scr map = $68000 - $715FF (PAL_PREVIEW_CRAM: its expanded attribute
@@ -142,11 +141,12 @@
 .var Help_RowCount		.byte = $4EB	; help screen: rows in the current section (set by Help_Draw)
 .var Up_Name			:8 .byte = $4EC	; folder being left by "..", space-padded ($4EC-$4F3)
 .var Up_Idx				.byte = $4F4	; Sel_Find_Up_Name: list index being compared
-.var Map_View			.byte = $4F5	; 1 = key-5 view: OVADR -> MAP_FILL_VRAM, entry 1 of palettes 0-3 recoloured
-.var View_Normal		.byte = $4F6	; 1 = image shown through one palette (keys 0-3, XDL_Image_Normal)
+.var Map_View			.byte = $4F5	; 1 = key-5 view: the image through 4 solid map-colour palettes
+.var View_Normal		.byte = $4F6	; 1 = image shown through one palette (Ctrl+0-3, XDL_Image_Normal)
 .var Preview_From_Image	.byte = $4F7	; 1 = palette screen (UI_Mode 6) opened from the image - ESC goes back to it
 ;	$4F8 to $4FA: RAMTOP_OLD / COLOR1_OLD / COLOR4_OLD (init_vbxe.asm)
-;	$4FB to $4FF free
+.var Pal_Off			.byte = $4FB	; bit n = 1: palette n switched off (Pal_Solo / Pal_Toggle); cleared by Apply_Image_Palette
+;	$4FC to $4FF free
 .var Dir_Line_Buf		:$28 .byte = $600	; One GET RECORD dir line ($600-$627)
 .var Scan_Path			:$28 .byte = $628	; subdirectory part, ">DIR>DIR>" or empty ($628-$64F)
 .var Scan_Spec			:$30 .byte = $650	; assembled "D[n]:PATH*.V1K",$9B ($650-$67F)
@@ -171,6 +171,7 @@
 ; Defines go here
 ;-----------------------------------------------------------------------------
 .def	__VBXE_AUTO__
+.def	SSFLAG							= $02FF	; OS start/stop flag - toggled by Ctrl+1 (not in equates.asm)
 .def	VBXE_WINDOW						= $2000
 .def	VBXE_WINDOW_SIZE_4k				= $1000
 .def	VBXE_WINDOW_SIZE_8k				= $2000
@@ -193,10 +194,6 @@
 .def	V1K_MAP_BANK					= $14		; -> $14000 (CRAM_Buffer, Setup_Cmap1 expands it)
 .def	V1K_RAW_BANK					= $01		; -> $01000 (framebuffer)
 
-; Key-5 attribute-map view: a 320x240 block of solid $01 pixels, filled once
-; by the blitter in clear_vbxe (init_vbxe.asm).  Key 5 points
-; XDL_Image_Attribute's OVADR here, so each 8x1 cell shows palette entry 1.
-.def	MAP_FILL_VRAM					= $42000	; $42000-$54BFF (same 320-byte step as $01000)
 .def	IMAGE_VRAM						= $01000	; framebuffer = XDL_Image_Attribute's normal OVADR
 .def	IMAGE_CRAM						= $17000	; expanded attribute map = its normal MAPADR
 
@@ -367,7 +364,7 @@
 ; Temp debug stuff
 .def	V_0								= $10	; 0 (Screen code used for Version in loading screen)
 .def	V_1								= $12	; 2 (Screen code used for Version in loading screen)
-.def	V_2								= $17	; 7 (Screen code used for Version in loading screen)
+.def	V_2								= $18	; 8 (Screen code used for Version in loading screen)
 .def	V_3								= $00	; 61=a (Screen code used for Version in loading screen)
 
 ;-----------------------------------------------------------------------------
@@ -695,9 +692,12 @@ Read_Image_Palette_Done
 ;-----------------------------------------------------------------------------
 ; Apply_Image_Palette - push the 4 x 768-byte palettes at $21000 (the .V1K's
 ; .PAL block) into hardware palette registers 0-3.  Sets Pal_Image, so the
-; next Enter_Selector knows the menu's palettes have to be put back.
+; next Enter_Selector knows the menu's palettes have to be put back.  Clears
+; Pal_Off - every palette is back on.
 ;-----------------------------------------------------------------------------
 Apply_Image_Palette
+	lda #$00
+	sta Pal_Off
 	lda #$01
 	sta Pal_Image
 	lda #V1K_PAL_BANK | MEMAC_GLOBAL_ENABLE	; Bank $21 VBXE Window Enabled
@@ -904,6 +904,7 @@ Image_Close
 Apply_Menu_Palettes
 	lda #$00
 	sta Pal_Image
+	sta Pal_Off							; every palette on
 	lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 - the text palette at $00800
 	vbsta VBXE_MA_BSEL
 	lda <(VBXE_WINDOW + $0800)
@@ -913,14 +914,27 @@ Apply_Menu_Palettes
 	lda #$00							; Set Palette 0
 	jsr VBXE_SetPalette2
 
-; Sets 1-3 are pure single-component ramps - set 1 colour i = (i,0,0), set 2 =
-; (0,i,0), set 3 = (0,0,i) - so they are generated straight into the registers
-; rather than stored.  Y walks CR/CG/CB (consecutive registers) for each colour;
-; the component whose register matches the set gets i, the other two get 0.
-; Plain sta (VBXEBase),y (what vbsta expands to) so Y can be the register index.
 	lda #$01
 	sta Reg1							; Reg1 = palette set 1-3
 Apply_Menu_Ramps_L1
+	jsr Menu_Ramp_Set
+	inc Reg1
+	lda Reg1
+	cmp #$04
+	bne Apply_Menu_Ramps_L1
+
+	lda #MEMAC_GLOBAL_DISABLE
+	vbsta VBXE_MA_BSEL
+	rts
+
+; Menu_Ramp_Set - Reg1 = menu palette set 1-3.  Sets 1-3 are pure single-
+; component ramps - set 1 colour i = (i,0,0), set 2 = (0,i,0), set 3 = (0,0,i)
+; - so they are generated straight into the registers rather than stored.
+; Y walks CR/CG/CB (consecutive registers) for each colour; the component
+; whose register matches the set gets i, the other two get 0.  Plain
+; sta (VBXEBase),y (what vbsta expands to) so Y can be the register index.
+; Also used by Load_Pal (palette keys on the menu's P screen).
+Menu_Ramp_Set
 	lda Reg1
 	vbsta VBXE_PSEL
 	lda #$00
@@ -944,13 +958,6 @@ Apply_Menu_Ramps_Zero
 	bne Apply_Menu_Ramps_L3
 	inx
 	bne Apply_Menu_Ramps_L2
-	inc Reg1
-	lda Reg1
-	cmp #$04
-	bne Apply_Menu_Ramps_L1
-
-	lda #MEMAC_GLOBAL_DISABLE
-	vbsta VBXE_MA_BSEL
 	rts
 
 ;-----------------------------------------------------------------------------
@@ -1351,6 +1358,13 @@ Handle_Keys
 	sta HELPFLG							; Clear Help key press
 	jmp Help_Key						; (ui.asm)
 Handle_Keys_NoHelp
+	lda SSFLAG							; Ctrl+1 isn't in CH either - the OS keyboard IRQ
+	beq Handle_Keys_NoCtrl1				;   toggles SSFLAG instead...
+	lda #$00
+	sta SSFLAG
+	lda #$9F							; ...so hand it on as Ctrl+1
+	sta CH
+Handle_Keys_NoCtrl1
 	lda CH
 	cmp #KEY_F							; F toggles the text font on every screen
 	bne Handle_Keys_Mode
@@ -1394,21 +1408,51 @@ Handle_Keys_ImageView
 	beq Handle_Backspace
 	cmp #$1C							; Esc - back to the file selector
 	beq Handle_Escape
-	cmp #$32							; 0
-	beq Handle_0
-	cmp #$1F							; 1
-	beq Handle_1
-	cmp #$1E							; 2
-	beq Handle_2
-	cmp #$1A							; 3
-	beq Handle_3
 	cmp #$18							; 4
 	beq Handle_4
 	cmp #$1D							; 5
 	beq Handle_5
 	cmp #KEY_P							; P - palette screen
-	beq Handle_P
+	bne Handle_Keys_Pal
+	jmp Handle_P						; (out of beq range)
+Handle_Keys_Pal
+	jsr Key_To_Palette					; 0-3, Shift+0-3, Ctrl+0-3 -> X = palette
+	bcs Handle_Keys_Done
+	cmp #$40
+	beq Handle_Pal_Toggle				; Shift - that palette off <-> on
+	cmp #$80
+	beq Handle_Single_N					; Ctrl - the image through that palette only
+	jsr Pal_Solo						; plain - only that palette on
+	lda View_Normal
+	beq Handle_Keys_Done
+	lda #$00							; from the Ctrl view: back to the attribute view
+	sta View_Normal
+	jsr Enable_Colour_Map
+	jmp Read_Key_Done
+Handle_Pal_Toggle
+	jsr Pal_Toggle
 Handle_Keys_Done						; No more keys to test
+	jmp Read_Key_Done
+
+Handle_Single_N							; X = palette 0-3
+	txa
+	pha
+	lda Pal_Bit_Tab,x					; palette X on - the single view is never black
+	eor #$FF
+	and Pal_Off
+	cmp Pal_Off
+	bne Handle_Single_Reload			; it was off
+	ldy Map_View
+	beq Handle_Single_Show				; already on, image palettes in - no reload, no flicker
+Handle_Single_Reload
+	sta Pal_Off
+	lda #$00							; leaving key 5 - its solid palettes go
+	sta Map_View
+	jsr Reload_Pals						; the image's palettes, the off ones zeroed
+Handle_Single_Show
+	pla
+	tax
+	jsr Set_Palette						; Disable Colour Map and set Palette to X register
 	jmp Read_Key_Done
 
 Handle_Space
@@ -1426,55 +1470,25 @@ Handle_Escape
 	jsr Enter_Selector					; Leave the image, return to the file selector
 	jmp Read_Key_Done
 
-Handle_0
-	jsr Leave_Map_View					; single palette needs the real entry 1
-	ldx #$00
-	jsr Set_Palette						; Disable Colour Map and set Palette to X register
-	jmp Read_Key_Done
-
-Handle_1
-	jsr Leave_Map_View					; single palette needs the real entry 1
-	ldx #$01
-	jsr Set_Palette						; Disable Colour Map and set Palette to X register
-	jmp Read_Key_Done
-
-Handle_2
-	jsr Leave_Map_View					; single palette needs the real entry 1
-	ldx #$02
-	jsr Set_Palette						; Disable Colour Map and set Palette to X register
-	jmp Read_Key_Done
-
-Handle_3
-	jsr Leave_Map_View					; single palette needs the real entry 1
-	ldx #$03
-	jsr Set_Palette						; Disable Colour Map and set Palette to X register
-	jmp Read_Key_Done
-
-Handle_4
+Handle_4								; the image, all 4 of its palettes on
 	lda #$00
 	sta View_Normal
-	jsr Wait_VBlank
-	jsr Leave_Map_View					; image pixels + real entry 1 back
+	sta Map_View
+	beq Handle_4_5
+Handle_5								; attribute-map view: the image through 4 solid palettes
+	lda #$00
+	sta View_Normal
+	lda #$01
+	sta Map_View
+Handle_4_5
+	lda #$00
+	sta Pal_Off							; every palette on
+	jsr Reload_Pals						; from the image / solid map colours (waits for vblank)
 	jsr Enable_Colour_Map				; Enable Colour Map
 	jmp Read_Key_Done
 
-Handle_5								; attribute map only (solid $01 pixels)
-	lda #$00
-	sta View_Normal
-	jsr Wait_VBlank
-	jsr Set_Attr_Source_Fill
-	jsr Set_Map_Entries
-	jsr Enable_Colour_Map
-	lda #$01
-	sta Map_View
-	jmp Read_Key_Done
-
-Handle_P								; the image's palettes as the 2x2 ramp squares
-	jsr Wait_VBlank
-	lda Map_View
-	beq Handle_P_Show
-	jsr Restore_Map_Entries				; squares need the real entry 1 (Map_View kept for ESC)
-Handle_P_Show
+Handle_P								; the palettes in the registers as the 2x2 ramp squares
+	jsr Wait_VBlank						;   (solid map colours from key 5 - Map_View kept for ESC)
 	jsr Set_Attr_Source_Preview
 	jsr Enable_Colour_Map
 	lda #$01
@@ -1519,7 +1533,7 @@ Increment_Image
 Increment_Image_Store
 	stx File_Index
 	jsr Load_Image
-	jsr Map_View_Reapply				; still in key-5 view? recolour entry 1
+	jsr Map_View_Reapply				; still in key-5 view? solid palettes back
 Increment_Image_Done
 	rts
 
@@ -1594,22 +1608,15 @@ Enable_Colour_Map
 	rts
 
 ;-----------------------------------------------------------------------------
-; Key-5 attribute-map view.  XDL_Image_Attribute (VBXE $00000) has its OVADR
-; at bytes 3-5; key 5 points it at MAP_FILL_VRAM (all $01 pixels) and gives
-; entry 1 of palettes 0-3 a distinct colour, so every 8x1 cell shows which
-; palette it uses.  Leave_Map_View undoes both: OVADR back to the framebuffer
-; and entry 1 re-read from the .PAL block Load_Image left at $21000.
+; Set_Attr_Source_* - point XDL_Image_Attribute (VBXE $00000) at the image or
+; at the P key's palette screen: its OVADR (bytes 3-5) and MAPADR (8-10).
 ;-----------------------------------------------------------------------------
-Set_Attr_Source_Fill
-	ldx #$00							; key 5: $01 pixels, the image's map
-	beq Set_Attr_Source
 Set_Attr_Source_Image
-	ldx #$06							; the image
-	bne Set_Attr_Source
+	ldx #$00							; the image
+	beq Set_Attr_Source
 Set_Attr_Source_Preview
-	ldx #$0C							; the P key's palette screen
-; X = Attr_Source_Tab row (6 bytes): XDL_Image_Attribute's OVADR (bytes 3-5)
-; and MAPADR (bytes 8-10).  vbsta clobbers Y (__VBXE_AUTO__), so X only.
+	ldx #$06							; the P key's palette screen
+; X = Attr_Source_Tab row (6 bytes).  vbsta clobbers Y (__VBXE_AUTO__), so X only.
 Set_Attr_Source
 	lda #$00 | MEMAC_GLOBAL_ENABLE		; Bank $00 VBXE Window Enabled
 	vbsta VBXE_MA_BSEL
@@ -1630,113 +1637,211 @@ Set_Attr_Source
 	rts
 
 Attr_Source_Tab
-	dta <MAP_FILL_VRAM,>MAP_FILL_VRAM,MAP_FILL_VRAM >> 16,<IMAGE_CRAM,>IMAGE_CRAM,IMAGE_CRAM >> 16
 	dta <IMAGE_VRAM,>IMAGE_VRAM,IMAGE_VRAM >> 16,<IMAGE_CRAM,>IMAGE_CRAM,IMAGE_CRAM >> 16
 	dta <PAL_PREVIEW_VRAM,>PAL_PREVIEW_VRAM,PAL_PREVIEW_VRAM >> 16,<PAL_PREVIEW_CRAM,>PAL_PREVIEW_CRAM,PAL_PREVIEW_CRAM >> 16
 
-; Entry 1 of palettes 0-3 <- Map_View_Colours (red / green / blue / yellow)
-Set_Map_Entries
-	ldx #$00							; X = palette * 3
-	stx Reg1							; Reg1 = palette (Y is vbsta's)
-Set_Map_Entries_L1
-	lda Reg1
-	vbsta VBXE_PSEL
-	lda #$01
-	vbsta VBXE_CSEL
-	lda Map_View_Colours,x
-	vbsta VBXE_CR
-	lda Map_View_Colours+1,x
-	vbsta VBXE_CG
-	lda Map_View_Colours+2,x
-	vbsta VBXE_CB
-	inx
-	inx
-	inx
-	inc Reg1
-	lda Reg1
-	cmp #$04
-	bcc Set_Map_Entries_L1
-	rts
-
+; Key-5 attribute-map view: the normal image, seen through 4 solid palettes
+; (entries 1-255 = that palette's colour), so each 8x1 cell shows which palette
+; it uses.  Entry 0 stays 0,0,0 - the transparent slot (letterbox).
 Map_View_Colours
 	dta $80,$28,$28						; P0 red     (muted - full-intensity was garish)
 	dta $28,$90,$28						; P1 green
 	dta $30,$48,$A8						; P2 blue
 	dta $A8,$98,$28						; P3 yellow
 
-; Entry 1 of palettes 0-3 <- the image's own values ($21000 + n*$300 + 3)
-Restore_Map_Entries
-	lda #V1K_PAL_BANK | MEMAC_GLOBAL_ENABLE
-	vbsta VBXE_MA_BSEL
-	ldx #$00
-Restore_Map_Entries_L1
-	txa
-	vbsta VBXE_PSEL
-	lda #$01
-	vbsta VBXE_CSEL
-	lda Restore_Map_Lo,x
-	sta Ptr_Lo
-	lda Restore_Map_Hi,x
-	sta Ptr_Hi
-	ldy #$00							; reload Y each time - vbsta clobbers it
-	lda (Ptr_Lo),y
-	vbsta VBXE_CR
-	ldy #$01
-	lda (Ptr_Lo),y
-	vbsta VBXE_CG
-	ldy #$02
-	lda (Ptr_Lo),y
-	vbsta VBXE_CB
-	inx
-	cpx #$04
-	bcc Restore_Map_Entries_L1
-	lda #MEMAC_GLOBAL_DISABLE
-	vbsta VBXE_MA_BSEL
-	rts
-
-Restore_Map_Lo
-	dta <(VBXE_WINDOW+$003),<(VBXE_WINDOW+$303),<(VBXE_WINDOW+$603),<(VBXE_WINDOW+$903)
-Restore_Map_Hi
-	dta >(VBXE_WINDOW+$003),>(VBXE_WINDOW+$303),>(VBXE_WINDOW+$603),>(VBXE_WINDOW+$903)
-
-; Leave the key-5 view if it's on (keys 0-4).  No-op otherwise.
-Leave_Map_View
-	lda Map_View
-	beq Leave_Map_View_Done
-	jsr Set_Attr_Source_Image
-	jsr Restore_Map_Entries
-	lda #$00
-	sta Map_View
-Leave_Map_View_Done
-	rts
-
 ; ESC on a palette screen opened from the image (Pal_Preview_Keys, ui.asm):
-; back to the view it came from - 5 (Map_View), 0-3 (View_Normal) or 4.
+; back to the view it came from - Ctrl+0-3 (View_Normal), or 4 / 5 (the same
+; XDL - the map view differs only in the palettes, already in the registers).
 Return_To_Image
 	jsr Wait_VBlank
 	lda #$00
 	sta Preview_From_Image
 	lda #$01
 	sta UI_Mode
-	lda Map_View
-	beq Return_To_Image_Pix
-	jsr Set_Attr_Source_Fill			; key 5
-	jsr Set_Map_Entries
-	jmp Enable_Colour_Map				; (tail)
-Return_To_Image_Pix
 	jsr Set_Attr_Source_Image
 	lda View_Normal
 	beq Return_To_Image_Attr
-	jmp Disable_Colour_Map				; keys 0-3 - XDL_Image_Normal keeps its palette byte (tail)
+	jmp Disable_Colour_Map				; Ctrl+0-3 - XDL_Image_Normal keeps its palette byte (tail)
 Return_To_Image_Attr
-	jmp Enable_Colour_Map				; key 4 (tail)
+	jmp Enable_Colour_Map				; keys 4 / 5 (tail)
 
-; After Load_Image (Space/BkSp): it rewrote all 4 palettes, so put the key-5
-; colours back if that view is still on.  OVADR still points at the fill.
+; After Load_Image (Space/BkSp): it put the image's palettes in (and cleared
+; Pal_Off), so the key-5 view needs its solid ones back.
 Map_View_Reapply
 	lda Map_View
-	beq Leave_Map_View_Done
-	jmp Set_Map_Entries
+	beq Map_View_Reapply_Done
+	jmp Reload_Pals						; (tail)
+Map_View_Reapply_Done
+	rts
+
+;-----------------------------------------------------------------------------
+; Palette on/off.  Pal_Off bit n = palette n switched off: all 256 entries
+; 0,0,0 (its cells go black).  One state for every view; a palette that is on
+; comes from the current source (Load_Pal):
+;   Map_View  = 1 -> solid Map_View_Colours (the key-5 map view)
+;   Pal_Image = 1 -> the image's .PAL block at $21000
+;   otherwise     -> the menu's own: text palette at VBXE $00800, R/G/B ramps
+; Key 4, key 5 and a new image turn every palette back on.
+;  Pal_Solo   - keys 0-3: only palette X on
+;  Pal_Toggle - Shift+0-3: palette X off <-> on
+;  Pal_All    - 4 on the P screen: every palette on
+;  In: X = palette 0-3
+;-----------------------------------------------------------------------------
+Pal_Solo
+	lda Pal_Bit_Tab,x
+	eor #$0F							; every other palette off (never 0)
+	bne Set_Pal_State
+Pal_All
+	lda #$00
+	beq Set_Pal_State
+Pal_Toggle
+	lda Pal_Bit_Tab,x
+	eor Pal_Off
+Set_Pal_State							; A = the new Pal_Off
+	sta Pal_Off
+; Reload_Pals - every palette from the current source again, the ones
+; switched off (Pal_Off) zeroed.  Waits for vblank first.
+Reload_Pals
+	jsr Wait_VBlank
+	ldx #$00
+Reload_Pals_L1
+	stx Reg3							; Reg3 = palette (Load_Pal / Zero_Pal clobber X)
+	lda Pal_Off
+	and Pal_Bit_Tab,x
+	bne Reload_Pals_Off
+	jsr Load_Pal
+	jmp Reload_Pals_Next
+Reload_Pals_Off
+	jsr Zero_Pal
+Reload_Pals_Next
+	ldx Reg3
+	inx
+	cpx #$04
+	bcc Reload_Pals_L1
+	rts
+
+; Zero_Pal - X = palette: PSEL = X, CSEL = 0, 256 x {0,0,0} (the CB write
+; steps CSEL).  Clobbers A, X, Y.
+Zero_Pal
+	txa
+	vbsta VBXE_PSEL
+	lda #$00
+	vbsta VBXE_CSEL
+	tax									; X = 256 entries (wraps to 0)
+Zero_Pal_L1
+	vbsta VBXE_CR
+	vbsta VBXE_CG
+	vbsta VBXE_CB
+	dex
+	bne Zero_Pal_L1
+	rts
+
+; Load_Pal - X = palette: load it from the current source (see above).
+; Clobbers A, X, Y, Reg1, Reg2, Ptr_Lo.
+Load_Pal
+	lda Map_View
+	bne Load_Pal_Solid
+	lda Pal_Image
+	beq Load_Pal_Menu
+	lda #V1K_PAL_BANK | MEMAC_GLOBAL_ENABLE	; image: Bank $21, palette X at $x00
+	vbsta VBXE_MA_BSEL
+	lda Pal_Addr_Lo,x
+	sta Y_Register
+	lda Pal_Addr_Hi,x
+	sta Y_Register + $01
+Load_Pal_Set
+	txa
+	jsr VBXE_SetPalette2
+	lda #MEMAC_GLOBAL_DISABLE			; USE CPU address space
+	vbsta VBXE_MA_BSEL
+	rts
+
+Load_Pal_Menu
+	txa
+	bne Load_Pal_Ramp
+	lda #$00 | MEMAC_GLOBAL_ENABLE		; menu set 0: the text palette at $00800
+	vbsta VBXE_MA_BSEL
+	lda <(VBXE_WINDOW + $0800)
+	sta Y_Register
+	lda >(VBXE_WINDOW + $0800)
+	sta Y_Register + $01
+	jmp Load_Pal_Set					; X is still 0
+Load_Pal_Ramp
+	stx Reg1							; menu sets 1-3: the generated ramps
+	jmp Menu_Ramp_Set					; (tail)
+
+Load_Pal_Solid
+	txa
+	vbsta VBXE_PSEL
+	lda #$00
+	vbsta VBXE_CSEL
+	stx Reg1							; X = palette * 3
+	txa
+	asl
+	clc
+	adc Reg1
+	tax
+	lda Map_View_Colours,x				; R/G/B -> Reg1 / Reg2 / Ptr_Lo (vbsta clobbers Y)
+	sta Reg1
+	lda Map_View_Colours+1,x
+	sta Reg2
+	lda Map_View_Colours+2,x
+	sta Ptr_Lo
+	lda #$00							; entry 0 = 0,0,0 (the transparent slot)
+	vbsta VBXE_CR
+	vbsta VBXE_CG
+	vbsta VBXE_CB
+	ldx #$FF							; entries 1-255 = the map colour
+Load_Pal_Solid_L1
+	lda Reg1
+	vbsta VBXE_CR
+	lda Reg2
+	vbsta VBXE_CG
+	lda Ptr_Lo
+	vbsta VBXE_CB
+	dex
+	bne Load_Pal_Solid_L1
+	rts
+
+Pal_Addr_Lo
+	dta <(VBXE_WINDOW+$000),<(VBXE_WINDOW+$300),<(VBXE_WINDOW+$600),<(VBXE_WINDOW+$900)
+Pal_Addr_Hi
+	dta >(VBXE_WINDOW+$000),>(VBXE_WINDOW+$300),>(VBXE_WINDOW+$600),>(VBXE_WINDOW+$900)
+
+Pal_Bit_Tab
+	dta $01,$02,$04,$08
+
+; Key_To_Palette - A = CH code.  0-3 alone, with Shift or with Ctrl ->
+;  C=0, X = palette 0-3, A = modifier ($00 / $40 Shift / $80 Ctrl).
+;  Anything else (Shift+Ctrl too) -> C=1.  Atari @ ($75) counts as Shift+2:
+;  a PC keyboard's Shift+2 reaches an emulator as @.
+Key_To_Palette
+	cmp #$75							; @ -> Shift+2
+	bne Key_To_Palette_Digit
+	lda #$5E
+Key_To_Palette_Digit
+	pha
+	and #$3F							; the key without its modifiers
+	ldx #$03
+Key_To_Palette_L1
+	cmp Key_Digit_Tab,x
+	beq Key_To_Palette_Hit
+	dex
+	bpl Key_To_Palette_L1
+	pla
+	sec
+	rts
+Key_To_Palette_Hit
+	pla
+	and #$C0							; A = modifier
+	cmp #$C0							; Shift+Ctrl -> C=1, not a palette key
+	bcs Key_To_Palette_Ret
+	clc
+Key_To_Palette_Ret
+	rts
+
+Key_Digit_Tab
+	dta $32,$1F,$1E,$1A					; CH codes for 0 1 2 3
 
 ;-----------------------------------------------------------------------------
 ; Subroutines END

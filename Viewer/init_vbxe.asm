@@ -408,14 +408,6 @@ Progress_Bar_Loop
 	; Wait for blit complete
 	vblda:rne VBXE_BLITTER_BUSY
 
-	; Fill MAP_FILL_VRAM with $01 for the key-5 attribute-map view (a
-	; separate kick, not a NEXT chain, so the BUSY poll is reliable)
-	ldx #$14
-	mva:rpl blit_fill_map,x VBXE_WINDOW,x-
-	lda #$01
-	vbsta VBXE_BLITTER_START			; same BCB address ($00000)
-	vblda:rne VBXE_BLITTER_BUSY
-
 	lda #MEMAC_GLOBAL_DISABLE			; USE CPU address space
 	vbsta VBXE_MA_BSEL
 
@@ -441,10 +433,6 @@ blit_clear
 	;	dta $00			; Control (Mode 0 with NEXT bit Cleared)
 
 	dta e($00000), a($0000), 0, e($7BFFF), a(-$0F80), -1, a($01EF), $0F, $00, $00, $00, $77, $00, $00
-
-blit_fill_map
-	; 320 x 240 constant-source fill of $01 at MAP_FILL_VRAM (AND 0, XOR $01)
-	dta e($00000), a($0000), 0, e(MAP_FILL_VRAM), a($0140), 1, a($013F), $EF, $00, $01, $00, $00, $00, $00
 Clearing_Message
 	.byte $23,$6C,$65,$61,$72,$69,$6E,$67,$00,$36,$22,$38,$25,$00,$32,$21,$2D,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00	; Clearing VBXE RAM
 

@@ -543,8 +543,9 @@ Emit_Path_Prefix_Done
 
 ;-----------------------------------------------------------------------------
 ; Enter_Selector - build the selector in the back buffer (unseen), put the
-; menu palettes back ONLY if an image replaced them (Pal_Image - after Info,
-; Drive, Quit or a directory P-preview the registers are already right), then
+; menu palettes back ONLY if an image replaced them (Pal_Image) or the palette
+; keys switched some off (Pal_Off - a directory P-preview) - after Info, Drive,
+; Quit or an untouched directory P-preview the registers are already right), then
 ; show the finished screen: one Text_Present + an XDL switch.  When palettes
 ; have to be rewritten the overlay is blanked for those ~2 frames, so neither
 ; the image nor the logo is ever seen in the wrong colours.  The logo's VRAM
@@ -561,6 +562,7 @@ Enter_Selector
 	sta UI_Mode
 	jsr Selector_Draw					; back buffer only - nothing visible yet
 	lda Pal_Image
+	ora Pal_Off							; ...or some switched off on a folder-row P screen
 	beq Enter_Selector_Show				; menu palettes still in the registers
 	jsr Display_Off						; blank while the registers are rewritten
 	jsr Apply_Menu_Palettes				; text set 0 + banner sets 1-3, clears Pal_Image
@@ -2140,12 +2142,32 @@ Selector_Handle_P_Mode
 	rts
 
 ;=============================================================================
-; P-preview screen keys (UI_Mode = 6) - Esc only; every other key ignored
-; (Space/Backspace/0-4 have no meaning here, unlike the real image-view key
-; set - see Selector_Handle_P).
+; P-preview screen keys (UI_Mode = 6) - Esc; 0-3 = only that palette on,
+; Shift+0-3 = that palette off/on, 4 = all back on (Pal_Solo / Pal_Toggle / Pal_All,
+; view1024.asm - image, map-colour or menu palettes).  Every other key is ignored, Ctrl+0-3
+; included (Space/Backspace/5 have no meaning here, unlike the real
+; image-view key set - see Selector_Handle_P).
 ;=============================================================================
 Pal_Preview_Keys
 	lda CH
+	jsr Key_To_Palette
+	bcs Pal_Preview_Keys_Esc
+	cmp #$40
+	beq Pal_Preview_Keys_Toggle
+	cmp #$80
+	beq Pal_Preview_Keys_None			; Ctrl - no single-palette view here
+	jsr Pal_Solo						; X = palette 0-3 (view1024.asm)
+	jmp Read_Key_Done
+Pal_Preview_Keys_Toggle
+	jsr Pal_Toggle
+	jmp Read_Key_Done
+Pal_Preview_Keys_Esc
+	lda CH
+	cmp #$18							; 4 - all 4 palettes back on
+	bne Pal_Preview_Keys_NotAll
+	jsr Pal_All
+	jmp Read_Key_Done
+Pal_Preview_Keys_NotAll
 	cmp #KEY_ESC
 	bne Pal_Preview_Keys_None
 	lda Preview_From_Image
@@ -3004,7 +3026,9 @@ Help_Text_1
 	dta c'Subdirectories are displayed alphabetically in Green',0
 	dta c'The image (V1K) files will be displayed alphabetically in Blue',0
 	dta c'Each V1K file must have a corresponding NFO file to populate the Info screen',0
-	dta c'When displaying an image, pressing 0 1 2 3 display that single palette',0
+	dta c'When displaying an image, pressing 0 1 2 3 shows only that palette',0
+	dta c'Shift + 0 1 2 3 toggles that palette off or on',0
+	dta c'Control + 0 1 2 3 displays the image using just that palette',0
 	dta c'Pressing 4 turns the Colour Attribute Map back on and displays all palettes',0
 	dta c'Pressing 5 shows the palette usage that the Colour Attribute Map implements',0
 	dta c'Reset key is trapped because VBXE Palette 0 is modified - must quit via Q',0
@@ -3035,6 +3059,7 @@ Help_Text_2
 	dta 0
 	dta TXT_PEN,UI_PEN_HELPNAV,c'P     ',TXT_PEN,UI_PEN_HELP,c'Display the 4 256 colour palettes of the highlighted image',0
 	dta c'      If no image is highlighted, the 4 palettes used by the menu will be shown',0
+	dta c'      0123 shows only that palette, [+0123 toggles it, 4 = all',0
 	dta c'      Top row displays P0 and P1 while the bottom row displays P2 and P3',0
 	dta 0
 	dta TXT_PEN,UI_PEN_HELPNAV,c'I     ',TXT_PEN,UI_PEN_HELP,c'Display the conversion report for the highlighted image',0
@@ -3047,13 +3072,22 @@ Help_Text_2
 	dta c'      N or ESC closes the dialog',0
 	dta 0
 	dta TXT_PEN,UI_PEN_HELPHEAD,c'Viewer Navigation:',0
-	dta TXT_PEN,UI_PEN_HELPNAV,c'0123  ',TXT_PEN,UI_PEN_HELP,c'Select a single palette and display the image using it',0
+	dta c'Key Modifiers [ = Shift   ^ = Control',0
+	dta 0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'0123  ',TXT_PEN,UI_PEN_HELP,c'Show the image with only that palette switched on',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'[+0123',TXT_PEN,UI_PEN_HELP,c'Toggle that palette off or on',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'^+0123',TXT_PEN,UI_PEN_HELP,c'Display the image using just that palette (Colour Attribute Map off)',0
+	dta 0
 	dta TXT_PEN,UI_PEN_HELPNAV,c'4     ',TXT_PEN,UI_PEN_HELP,c'Turn the Colour Attribute Map back on and use all 4 palettes',0
+	dta c'      Also reloads all 4 palettes (turns any switched-off palette back on)',0
+	dta 0
 	dta TXT_PEN,UI_PEN_HELPNAV,c'5     ',TXT_PEN,UI_PEN_HELP,c'Display the Colour Attribute Map (Palette Swap Layout) for this image',0
 	dta c'      P0 = Red, P1 = Green, P2 = Blue, P3 = Yellow',0
+	dta c"      0123 shows only that palette's cells, [+0123 toggles them to black",0
 	dta 0
 	dta TXT_PEN,UI_PEN_HELPNAV,c'P     ',TXT_PEN,UI_PEN_HELP,c'Display the 4 256 colour palettes of this image',0
-	dta c'      ESC returns to the image',0
+	dta c'      0123 shows only that palette, [+0123 toggles it, 4 = all, ESC returns',0
+	dta c'      From 5, the squares show the map colours',0
 	dta 0
 	dta TXT_PEN,UI_PEN_HELPNAV,c'SPACE ',TXT_PEN,UI_PEN_HELP,c'Move forward through the list of images',0
 	dta 0
