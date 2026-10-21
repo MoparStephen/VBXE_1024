@@ -111,6 +111,7 @@
 .def	KEY_F			= $38			; toggle text font (CGA <-> Atari)
 .def	KEY_P			= $0A
 .def	KEY_I			= $0D
+.def	KEY_M			= $25			; image view: toggle the attribute-map view
 .def	KEY_COMMA		= $20			; "," - shorter slideshow delay (selector)
 .def	KEY_DOT			= $22			; "." - longer slideshow delay  (selector)
 										;     (shown as "<" / ">" in the Cfg: row - the
@@ -554,7 +555,7 @@ Emit_Path_Prefix_Done
 ; always returns.
 ;-----------------------------------------------------------------------------
 Enter_Selector
-	lda #$00							; forget the image view's key-5 / 0-3 / P state.
+	lda #$00							; forget the image view's M / 0-3 / P state.
 	sta Map_View						; XDL_Image_Attribute's source is NOT reset here -
 	sta View_Normal						; it may still be on screen (a stale image would
 	sta Preview_From_Image				; flash); View_Selected resets it, unseen
@@ -574,8 +575,9 @@ Enter_Selector_Show
 	jmp Text_Activate					; (tail) a pure XDL swap
 
 ;-----------------------------------------------------------------------------
-; UI_Build_TextPalette - the standard Atari 256-colour master (NTSC $00200 /
-; PAL $00500, per Video_Flag) has its entries 0-127 in hues 0-7 only (no
+; UI_Build_TextPalette - the standard Atari 256-colour master (always the PAL
+; one at $00500, even on NTSC - the UI colours were chosen on PAL, and some
+; look wrong in the NTSC master) has its entries 0-127 in hues 0-7 only (no
 ; green), and the VBXE text mode can only reach entries 0-127 as a foreground.
 ; De-interleave it so:
 ;     entry e        (0..127) = master colour 2e    (all 16 hues, even lumas)
@@ -620,19 +622,12 @@ UI_Apply_TP_P2Dst
 	vbsta VBXE_MA_BSEL
 	rts
 
-; Ptr_Lo/Hi = active master base ($2500 PAL / $2200 NTSC), mirrors Restore_Palette0
+; Ptr_Lo/Hi = the PAL master ($2500) on every machine - the UI colours were
+; chosen on PAL.  (Restore_Palette0 still picks NTSC/PAL by Video_Flag.)
 UI_Apply_TP_SrcBase
-	lda Video_Flag						; 0 = PAL, non-zero = NTSC
-	bne UI_Apply_TP_SrcNTSC
 	lda #<(VBXE_WINDOW + $500)
 	sta Ptr_Lo
 	lda #>(VBXE_WINDOW + $500)
-	sta Ptr_Hi
-	rts
-UI_Apply_TP_SrcNTSC
-	lda #<(VBXE_WINDOW + $200)
-	sta Ptr_Lo
-	lda #>(VBXE_WINDOW + $200)
 	sta Ptr_Hi
 	rts
 
@@ -2059,7 +2054,7 @@ View_Selected
 	lda Sel_Index
 	sta File_Index
 	jsr Clear_Screen					; framebuffer + CRAM to 0 while the menu is still up
-	jsr Set_Attr_Source_Image			; undo key 5 / P's re-point - menu still up, unseen
+	jsr Set_Attr_Source_Image			; undo P's re-point - menu still up, unseen
 	jsr Wait_VBlank
 	jsr Text_Deactivate					; = XDL_Image_Attribute: all-transparent black, so the
 	jmp Load_Image						; palette apply is unseen; the pixels stream in (tail)
@@ -3030,7 +3025,7 @@ Help_Text_1
 	dta c'Shift + 0 1 2 3 toggles that palette off or on',0
 	dta c'Control + 0 1 2 3 displays the image using just that palette',0
 	dta c'Pressing 4 turns the Colour Attribute Map back on and displays all palettes',0
-	dta c'Pressing 5 shows the palette usage that the Colour Attribute Map implements',0
+	dta c'Pressing M toggles the palette usage that the Colour Attribute Map implements',0
 	dta c'Reset key is trapped because VBXE Palette 0 is modified - must quit via Q',0
 	dta 0
 	dta TXT_PEN,UI_PEN_HELPHEAD,c'Display Information:',0
@@ -3048,52 +3043,53 @@ Help_Text_1
 
 Help_Text_2
 	dta TXT_PEN,UI_PEN_HELPHEAD,c'Main Menu Navigation:',0
-	dta TXT_PEN,UI_PEN_HELPNAV,$18,$19,$1B,$1A,c'  ',TXT_PEN,UI_PEN_HELP,c'Move the selector (item will be shown in a brighter colour)',0
-	dta TXT_PEN,UI_PEN_HELPNAV,c'Enter ',TXT_PEN,UI_PEN_HELP,c'Make a selection (scan Subdirectory or Open image)',0
+	dta TXT_PEN,UI_PEN_HELPNAV,$18,$19,$1B,$1A,c'   ',TXT_PEN,UI_PEN_HELP,c'Move the selector (item will be shown in a brighter colour)',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'Enter  ',TXT_PEN,UI_PEN_HELP,c'Make a selection (scan Subdirectory or Open image)',0
 	dta 0
-	dta TXT_PEN,UI_PEN_HELPNAV,c'S     ',TXT_PEN,UI_PEN_HELP,c'Start a slideshow starting from the selected image',0
-	dta TXT_PEN,UI_PEN_HELPNAV,c'< >   ',TXT_PEN,UI_PEN_HELP,c'Set the display time for each image from 1 to 30 seconds',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'S      ',TXT_PEN,UI_PEN_HELP,c'Start a slideshow starting from the selected image',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'< >    ',TXT_PEN,UI_PEN_HELP,c'Set the display time for each image from 1 to 30 seconds',0
 	dta 0
-	dta TXT_PEN,UI_PEN_HELPNAV,c'D     ',TXT_PEN,UI_PEN_HELP,c'Bring up the Drive Selector',0
-	dta c'      D: is the directory from which this program launches, not D1:',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'D      ',TXT_PEN,UI_PEN_HELP,c'Bring up the Drive Selector',0
+	dta c'       D: is the directory from which this program launches, not D1:',0
 	dta 0
-	dta TXT_PEN,UI_PEN_HELPNAV,c'P     ',TXT_PEN,UI_PEN_HELP,c'Display the 4 256 colour palettes of the highlighted image',0
-	dta c'      If no image is highlighted, the 4 palettes used by the menu will be shown',0
-	dta c'      0123 shows only that palette, [+0123 toggles it, 4 = all',0
-	dta c'      Top row displays P0 and P1 while the bottom row displays P2 and P3',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'P      ',TXT_PEN,UI_PEN_HELP,c'Display the 4 256 colour palettes of the highlighted image',0
+	dta c'       If no image is highlighted the 4 palettes used by the menu will be shown',0
+	dta c'       0123 shows only that palette, [ 0123 toggles it, 4 = all',0
+	dta c'       Top row displays P0 and P1 while the bottom row displays P2 and P3',0
 	dta 0
-	dta TXT_PEN,UI_PEN_HELPNAV,c'I     ',TXT_PEN,UI_PEN_HELP,c'Display the conversion report for the highlighted image',0
-	dta c'      Jump to Section 3 of this Help screen for more details on this report',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'I      ',TXT_PEN,UI_PEN_HELP,c'Display the conversion report for the highlighted image',0
+	dta c'       Jump to Section 3 of this Help screen for more details on this report',0
 	dta 0
-	dta TXT_PEN,UI_PEN_HELPNAV,c'F     ',TXT_PEN,UI_PEN_HELP,c'Switch between the CGA font and the Atari font',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'F      ',TXT_PEN,UI_PEN_HELP,c'Switch between the CGA font and the Atari font',0
 	dta 0
-	dta TXT_PEN,UI_PEN_HELPNAV,c'Q     ',TXT_PEN,UI_PEN_HELP,c'Display the exit confirmation dialog',0
-	dta c'      Y quits the program and returns to DOS',0
-	dta c'      N or ESC closes the dialog',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'Q      ',TXT_PEN,UI_PEN_HELP,c'Display the exit confirmation dialog',0
+	dta c'       Y quits the program and returns to DOS',0
+	dta c'       N or ESC closes the dialog',0
 	dta 0
 	dta TXT_PEN,UI_PEN_HELPHEAD,c'Viewer Navigation:',0
 	dta c'Key Modifiers [ = Shift   ^ = Control',0
 	dta 0
-	dta TXT_PEN,UI_PEN_HELPNAV,c'0123  ',TXT_PEN,UI_PEN_HELP,c'Show the image with only that palette switched on',0
-	dta TXT_PEN,UI_PEN_HELPNAV,c'[+0123',TXT_PEN,UI_PEN_HELP,c'Toggle that palette off or on',0
-	dta TXT_PEN,UI_PEN_HELPNAV,c'^+0123',TXT_PEN,UI_PEN_HELP,c'Display the image using just that palette (Colour Attribute Map off)',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'0123   ',TXT_PEN,UI_PEN_HELP,c'Show the image with only that palette switched on',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'[ 0123 ',TXT_PEN,UI_PEN_HELP,c'Toggle that palette off or on',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'^ 0123 ',TXT_PEN,UI_PEN_HELP,c'Display the image using just that palette (Colour Attribute Map off)',0
 	dta 0
-	dta TXT_PEN,UI_PEN_HELPNAV,c'4     ',TXT_PEN,UI_PEN_HELP,c'Turn the Colour Attribute Map back on and use all 4 palettes',0
-	dta c'      Also reloads all 4 palettes (turns any switched-off palette back on)',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'4      ',TXT_PEN,UI_PEN_HELP,c'Turn the Colour Attribute Map back on and use all 4 palettes',0
+	dta c'       Also reloads all 4 palettes (turns any switched-off palette back on)',0
 	dta 0
-	dta TXT_PEN,UI_PEN_HELPNAV,c'5     ',TXT_PEN,UI_PEN_HELP,c'Display the Colour Attribute Map (Palette Swap Layout) for this image',0
-	dta c'      P0 = Red, P1 = Green, P2 = Blue, P3 = Yellow',0
-	dta c"      0123 shows only that palette's cells, [+0123 toggles them to black",0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'M      ',TXT_PEN,UI_PEN_HELP,c'Toggle the Colour Attribute Map (Palette Swap Layout) for this image',0
+	dta c'       ',TXT_PEN,$12,c'P0 = Red',TXT_PEN,UI_PEN_HELP,c', ',TXT_PEN,$52,c'P1 = Green',TXT_PEN,UI_PEN_HELP
+	dta c', ',TXT_PEN,$42,c'P2 = Blue',TXT_PEN,UI_PEN_HELP,c', ',TXT_PEN,$65,c'P3 = Yellow',0
+	dta c"       0123 shows only that palette's cells, [ 0123 toggles them to black",0
 	dta 0
-	dta TXT_PEN,UI_PEN_HELPNAV,c'P     ',TXT_PEN,UI_PEN_HELP,c'Display the 4 256 colour palettes of this image',0
-	dta c'      0123 shows only that palette, [+0123 toggles it, 4 = all, ESC returns',0
-	dta c'      From 5, the squares show the map colours',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'P      ',TXT_PEN,UI_PEN_HELP,c'Display the 4 256 colour palettes of this image',0
+	dta c'       0123 shows only that palette, [ 0123 toggles it, 4 = all, ESC returns',0
+	dta c'       From M, the squares show the map colours',0
 	dta 0
-	dta TXT_PEN,UI_PEN_HELPNAV,c'SPACE ',TXT_PEN,UI_PEN_HELP,c'Move forward through the list of images',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'SPACE  ',TXT_PEN,UI_PEN_HELP,c'Move forward through the list of images',0
 	dta 0
-	dta TXT_PEN,UI_PEN_HELPNAV,c'BKSP  ',TXT_PEN,UI_PEN_HELP,c'Move backward through the list of images',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'BKSP   ',TXT_PEN,UI_PEN_HELP,c'Move backward through the list of images',0
 	dta 0
-	dta TXT_PEN,UI_PEN_HELPNAV,c'ESC   ',TXT_PEN,UI_PEN_HELP,c'Return to menu',0
+	dta TXT_PEN,UI_PEN_HELPNAV,c'ESC    ',TXT_PEN,UI_PEN_HELP,c'Return to menu',0
 	dta $FF
 
 Help_Text_3
